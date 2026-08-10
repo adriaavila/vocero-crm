@@ -257,7 +257,7 @@ async function persistTestOutbound(
 export async function applyHandoff(
   conversationId: string,
   organizationId: string,
-  reason: "cliente" | "modelo" | "error" | "ventana"
+  reason: "cliente" | "modelo" | "error" | "ventana" | "hostilidad"
 ): Promise<void> {
   const db = getDb();
   const updated = await db

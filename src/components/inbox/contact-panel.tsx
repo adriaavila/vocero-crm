@@ -14,7 +14,14 @@ const HANDOFF_LABELS: Record<string, string> = {
   modelo: "El agente decidió escalar",
   error: "Error del proveedor de IA",
   ventana: "Ventana de 24h cerrada",
+  hostilidad: "Conversación hostil — revisión humana",
   manual_reply: "Respondiste desde el teléfono — IA en pausa",
+};
+
+type BookingDetail = {
+  scheduledAt: string;
+  label: string;
+  meetUrl: string | null;
 };
 
 export function ContactPanel({
@@ -38,6 +45,8 @@ export function ContactPanel({
   const [stages, setStages] = useState<StageDto[]>([]);
   const [currentStageId, setCurrentStageId] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
+  const [ficha, setFicha] = useState<Record<string, unknown>>({});
+  const [booking, setBooking] = useState<BookingDetail | null>(null);
   // Estado global del agente: sin esto, el toggle "Respondiendo" mentiría
   // cuando el agente aún no se ha configurado/encendido.
   const [agentEnabled, setAgentEnabled] = useState(false);
@@ -62,6 +71,8 @@ export function ContactPanel({
       setNotes(detail.contact?.notes ?? "");
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
+      setFicha(detail.contact?.ficha ?? {});
+      setBooking(detail.booking ?? null);
     }
     if (stagesRes) setStages(stagesRes.stages);
     setAgentEnabled(Boolean(agentRes?.profile?.enabled));
@@ -79,6 +90,8 @@ export function ContactPanel({
     if (detail) {
       setCurrentStageId(detail.stage?.id ?? null);
       setLeadId(detail.lead?.id ?? null);
+      setFicha(detail.contact?.ficha ?? {});
+      setBooking(detail.booking ?? null);
     }
     if (agentRes) {
       setAgentEnabled(Boolean(agentRes.profile?.enabled));
@@ -279,6 +292,49 @@ export function ContactPanel({
                 );
               })}
             </ol>
+          </section>
+        )}
+
+        {booking && (
+          <section className="border-b p-4">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Próxima cita
+            </p>
+            <div className="rounded-md border border-brand/20 bg-brand-tint p-3">
+              <p className="text-sm font-[650] capitalize text-brand-text">
+                {booking.label}
+              </p>
+              {booking.meetUrl && (
+                <a
+                  href={booking.meetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex text-xs font-medium text-brand-text underline underline-offset-2"
+                >
+                  Abrir Google Meet
+                </a>
+              )}
+            </div>
+          </section>
+        )}
+
+        {Object.keys(ficha).length > 0 && (
+          <section className="border-b p-4">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
+              Ficha NEA
+            </p>
+            <dl className="space-y-2 rounded-md border bg-secondary/30 p-3">
+              {Object.entries(ficha).map(([key, value]) => (
+                <div key={key} className="grid grid-cols-[7rem_1fr] gap-2 text-xs">
+                  <dt className="truncate capitalize text-text-3">
+                    {key.replaceAll("_", " ")}
+                  </dt>
+                  <dd className="break-words text-right font-medium text-text-2">
+                    {typeof value === "string" ? value : JSON.stringify(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </section>
         )}
 

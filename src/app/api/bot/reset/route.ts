@@ -56,6 +56,11 @@ export async function POST(req: Request) {
     })
     .where(eq(schema.conversation.id, conv.id));
 
+  await db
+    .update(schema.contact)
+    .set({ ficha: {}, updatedAt: new Date() })
+    .where(eq(schema.contact.id, conv.contactId));
+
   // Etapa al inicio del funnel (best-effort: sin etapas no revienta el reset).
   try {
     const stages = await db

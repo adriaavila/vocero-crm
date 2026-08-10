@@ -122,6 +122,8 @@ export const contact = pgTable(
     waUserId: text("wa_user_id"),
     name: text("name").notNull(),
     notes: text("notes"),
+    /** Ficha flexible que completa el agente externo durante la calificación. */
+    ficha: jsonb("ficha").$type<Record<string, unknown>>().notNull().default({}),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -191,7 +193,14 @@ export const conversation = pgTable(
     handoffAt: timestamp("handoff_at"),
     handoffReason: text("handoff_reason", {
       // 008: manual_reply = el dueño respondió desde la app del teléfono.
-      enum: ["cliente", "modelo", "error", "ventana", "manual_reply"],
+      enum: [
+        "cliente",
+        "modelo",
+        "error",
+        "ventana",
+        "hostilidad",
+        "manual_reply",
+      ],
     }),
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
@@ -329,6 +338,63 @@ export const metaCredentials = pgTable(
     uniqueIndex("meta_credentials_org_uq").on(t.organizationId),
     // El webhook enruta por phone_number_id: debe ser único en la instancia.
     uniqueIndex("meta_credentials_phone_uq").on(t.phoneNumberId),
+  ]
+);
+
+export const booking = pgTable(
+  "booking",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    startAt: timestamp("start_at").notNull(),
+    endAt: timestamp("end_at").notNull(),
+    googleEventId: text("google_event_id").notNull(),
+    meetUrl: text("meet_url"),
+    status: text("status", {
+      enum: ["pending", "confirmed", "failed", "cancelled"],
+    })
+      .notNull()
+      .default("pending"),
+    error: text("error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("booking_org_start_uq").on(t.organizationId, t.startAt),
+    index("booking_org_contact_start_idx").on(
+      t.organizationId,
+      t.contactId,
+      t.startAt
+    ),
+  ]
+);
+
+/** OAuth es fallback: normalmente la instancia usa una cuenta de servicio. */
+export const googleCalendarConnection = pgTable(
+  "google_calendar_connection",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountEmail: text("account_email"),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    refreshTokenCipher: text("refresh_token_cipher").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    refreshTokenTag: text("refresh_token_tag").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("google_calendar_connection_org_uq").on(t.organizationId),
   ]
 );
 

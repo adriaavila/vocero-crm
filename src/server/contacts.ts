@@ -11,6 +11,7 @@ export function serializeContact(
     name: c.name,
     phone: c.phone,
     notes: c.notes,
+    ficha: c.ficha,
     stageName,
     archivedAt: c.archivedAt?.toISOString() ?? null,
   };

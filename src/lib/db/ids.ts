@@ -18,6 +18,8 @@ const prefixes = {
   testRun: "run",
   testCase: "case",
   mediaAsset: "ma",
+  booking: "bkg",
+  googleCalendarConnection: "gcal",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

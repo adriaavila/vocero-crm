@@ -8,6 +8,7 @@ import {
   getContactStage,
   serializeContact,
 } from "@/server/contacts";
+import { getUpcomingBooking } from "@/server/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const contact = await getContactById(session.organizationId, id);
   if (!contact) return apiError(404, "not_found", "Contacto no encontrado");
   const stageRow = await getContactStage(session.organizationId, id);
+  const booking = await getUpcomingBooking(session.organizationId, id);
   return Response.json({
     contact: serializeContact(contact),
     stage: stageRow
@@ -29,6 +31,7 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
         }
       : null,
     lead: stageRow ? { id: stageRow.lead.id } : null,
+    booking,
   });
 });
 

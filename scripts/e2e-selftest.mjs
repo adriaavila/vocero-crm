@@ -191,6 +191,24 @@ async function main() {
     body: JSON.stringify({ conversationId: mxConv?.id }),
   });
   ok("reset sin API key → 401", resetNoKey.res.status === 401);
+  const profileNoKey = await api("/api/bot/profile");
+  ok("profile sin API key → 401", profileNoKey.res.status === 401);
+
+  console.log("\n== gateway NEA: perfil + contexto ==");
+  const profile = await bot("/api/bot/profile");
+  ok(
+    "GET /api/bot/profile expone perfil y KB",
+    profile.res.ok && profile.json?.profile && typeof profile.json?.kb === "string",
+    JSON.stringify(profile.json)
+  );
+  let botContext = await bot(
+    "/api/bot/context?waIdentity=" + encodeURIComponent("5214621349768")
+  );
+  ok(
+    "GET /api/bot/context resuelve identidad normalizada",
+    botContext.res.ok && botContext.json?.conversation?.id === mxConv?.id,
+    JSON.stringify(botContext.json)
+  );
 
   console.log("\n== us-bot-api: typing + leído ==");
   const convId = mxConv?.id;
@@ -243,6 +261,16 @@ async function main() {
   });
   ok("IA pausada desde la bandeja", pause.res.ok, JSON.stringify(pause.json));
 
+  const sendPaused = await bot("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, text: "no debe salir" }),
+  });
+  ok(
+    "mensaje de NEA con IA pausada → 409 ai_paused",
+    sendPaused.res.status === 409 && sendPaused.json?.code === "ai_paused",
+    JSON.stringify(sendPaused.json)
+  );
+
   const typPaused = await bot("/api/bot/typing", {
     method: "POST",
     body: JSON.stringify({ conversationId: convId }),
@@ -294,6 +322,85 @@ async function main() {
     "reset regresa el lead a la primera etapa",
     !detail?.lead || detail?.stage?.id === firstStage?.id,
     `etapa=${detail?.stage?.name} esperada=${firstStage?.name}`
+  );
+
+  console.log("\n== gateway NEA: mensajes + ficha + handoff ==");
+  const send = await bot("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, text: "Respuesta única de NEA" }),
+  });
+  ok(
+    "POST /api/bot/messages envía mediante Vocero",
+    send.res.ok && typeof send.json?.messageId === "string",
+    JSON.stringify(send.json)
+  );
+
+  const ficha = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({
+      conversationId: convId,
+      ficha: { empresa: "Dental E2E", presupuesto: 1200 },
+    }),
+  });
+  ok(
+    "PUT /api/bot/ficha mezcla campos y avanza la calificación",
+    ficha.res.ok && ficha.json?.ficha?.empresa === "Dental E2E" && ficha.json?.stageMoved,
+    JSON.stringify(ficha.json)
+  );
+
+  const qualified = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({ conversationId: convId, ficha: { calificado: true } }),
+  });
+  const qualifiedDetail = (await api(`/api/contacts/${afterReset?.contact.id}`)).json;
+  const lastOpenStage = [...stages]
+    .filter((stage) => stage.kind === "open")
+    .sort((a, b) => a.position - b.position)
+    .at(-1);
+  ok(
+    "calificado=true mueve el lead a Interesado",
+    qualified.res.ok && qualifiedDetail?.stage?.id === lastOpenStage?.id,
+    `etapa=${qualifiedDetail?.stage?.name} esperada=${lastOpenStage?.name}`
+  );
+
+  botContext = await bot(
+    "/api/bot/context?waIdentity=" + encodeURIComponent("524621349768")
+  );
+  ok(
+    "el contexto devuelve la ficha consolidada",
+    botContext.json?.contact?.ficha?.empresa === "Dental E2E" &&
+      botContext.json?.contact?.ficha?.calificado === true,
+    JSON.stringify(botContext.json?.contact?.ficha)
+  );
+
+  const handoff = await bot("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, reason: "hostilidad" }),
+  });
+  botContext = await bot(
+    "/api/bot/context?waIdentity=" + encodeURIComponent("524621349768")
+  );
+  ok(
+    "handoff por hostilidad pausa la IA",
+    handoff.res.ok &&
+      botContext.json?.conversation?.aiEnabled === false &&
+      botContext.json?.conversation?.handoffReason === "hostilidad",
+    JSON.stringify(botContext.json?.conversation)
+  );
+
+  const finalReset = await bot("/api/bot/reset", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId }),
+  });
+  botContext = await bot(
+    "/api/bot/context?waIdentity=" + encodeURIComponent("524621349768")
+  );
+  ok(
+    "reset reactiva y limpia la ficha NEA",
+    finalReset.res.ok &&
+      botContext.json?.conversation?.aiEnabled === true &&
+      Object.keys(botContext.json?.contact?.ficha ?? {}).length === 0,
+    JSON.stringify(botContext.json)
   );
 
   console.log("\n== 008: paridad inbox — echoes de coexistence (US1) ==");
