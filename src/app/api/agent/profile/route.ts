@@ -23,6 +23,8 @@ export const GET = withAuth(async (session) => {
       instructions: p.instructions,
       escalationRules: p.escalationRules,
       greeting: p.greeting,
+      presetOnly: p.presetOnly,
+      presetReplies: p.presetReplies,
     },
     aiConfigured: isAiConfigured(),
   });
@@ -35,6 +37,16 @@ const putSchema = z.object({
   instructions: z.string().max(8000).nullable().optional(),
   escalationRules: z.string().max(4000).nullable().optional(),
   greeting: z.string().max(1000).nullable().optional(),
+  presetOnly: z.boolean().optional(),
+  presetReplies: z
+    .array(
+      z.object({
+        message: z.string().trim().min(1).max(500),
+        response: z.string().trim().min(1).max(4000),
+      })
+    )
+    .max(50)
+    .optional(),
 });
 
 export const PUT = withAuth(async (session, req: Request) => {

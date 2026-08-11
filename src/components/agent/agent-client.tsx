@@ -16,6 +16,8 @@ type Profile = {
   instructions: string | null;
   escalationRules: string | null;
   greeting: string | null;
+  presetOnly: boolean;
+  presetReplies: { message: string; response: string }[];
 };
 
 type KbEntry = {
@@ -112,10 +114,116 @@ export function AgentClient() {
       )}
 
       <div className="grid gap-6 p-6 lg:grid-cols-2">
-        <ProfileSection profile={profile} onSave={saveProfile} />
+        <div className="space-y-6">
+          <ProfileSection profile={profile} onSave={saveProfile} />
+          <PresetRepliesSection profile={profile} onSave={saveProfile} />
+        </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
     </div>
+  );
+}
+
+function PresetRepliesSection({
+  profile,
+  onSave,
+}: {
+  profile: Profile;
+  onSave: (patch: Partial<Profile>) => Promise<void>;
+}) {
+  const [presetOnly, setPresetOnly] = useState(profile.presetOnly);
+  const [replies, setReplies] = useState(profile.presetReplies);
+
+  useEffect(() => {
+    setPresetOnly(profile.presetOnly);
+    setReplies(profile.presetReplies);
+  }, [profile]);
+
+  function updateReply(index: number, patch: Partial<(typeof replies)[number]>) {
+    setReplies(replies.map((reply, i) => (i === index ? { ...reply, ...patch } : reply)));
+  }
+
+  const validReplies = replies.filter(
+    (reply) => reply.message.trim() && reply.response.trim()
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle>Respuestas predeterminadas</CardTitle>
+            <CardDescription>
+              Responde solo cuando el mensaje coincida exactamente con uno de estos textos.
+            </CardDescription>
+          </div>
+          <button
+            role="switch"
+            aria-checked={presetOnly}
+            aria-label="Responder solo mensajes predeterminados"
+            onClick={() => setPresetOnly(!presetOnly)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+              presetOnly ? "bg-primary" : "bg-secondary"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                presetOnly ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {replies.map((reply, index) => (
+          <div key={index} className="space-y-2 border-b pb-4 last:border-0 last:pb-0">
+            <div className="flex items-center gap-2">
+              <Input
+                aria-label={`Mensaje ${index + 1}`}
+                placeholder="Mensaje recibido, p. ej. horario"
+                value={reply.message}
+                onChange={(event) => updateReply(index, { message: event.target.value })}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={`Eliminar respuesta ${index + 1}`}
+                onClick={() => setReplies(replies.filter((_, i) => i !== index))}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+            <Textarea
+              aria-label={`Respuesta ${index + 1}`}
+              placeholder="Respuesta que enviará NEA"
+              rows={2}
+              value={reply.response}
+              onChange={(event) => updateReply(index, { response: event.target.value })}
+            />
+          </div>
+        ))}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setReplies([...replies, { message: "", response: "" }])}
+            disabled={replies.length >= 50}
+          >
+            <Plus className="h-4 w-4" /> Agregar respuesta
+          </Button>
+          <Button
+            onClick={() => void onSave({ presetOnly, presetReplies: validReplies })}
+            disabled={presetOnly && validReplies.length === 0}
+          >
+            Guardar respuestas
+          </Button>
+        </div>
+        {presetOnly && validReplies.length === 0 && (
+          <p className="text-xs text-muted-foreground">
+            Agrega al menos una respuesta antes de activar este modo.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

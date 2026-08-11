@@ -411,6 +411,11 @@ export const agentProfile = pgTable(
     instructions: text("instructions"),
     escalationRules: text("escalation_rules"),
     greeting: text("greeting"),
+    presetOnly: boolean("preset_only").notNull().default(false),
+    presetReplies: jsonb("preset_replies")
+      .$type<{ message: string; response: string }[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

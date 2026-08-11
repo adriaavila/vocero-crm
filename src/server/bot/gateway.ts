@@ -37,6 +37,8 @@ export async function getBotProfile(organizationId: string) {
       instructions: profile.instructions,
       escalationRules: profile.escalationRules,
       greeting: profile.greeting,
+      presetOnly: profile.presetOnly,
+      presetReplies: profile.presetReplies,
     },
     kb: renderKb(kb),
     resources: [],
