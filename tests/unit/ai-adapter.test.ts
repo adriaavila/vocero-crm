@@ -1,6 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { chatJson, extractJson } from "@/lib/ai";
+import { isAgentConfigured } from "@/lib/env";
+
+describe("isAgentConfigured", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("acepta un cerebro externo sin activar el LLM interno", () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "");
+    vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+
+    expect(isAgentConfigured()).toBe(true);
+  });
+});
 
 describe("extractJson (extracción robusta)", () => {
   it("JSON limpio", () => {

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isAiConfigured } from "@/lib/env";
+import { isAgentConfigured } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +26,7 @@ export const GET = withAuth(async (session) => {
       presetOnly: p.presetOnly,
       presetReplies: p.presetReplies,
     },
-    aiConfigured: isAiConfigured(),
+    aiConfigured: isAgentConfigured(),
   });
 });
 

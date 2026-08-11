@@ -96,3 +96,8 @@ export function isAiConfigured(): boolean {
   const token = process.env.OPENROUTER_API_TOKEN;
   return typeof token === "string" && token.trim().length > 0;
 }
+
+/** true si responde el agente interno o un cerebro externo autenticado. */
+export function isAgentConfigured(): boolean {
+  return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+}
