@@ -52,11 +52,18 @@ export async function getWahaSession(): Promise<WahaSession | null> {
 
 export async function startWahaSession(): Promise<WahaSession | null> {
   const { session } = config();
-  await request("/api/sessions/start", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: session, config: {} }),
-  });
+  const current = await getWahaSession();
+  if (current && ["FAILED", "STOPPED"].includes(current.status)) {
+    await request(`/api/sessions/${encodeURIComponent(session)}/restart`, {
+      method: "POST",
+    });
+  } else if (!current) {
+    await request("/api/sessions/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: session, config: {} }),
+    });
+  }
   return getWahaSession();
 }
 
