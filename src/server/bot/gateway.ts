@@ -37,8 +37,14 @@ export async function getBotProfile(organizationId: string) {
       instructions: profile.instructions,
       escalationRules: profile.escalationRules,
       greeting: profile.greeting,
-      presetOnly: profile.presetOnly,
-      presetReplies: profile.presetReplies,
+      activationEnabled: profile.activationEnabled,
+      activationMessages: (profile.activationMessages as unknown[])
+        .map((item) =>
+          typeof item === "string"
+            ? item
+            : String((item as { message?: unknown })?.message ?? "")
+        )
+        .filter(Boolean),
     },
     kb: renderKb(kb),
     resources: [],

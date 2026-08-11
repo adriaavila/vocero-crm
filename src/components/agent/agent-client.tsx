@@ -16,8 +16,8 @@ type Profile = {
   instructions: string | null;
   escalationRules: string | null;
   greeting: string | null;
-  presetOnly: boolean;
-  presetReplies: { message: string; response: string }[];
+  activationEnabled: boolean;
+  activationMessages: string[];
 };
 
 type KbEntry = {
@@ -34,6 +34,7 @@ export function AgentClient() {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -61,15 +62,21 @@ export function AgentClient() {
     );
   }
 
-  async function saveProfile(patch: Partial<Profile>) {
-    await fetch("/api/agent/profile", {
+  async function saveProfile(patch: Partial<Profile>): Promise<boolean> {
+    setSaveError(null);
+    const response = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => null);
+    if (!response?.ok) {
+      setSaveError("No se pudo guardar. Revisa los campos e inténtalo otra vez.");
+      return false;
+    }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-    void refetch();
+    await refetch();
+    return true;
   }
 
   return (
@@ -78,6 +85,7 @@ export function AgentClient() {
         <h2 className="font-semibold">Agente de IA</h2>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
+          {saveError && <span className="text-xs text-destructive">{saveError}</span>}
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
@@ -116,7 +124,7 @@ export function AgentClient() {
       <div className="grid gap-6 p-6 lg:grid-cols-2">
         <div className="space-y-6">
           <ProfileSection profile={profile} onSave={saveProfile} />
-          <PresetRepliesSection profile={profile} onSave={saveProfile} />
+          <ActivationMessagesSection profile={profile} onSave={saveProfile} />
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
@@ -124,102 +132,97 @@ export function AgentClient() {
   );
 }
 
-function PresetRepliesSection({
+function ActivationMessagesSection({
   profile,
   onSave,
 }: {
   profile: Profile;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<boolean>;
 }) {
-  const [presetOnly, setPresetOnly] = useState(profile.presetOnly);
-  const [replies, setReplies] = useState(profile.presetReplies);
+  const [enabled, setEnabled] = useState(profile.activationEnabled);
+  const [messages, setMessages] = useState(profile.activationMessages);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setPresetOnly(profile.presetOnly);
-    setReplies(profile.presetReplies);
+    setEnabled(profile.activationEnabled);
+    setMessages(profile.activationMessages);
   }, [profile]);
 
-  function updateReply(index: number, patch: Partial<(typeof replies)[number]>) {
-    setReplies(replies.map((reply, i) => (i === index ? { ...reply, ...patch } : reply)));
-  }
+  const validMessages = messages.map((message) => message.trim()).filter(Boolean);
 
-  const validReplies = replies.filter(
-    (reply) => reply.message.trim() && reply.response.trim()
-  );
+  async function save() {
+    setSaving(true);
+    await onSave({ activationEnabled: enabled, activationMessages: validMessages });
+    setSaving(false);
+  }
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle>Respuestas predeterminadas</CardTitle>
+            <CardTitle>Activación automática</CardTitle>
             <CardDescription>
-              Responde solo cuando el mensaje coincida exactamente con uno de estos textos.
+              Si un chat está pausado, uno de estos mensajes activa la IA y comienza
+              una conversación normal.
             </CardDescription>
           </div>
           <button
             role="switch"
-            aria-checked={presetOnly}
-            aria-label="Responder solo mensajes predeterminados"
-            onClick={() => setPresetOnly(!presetOnly)}
+            aria-checked={enabled}
+            aria-label="Activar IA mediante mensajes"
+            onClick={() => setEnabled(!enabled)}
             className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-              presetOnly ? "bg-primary" : "bg-secondary"
+              enabled ? "bg-primary" : "bg-secondary"
             }`}
           >
             <span
               className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                presetOnly ? "translate-x-5" : "translate-x-0.5"
+                enabled ? "translate-x-5" : "translate-x-0.5"
               }`}
             />
           </button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {replies.map((reply, index) => (
-          <div key={index} className="space-y-2 border-b pb-4 last:border-0 last:pb-0">
-            <div className="flex items-center gap-2">
-              <Input
-                aria-label={`Mensaje ${index + 1}`}
-                placeholder="Mensaje recibido, p. ej. horario"
-                value={reply.message}
-                onChange={(event) => updateReply(index, { message: event.target.value })}
-              />
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Eliminar respuesta ${index + 1}`}
-                onClick={() => setReplies(replies.filter((_, i) => i !== index))}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-            <Textarea
-              aria-label={`Respuesta ${index + 1}`}
-              placeholder="Respuesta que enviará NEA"
-              rows={2}
-              value={reply.response}
-              onChange={(event) => updateReply(index, { response: event.target.value })}
+        {messages.map((message, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <Input
+              aria-label={`Mensaje activador ${index + 1}`}
+              placeholder="p. ej. Quiero agendar una cita"
+              value={message}
+              onChange={(event) =>
+                setMessages(messages.map((item, i) => (i === index ? event.target.value : item)))
+              }
             />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Eliminar mensaje ${index + 1}`}
+              onClick={() => setMessages(messages.filter((_, i) => i !== index))}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         ))}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="secondary"
-            onClick={() => setReplies([...replies, { message: "", response: "" }])}
-            disabled={replies.length >= 50}
+            onClick={() => setMessages([...messages, ""])}
+            disabled={messages.length >= 50}
           >
-            <Plus className="h-4 w-4" /> Agregar respuesta
+            <Plus className="h-4 w-4" /> Agregar mensaje
           </Button>
           <Button
-            onClick={() => void onSave({ presetOnly, presetReplies: validReplies })}
-            disabled={presetOnly && validReplies.length === 0}
+            onClick={() => void save()}
+            disabled={saving || (enabled && validMessages.length === 0)}
           >
-            Guardar respuestas
+            {saving ? "Guardando…" : "Guardar activadores"}
           </Button>
         </div>
-        {presetOnly && validReplies.length === 0 && (
+        {enabled && validMessages.length === 0 && (
           <p className="text-xs text-muted-foreground">
-            Agrega al menos una respuesta antes de activar este modo.
+            Agrega al menos un mensaje antes de activar este modo.
           </p>
         )}
       </CardContent>
@@ -232,7 +235,7 @@ function ProfileSection({
   onSave,
 }: {
   profile: Profile;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(profile);
   useEffect(() => setForm(profile), [profile]);
