@@ -160,25 +160,6 @@ export function LabClient() {
     await refetchLive();
   }
 
-  if (!aiConfigured) {
-    return (
-      <div className="flex h-full flex-col">
-        <Header running={false} launching={false} onLaunch={() => {}} disabled />
-        <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
-          <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">
-            Configura tu proveedor de IA para usar el Laboratorio
-          </p>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            El Laboratorio necesita el agente activo: agrega{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la
-            instancia y vuelve aquí.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   const running = runs.some((r) => r.status === "running");
 
   return (
@@ -187,9 +168,20 @@ export function LabClient() {
         running={running}
         launching={launching}
         onLaunch={() => void launch()}
-        disabled={false}
+        disabled={!aiConfigured}
       />
       {error && <p className="px-6 pt-3 text-sm text-destructive">{error}</p>}
+
+      {!aiConfigured && (
+        <div className="mx-6 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-4">
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Sparkles className="h-4 w-4 text-primary" /> Laboratorio interno deshabilitado
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            La prueba real con WAHA y NEA sí está disponible.
+          </p>
+        </div>
+      )}
 
       {live?.configured && (
         <Card className="mx-6 mt-4">
