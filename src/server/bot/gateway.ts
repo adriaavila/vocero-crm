@@ -83,7 +83,7 @@ export async function getBotContext(
   const row = rows[0];
   if (!row) return null;
 
-  const [leadRows, booking] = await Promise.all([
+  const [leadRows, booking, profiles] = await Promise.all([
     db
       .select({ lead: schema.lead, stage: schema.pipelineStage })
       .from(schema.lead)
@@ -99,8 +99,17 @@ export async function getBotContext(
       )
       .limit(1),
     getUpcomingBooking(organizationId, row.contact.id),
+    db
+      .select({
+        allowlistEnabled: schema.agentProfile.allowlistEnabled,
+        allowedWaIds: schema.agentProfile.allowedWaIds,
+      })
+      .from(schema.agentProfile)
+      .where(eq(schema.agentProfile.organizationId, organizationId))
+      .limit(1),
   ]);
   const lead = leadRows[0];
+  const access = profiles[0];
   return {
     contact: {
       id: row.contact.id,
@@ -117,6 +126,10 @@ export async function getBotContext(
         row.conversation.aiEnabled && !Boolean(row.conversation.handoffAt),
       windowOpen: isWindowOpen(row.conversation.lastInboundAt),
       handoffReason: row.conversation.handoffReason,
+    },
+    agentAccess: {
+      allowlistEnabled: access?.allowlistEnabled ?? false,
+      allowedWaIds: access?.allowedWaIds ?? [],
     },
     adOrigen: null,
     booking: { next: booking },

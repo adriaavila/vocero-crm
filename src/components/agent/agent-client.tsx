@@ -18,6 +18,8 @@ type Profile = {
   greeting: string | null;
   activationEnabled: boolean;
   activationMessages: string[];
+  allowlistEnabled: boolean;
+  allowedWaIds: string[];
 };
 
 type KbEntry = {
@@ -125,10 +127,89 @@ export function AgentClient() {
         <div className="space-y-6">
           <ProfileSection profile={profile} onSave={saveProfile} />
           <ActivationMessagesSection profile={profile} onSave={saveProfile} />
+          <AllowedNumbersSection profile={profile} onSave={saveProfile} />
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
     </div>
+  );
+}
+
+function AllowedNumbersSection({
+  profile,
+  onSave,
+}: {
+  profile: Profile;
+  onSave: (patch: Partial<Profile>) => Promise<boolean>;
+}) {
+  const [enabled, setEnabled] = useState(profile.allowlistEnabled);
+  const [numbers, setNumbers] = useState(profile.allowedWaIds.join("\n"));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setEnabled(profile.allowlistEnabled);
+    setNumbers(profile.allowedWaIds.join("\n"));
+  }, [profile]);
+
+  const allowedWaIds = numbers
+    .split(/[\s,;]+/)
+    .map((number) => number.trim())
+    .filter(Boolean);
+
+  async function save() {
+    setSaving(true);
+    await onSave({ allowlistEnabled: enabled, allowedWaIds });
+    setSaving(false);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle>Números autorizados</CardTitle>
+            <CardDescription>
+              Limita las respuestas de la IA a números de prueba específicos.
+              Desactívalo para responder a cualquier cliente.
+            </CardDescription>
+          </div>
+          <button
+            role="switch"
+            aria-checked={enabled}
+            aria-label="Limitar a números autorizados"
+            onClick={() => setEnabled(!enabled)}
+            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
+              enabled ? "bg-primary" : "bg-secondary"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                enabled ? "translate-x-5" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Textarea
+          aria-label="Números autorizados"
+          rows={4}
+          placeholder={"12057071653\n5215512345678"}
+          value={numbers}
+          onChange={(event) => setNumbers(event.target.value)}
+          disabled={!enabled}
+        />
+        <p className="text-xs text-muted-foreground">
+          Uno por línea, en formato internacional y sin espacios.
+        </p>
+        <Button
+          onClick={() => void save()}
+          disabled={saving || (enabled && allowedWaIds.length === 0)}
+        >
+          {saving ? "Guardando…" : "Guardar números"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -238,7 +319,30 @@ function ProfileSection({
   onSave: (patch: Partial<Profile>) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(profile);
+  const [freeText, setFreeText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
   useEffect(() => setForm(profile), [profile]);
+
+  async function parseFreeText() {
+    setParsing(true);
+    setParseError(null);
+    const response = await fetch("/api/agent/profile/parse", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: freeText }),
+    }).catch(() => null);
+    const data = response ? await response.json().catch(() => null) : null;
+    if (!response?.ok || !data?.draft) {
+      setParseError(data?.error?.message ?? "No se pudo procesar el texto.");
+    } else {
+      const draft = Object.fromEntries(
+        Object.entries(data.draft).filter(([, value]) => value !== null)
+      ) as Partial<Profile>;
+      setForm((current) => ({ ...current, ...draft }));
+    }
+    setParsing(false);
+  }
 
   return (
     <Card>
@@ -249,6 +353,29 @@ function ProfileSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-2 rounded-md border border-brand-soft bg-brand-tint p-3">
+          <Label htmlFor="agent-free-text">Completar desde texto libre</Label>
+          <Textarea
+            id="agent-free-text"
+            rows={5}
+            placeholder="Pega aquí información del negocio, tono, políticas, horarios y cuándo debe intervenir una persona…"
+            value={freeText}
+            onChange={(e) => setFreeText(e.target.value)}
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void parseFreeText()}
+            disabled={parsing || freeText.trim().length < 20}
+          >
+            <Sparkles className="h-4 w-4" />
+            {parsing ? "Procesando…" : "Completar con IA gratis"}
+          </Button>
+          {parseError && <p className="text-xs text-destructive">{parseError}</p>}
+          <p className="text-xs text-muted-foreground">
+            Completa el borrador; revísalo antes de guardar.
+          </p>
+        </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-name">Nombre del agente</Label>
           <Input

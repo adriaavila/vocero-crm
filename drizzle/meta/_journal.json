@@ -43,6 +43,13 @@
       "when": 1786478477767,
       "tag": "0005_lethal_celestials",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786485292293,
+      "tag": "0006_tiny_gladiator",
+      "breakpoints": true
     }
   ]
 }

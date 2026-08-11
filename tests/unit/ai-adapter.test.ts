@@ -112,4 +112,21 @@ describe("chatJson (reintentos y errores tipados)", () => {
     if (!result.ok) expect(result.error).toBe("not_configured");
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("permite usar explícitamente el router gratuito", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      providerResponse('{"action":"reply","text":"ok"}')
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(
+      schema,
+      [{ role: "user", content: "hola" }],
+      { model: "openrouter/free" }
+    );
+
+    expect(result.ok).toBe(true);
+    const requestBody = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(requestBody.model).toBe("openrouter/free");
+  });
 });

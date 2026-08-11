@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
+import { agentProfilePutSchema, compatibleActivation } from "@/lib/agent-profile-compat";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAgentConfigured } from "@/lib/env";
@@ -15,6 +15,7 @@ export const GET = withAuth(async (session) => {
     .limit(1);
   const p = rows[0];
   if (!p) return apiError(404, "not_found", "Perfil del agente no encontrado");
+  const activation = compatibleActivation(p.activationMessages);
   return Response.json({
     profile: {
       enabled: p.enabled,
@@ -24,31 +25,19 @@ export const GET = withAuth(async (session) => {
       escalationRules: p.escalationRules,
       greeting: p.greeting,
       activationEnabled: p.activationEnabled,
-      activationMessages: (p.activationMessages as unknown[])
-        .map((item) =>
-          typeof item === "string"
-            ? item
-            : String((item as { message?: unknown })?.message ?? "")
-        )
-        .filter(Boolean),
+      activationMessages: activation.activationMessages,
+      allowlistEnabled: p.allowlistEnabled,
+      allowedWaIds: p.allowedWaIds,
+      // Compatibility for tabs that loaded the previous deployment.
+      presetOnly: p.activationEnabled,
+      presetReplies: activation.presetReplies,
     },
     aiConfigured: isAgentConfigured(),
   });
 });
 
-const putSchema = z.object({
-  enabled: z.boolean().optional(),
-  name: z.string().trim().min(1).max(60).optional(),
-  tone: z.string().max(500).nullable().optional(),
-  instructions: z.string().max(8000).nullable().optional(),
-  escalationRules: z.string().max(4000).nullable().optional(),
-  greeting: z.string().max(1000).nullable().optional(),
-  activationEnabled: z.boolean().optional(),
-  activationMessages: z.array(z.string().trim().min(1).max(500)).max(50).optional(),
-});
-
 export const PUT = withAuth(async (session, req: Request) => {
-  const body = await parseBody(req, putSchema);
+  const body = await parseBody(req, agentProfilePutSchema);
   if (!body.ok) return body.response;
 
   const db = getDb();

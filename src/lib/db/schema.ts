@@ -416,6 +416,11 @@ export const agentProfile = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    allowlistEnabled: boolean("allowlist_enabled").notNull().default(false),
+    allowedWaIds: jsonb("allowed_wa_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
