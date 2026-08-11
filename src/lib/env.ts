@@ -32,6 +32,9 @@ const envSchema = z.object({
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
   // Sin ella, toda esa superficie responde 401.
   BOT_API_KEY: z.string().optional(),
+  WAHA_API_URL: z.string().url().optional(),
+  WAHA_API_KEY: z.string().min(16).optional(),
+  WAHA_SESSION: z.string().min(1).default("vocero-test"),
   GOOGLE_CALENDAR_ID: z.string().optional(),
   GOOGLE_SERVICE_ACCOUNT_JSON_B64: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
@@ -100,4 +103,8 @@ export function isAiConfigured(): boolean {
 /** true si responde el agente interno o un cerebro externo autenticado. */
 export function isAgentConfigured(): boolean {
   return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+}
+
+export function isWahaConfigured(): boolean {
+  return Boolean(process.env.WAHA_API_URL?.trim() && process.env.WAHA_API_KEY?.trim());
 }

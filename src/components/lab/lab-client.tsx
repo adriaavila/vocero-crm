@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   FlaskConical,
+  MessageCircle,
   Play,
   Sparkles,
   TrendingDown,
@@ -47,6 +48,13 @@ type Case = {
   transcript: { role: "cliente" | "agente"; text: string }[];
 };
 
+type LiveTest = {
+  configured: boolean;
+  status?: string;
+  phone?: string | null;
+  name?: string | null;
+};
+
 const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
   alucinacion: "Alucinación",
   fuera_de_kb: "Fuera del conocimiento",
@@ -62,6 +70,9 @@ export function LabClient() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveTest | null>(null);
+  const [liveBusy, setLiveBusy] = useState(false);
+  const [liveResult, setLiveResult] = useState<string | null>(null);
 
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
@@ -78,6 +89,11 @@ export function LabClient() {
     setDetail((await res.json()) as { run: Run; cases: Case[] });
   }, []);
 
+  const refetchLive = useCallback(async () => {
+    const res = await fetch("/api/lab/live", { cache: "no-store" }).catch(() => null);
+    if (res?.ok) setLive((await res.json()) as LiveTest);
+  }, []);
+
   useEffect(() => {
     void refetchRuns();
   }, [refetchRuns]);
@@ -85,6 +101,12 @@ export function LabClient() {
   useEffect(() => {
     if (selectedRunId) void refetchDetail(selectedRunId);
   }, [selectedRunId, refetchDetail]);
+
+  useEffect(() => {
+    void refetchLive();
+    const timer = window.setInterval(() => void refetchLive(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [refetchLive]);
 
   useEvents({
     onLabRun: (data) => {
@@ -114,6 +136,28 @@ export function LabClient() {
     setSelectedRunId(data.runId);
     setProgress({ done: 0, total: 6 });
     void refetchRuns();
+  }
+
+  async function liveAction(action: "start" | "run") {
+    setLiveBusy(true);
+    setLiveResult(null);
+    setError(null);
+    const res = await fetch("/api/lab/live", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    }).catch(() => null);
+    setLiveBusy(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(data?.error?.message ?? "No se pudo ejecutar la prueba real");
+      return;
+    }
+    const data = (await res.json()) as { reply?: string };
+    if (data.reply) setLiveResult(data.reply);
+    await refetchLive();
   }
 
   if (!aiConfigured) {
@@ -146,6 +190,56 @@ export function LabClient() {
         disabled={false}
       />
       {error && <p className="px-6 pt-3 text-sm text-destructive">{error}</p>}
+
+      {live?.configured && (
+        <Card className="mx-6 mt-4">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm">
+              <MessageCircle className="h-4 w-4 text-primary" /> Prueba real con tu WhatsApp
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            {live.status?.startsWith("SCAN_QR") && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/lab/live?qr=${Date.now()}`}
+                alt="QR para vincular WhatsApp personal"
+                className="h-44 w-44 rounded-md border bg-white p-2"
+              />
+            )}
+            <div className="space-y-2">
+              <p className="text-sm">
+                Estado: <Badge variant={live.status === "WORKING" ? "success" : "warning"}>{live.status}</Badge>
+              </p>
+              {live.status === "WORKING" ? (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    {live.name || "WhatsApp personal"}{live.phone ? ` · +${live.phone}` : ""}
+                  </p>
+                  <Button onClick={() => void liveAction("run")} disabled={liveBusy}>
+                    <Play className="h-4 w-4" />
+                    {liveBusy ? "Esperando respuesta…" : "Ejecutar prueba real"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="max-w-md text-xs text-muted-foreground">
+                    En tu teléfono abre WhatsApp → Dispositivos vinculados y escanea el QR.
+                  </p>
+                  <Button onClick={() => void liveAction("start")} disabled={liveBusy}>
+                    {liveBusy ? "Iniciando…" : "Iniciar conexión"}
+                  </Button>
+                </>
+              )}
+              {liveResult && (
+                <p className="max-w-xl rounded-md border bg-muted/40 p-3 text-sm">
+                  <span className="font-medium">Respuesta del agente:</span> {liveResult}
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {running && progress && (
         <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
