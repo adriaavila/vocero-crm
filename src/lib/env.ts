@@ -100,6 +100,11 @@ export function isAiConfigured(): boolean {
   return typeof token === "string" && token.trim().length > 0;
 }
 
+/** El bot externo tiene prioridad para no responder dos veces al mismo mensaje. */
+export function shouldRunInternalAgent(): boolean {
+  return isAiConfigured() && (process.env.BOT_API_KEY?.trim().length ?? 0) < 16;
+}
+
 /** true si responde el agente interno o un cerebro externo autenticado. */
 export function isAgentConfigured(): boolean {
   return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;

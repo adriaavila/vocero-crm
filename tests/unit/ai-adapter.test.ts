@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { chatJson, extractJson } from "@/lib/ai";
-import { isAgentConfigured } from "@/lib/env";
+import { isAgentConfigured, shouldRunInternalAgent } from "@/lib/env";
 
 describe("isAgentConfigured", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -11,6 +11,13 @@ describe("isAgentConfigured", () => {
     vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
 
     expect(isAgentConfigured()).toBe(true);
+  });
+
+  it("da prioridad al cerebro externo si ambos están configurados", () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "token-openrouter");
+    vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+
+    expect(shouldRunInternalAgent()).toBe(false);
   });
 });
 
