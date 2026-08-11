@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Copy,
   Info,
+  Smartphone,
   ShieldCheck,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -88,8 +89,104 @@ export function WhatsappWizard() {
 
       <ConnectForm existing={connection} onSaved={() => void refetch()} />
 
+      <LabPhoneSetup />
+
       {webhook && <WebhookCard webhook={webhook} />}
     </div>
+  );
+}
+
+type LabPhone = {
+  configured: boolean;
+  status?: string;
+  phone?: string | null;
+  name?: string | null;
+};
+
+function LabPhoneSetup() {
+  const [phone, setPhone] = useState<LabPhone | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    const res = await fetch("/api/lab/live", { cache: "no-store" }).catch(() => null);
+    if (res?.ok) setPhone((await res.json()) as LabPhone);
+  }, []);
+
+  useEffect(() => {
+    void refetch();
+    const timer = window.setInterval(() => void refetch(), 5_000);
+    return () => window.clearInterval(timer);
+  }, [refetch]);
+
+  async function start() {
+    setStarting(true);
+    setError(null);
+    const res = await fetch("/api/lab/live", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start" }),
+    }).catch(() => null);
+    setStarting(false);
+    if (!res?.ok) {
+      const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      setError(data?.error?.message ?? "No se pudo iniciar la vinculación");
+      return;
+    }
+    await refetch();
+  }
+
+  if (phone && !phone.configured) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Smartphone className="h-4 w-4 text-primary" /> Teléfono de prueba del Laboratorio
+        </CardTitle>
+        <CardDescription>
+          Vincula un WhatsApp personal para probar el agente de extremo a extremo. No reemplaza el número empresarial conectado arriba.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {!phone ? (
+          <p className="text-sm text-muted-foreground">Comprobando conexión…</p>
+        ) : phone.status === "WORKING" ? (
+          <div className="flex items-center gap-3 rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3">
+            <CheckCircle2 className="h-4 w-4 text-success" />
+            <div className="flex-1 text-sm">
+              <p className="font-medium text-[#3f6b52]">{phone.name || "WhatsApp personal"}</p>
+              {phone.phone && <p className="text-[#3f6b52]/80">+{phone.phone}</p>}
+            </div>
+            <Badge variant="success">Vinculado</Badge>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            {phone.status?.startsWith("SCAN_QR") && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src="/api/lab/live?qr=1"
+                alt="QR para vincular el teléfono de prueba"
+                className="h-44 w-44 rounded-md border bg-white p-2"
+              />
+            )}
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {phone.status?.startsWith("SCAN_QR")
+                  ? "En el teléfono abre WhatsApp → Dispositivos vinculados y escanea este QR."
+                  : "Inicia la conexión para generar el QR de emparejamiento."}
+              </p>
+              {!phone.status?.startsWith("SCAN_QR") && (
+                <Button onClick={() => void start()} disabled={starting}>
+                  {starting ? "Iniciando…" : "Vincular teléfono de prueba"}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
