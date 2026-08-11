@@ -36,6 +36,13 @@
       "when": 1786474866133,
       "tag": "0004_mushy_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786478477767,
+      "tag": "0005_lethal_celestials",
+      "breakpoints": true
     }
   ]
 }

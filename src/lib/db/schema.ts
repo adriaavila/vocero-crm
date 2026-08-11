@@ -189,7 +189,7 @@ export const conversation = pgTable(
       .references(() => contact.id, { onDelete: "cascade" }),
     /** Conversación del Laboratorio: jamás toca la API de WhatsApp. */
     isTest: boolean("is_test").notNull().default(false),
-    aiEnabled: boolean("ai_enabled").notNull().default(true),
+    aiEnabled: boolean("ai_enabled").notNull().default(false),
     handoffAt: timestamp("handoff_at"),
     handoffReason: text("handoff_reason", {
       // 008: manual_reply = el dueño respondió desde la app del teléfono.

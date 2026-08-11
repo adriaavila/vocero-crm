@@ -1,0 +1,1 @@
+ALTER TABLE "conversation" ALTER COLUMN "ai_enabled" SET DEFAULT false;
