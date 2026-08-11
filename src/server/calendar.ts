@@ -20,6 +20,7 @@ const HORIZON_DAYS = 14;
 const CALENDAR_SCOPES = [
   "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/calendar.events.freebusy",
+  "https://www.googleapis.com/auth/calendar.calendars.readonly",
 ];
 
 export type CalendarSlot = {
