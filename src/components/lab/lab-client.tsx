@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -64,7 +65,8 @@ const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
 };
 
 export function LabClient() {
-  const [activeTab, setActiveTab] = useState<"simulation" | "live">("simulation");
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<"simulation" | "live">(searchParams.get("mode") === "live" ? "live" : "simulation");
   const [runs, setRuns] = useState<Run[]>([]);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -75,6 +77,7 @@ export function LabClient() {
   const [live, setLive] = useState<LiveTest | null>(null);
   const [liveBusy, setLiveBusy] = useState(false);
   const [liveResult, setLiveResult] = useState<string | null>(null);
+  const [knowledgeChanged, setKnowledgeChanged] = useState(false);
 
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
@@ -136,6 +139,7 @@ export function LabClient() {
       return;
     }
     const data = (await res.json()) as { runId: string };
+    setKnowledgeChanged(false);
     setSelectedRunId(data.runId);
     setProgress({ done: 0, total: 6 });
     void refetchRuns();
@@ -175,22 +179,22 @@ export function LabClient() {
         onLaunch={() => void launch()}
         disabled={!aiConfigured}
       />
-      {error && <p className="px-6 pt-3 text-sm text-destructive">{error}</p>}
+      {error && <p className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
 
       {activeTab === "simulation" ? (
         <div role="tabpanel" id="simulation-panel" aria-labelledby="simulation-tab">
           {!aiConfigured ? (
             <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
               <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-              <p className="font-medium">Configura tu proveedor de IA para usar el Laboratorio</p>
+              <p className="font-medium">La conexión de IA aún no está disponible</p>
               <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                Agrega <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la instancia y vuelve aquí.
+                Contacta a quien administra tu instancia y vuelve aquí cuando el servicio esté habilitado.
               </p>
             </div>
           ) : (
             <>
               {running && progress && (
-                <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
+                <div className="mx-4 mt-4 rounded-lg border bg-card p-4 sm:mx-6">
                   <div className="mb-2 flex items-center justify-between text-sm">
                     <span className="font-medium">Evaluando personas…</span>
                     <span className="text-muted-foreground">{progress.done} / {progress.total}</span>
@@ -204,10 +208,15 @@ export function LabClient() {
                 </div>
               )}
 
-              <div className="grid gap-6 p-6 lg:grid-cols-[280px_1fr]">
+              <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[280px_1fr] lg:gap-6">
                 <HistoryList runs={runs} selectedRunId={selectedRunId} onSelect={setSelectedRunId} />
                 {detail ? (
-                  <Report detail={detail} onApplied={() => void refetchDetail(detail.run.id)} />
+                  <Report
+                    detail={detail}
+                    stale={knowledgeChanged}
+                    onRetest={() => void launch()}
+                    onApplied={() => { setKnowledgeChanged(true); void refetchDetail(detail.run.id); }}
+                  />
                 ) : (
                   <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
                     {runs.length === 0
@@ -220,7 +229,7 @@ export function LabClient() {
           )}
         </div>
       ) : (
-        <div role="tabpanel" id="live-panel" aria-labelledby="live-tab" className="max-w-3xl space-y-4 p-6">
+        <div role="tabpanel" id="live-panel" aria-labelledby="live-tab" className="max-w-3xl space-y-4 p-4 sm:p-6">
           <div className="flex items-start gap-3 rounded-lg border border-[#ece2cf] bg-[#faf7f0] p-4 text-sm text-[#8a6d3b]">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <p>Esta prueba sí envía un mensaje real desde tu teléfono de prueba al WhatsApp empresarial.</p>
@@ -290,8 +299,8 @@ function Header({
   disabled: boolean;
 }) {
   return (
-    <header className="border-b px-6 pt-4">
-      <div className="flex items-start justify-between">
+    <header className="border-b px-4 pt-3 sm:px-6 sm:pt-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="flex items-center gap-2 font-semibold">
             <FlaskConical className="h-4 w-4 text-primary" /> Laboratorio
@@ -303,9 +312,9 @@ function Header({
           </p>
         </div>
         {activeTab === "simulation" && (
-          <Button onClick={onLaunch} disabled={disabled || running || launching}>
+          <Button className="min-h-11 w-full sm:min-h-0 sm:w-auto" onClick={onLaunch} disabled={disabled || running || launching}>
             <Play className="h-4 w-4" />
-            {running ? "Corrida en curso…" : "Correr evaluación"}
+            {running ? "Prueba en curso…" : "Probar mi agente"}
           </Button>
         )}
       </div>
@@ -342,18 +351,19 @@ function HistoryList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         Historial
       </p>
       {runs.length === 0 && (
         <p className="text-xs text-muted-foreground">Sin corridas todavía.</p>
       )}
+      <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 lg:block lg:space-y-2 lg:overflow-visible lg:pb-0">
       {runs.map((run) => (
         <button
           key={run.id}
           onClick={() => onSelect(run.id)}
-          className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/50 ${
+          className={`w-[72vw] max-w-72 shrink-0 snap-start rounded-lg border p-3 text-left transition-colors hover:bg-accent/50 lg:w-full lg:max-w-none ${
             selectedRunId === run.id ? "border-primary/50 bg-accent/60" : "bg-card"
           }`}
         >
@@ -385,6 +395,7 @@ function HistoryList({
           </p>
         </button>
       ))}
+      </div>
     </div>
   );
 }
@@ -394,19 +405,29 @@ function ScoreBadge({ run }: { run: Run }) {
   if (run.status === "failed") return <Badge variant="destructive">Fallida</Badge>;
   const score = run.score ?? 0;
   const variant = score >= 80 ? "success" : score >= 50 ? "warning" : "destructive";
-  return <Badge variant={variant}>Score {score}</Badge>;
+  return <Badge variant={variant}>{score}/100 · {score >= 80 ? "Listo" : "Necesita atención"}</Badge>;
 }
 
 function Report({
   detail,
   onApplied,
+  stale,
+  onRetest,
 }: {
   detail: { run: Run; cases: Case[] };
   onApplied: () => void;
+  stale: boolean;
+  onRetest: () => void;
 }) {
   const { run, cases } = detail;
   return (
     <div className="space-y-4">
+      {stale && (
+        <div className="flex flex-col gap-3 rounded-lg border border-[#ece2cf] bg-[#faf7f0] p-4 text-sm text-[#8a6d3b] sm:flex-row sm:items-center sm:justify-between">
+          <span>La evaluación quedó desactualizada porque enseñaste una respuesta nueva.</span>
+          <Button variant="outline" size="sm" onClick={onRetest}>Volver a probar</Button>
+        </div>
+      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -529,9 +550,11 @@ function HallazgoCard({
   const [respuesta, setRespuesta] = useState(hallazgo.sugerencia?.respuesta ?? "");
   const [applied, setApplied] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
 
   async function apply() {
     setSaving(true);
+    setApplyError(null);
     const res = await fetch("/api/lab/suggestions/apply", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -542,6 +565,8 @@ function HallazgoCard({
       setApplied(true);
       setEditing(false);
       onApplied();
+    } else {
+      setApplyError("No se pudo enseñar esta respuesta. Inténtalo otra vez.");
     }
   }
 
@@ -551,11 +576,11 @@ function HallazgoCard({
         <Badge variant="warning">{TIPO_LABELS[hallazgo.tipo]}</Badge>
         {hallazgo.sugerencia && !applied && !editing && (
           <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-            Agregar al conocimiento
+            Enseñar esta respuesta
           </Button>
         )}
         {applied && (
-          <span className="text-xs text-success">Agregado al conocimiento ✓</span>
+          <span className="text-xs text-success">Añadido a Información del negocio ✓</span>
         )}
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
@@ -587,7 +612,7 @@ function HallazgoCard({
               onClick={() => void apply()}
               disabled={saving || !pregunta.trim() || !respuesta.trim()}
             >
-              {saving ? "Guardando…" : "Guardar en el KB"}
+              {saving ? "Guardando…" : "Guardar en Información del negocio"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
               Cancelar
@@ -595,6 +620,7 @@ function HallazgoCard({
           </div>
         </div>
       )}
+      {applyError && <p className="mt-2 text-xs text-destructive">{applyError}</p>}
     </div>
   );
 }

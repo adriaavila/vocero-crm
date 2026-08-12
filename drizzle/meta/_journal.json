@@ -50,6 +50,13 @@
       "when": 1786485292293,
       "tag": "0006_tiny_gladiator",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786555233354,
+      "tag": "0007_melodic_switch",
+      "breakpoints": true
     }
   ]
 }

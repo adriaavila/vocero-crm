@@ -1,10 +1,10 @@
 import { randomBytes } from "node:crypto";
-import { withAuth } from "@/lib/api";
+import { withOwner } from "@/lib/api";
 import { googleOAuthUrl } from "@/server/calendar";
 
 export const dynamic = "force-dynamic";
 
-export const POST = withAuth(async () => {
+export const POST = withOwner(async () => {
   const state = randomBytes(24).toString("base64url");
   return Response.json(
     { url: googleOAuthUrl(state) },

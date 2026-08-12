@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { getAuth } from "@/lib/auth";
 import { resolveMembership } from "@/server/auth/on-signup";
 
@@ -34,6 +35,12 @@ export async function requireSession(): Promise<SessionContext> {
     organizationId: membership.organizationId,
     role: membership.role,
   };
+}
+
+export async function requireOwnerSession(): Promise<SessionContext> {
+  const session = await requireSession();
+  if (session.role !== "owner") redirect("/overview");
+  return session;
 }
 
 /** Igual que requireSession pero devuelve null en vez de lanzar. */

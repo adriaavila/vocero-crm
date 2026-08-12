@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, gte } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isWahaConfigured } from "@/lib/env";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({ action: z.enum(["start", "run"]) });
 
-export const GET = withAuth(async (_session, req: Request) => {
+export const GET = withOwner(async (_session, req: Request) => {
   if (!isWahaConfigured()) return Response.json({ configured: false });
   try {
     if (new URL(req.url).searchParams.has("qr")) {
@@ -38,7 +38,7 @@ export const GET = withAuth(async (_session, req: Request) => {
   }
 });
 
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = withOwner(async (session, req: Request) => {
   if (!isWahaConfigured()) {
     return apiError(409, "waha_not_configured", "WAHA no está configurado");
   }
@@ -75,16 +75,34 @@ export const POST = withAuth(async (session, req: Request) => {
     }
 
     const startedAt = new Date();
-    await sendWahaText(credentials.displayPhoneNumber, trigger);
-    const result = await waitForReply(session.organizationId, trigger, startedAt);
-    if (!result) {
-      return apiError(504, "live_test_timeout", "El mensaje salió, pero el agente no respondió en 90 segundos");
+    try {
+      await sendWahaText(credentials.displayPhoneNumber, trigger);
+      const result = await waitForReply(session.organizationId, trigger, startedAt);
+      const elapsedMs = Date.now() - startedAt.getTime();
+      await recordLiveTest(session.organizationId, Boolean(result), elapsedMs);
+      if (!result) {
+        return apiError(504, "live_test_timeout", "El mensaje salió, pero el agente no respondió en 90 segundos");
+      }
+      return Response.json({ trigger, reply: result.text, elapsedMs });
+    } catch (error) {
+      await recordLiveTest(session.organizationId, false, Date.now() - startedAt.getTime());
+      throw error;
     }
-    return Response.json({ trigger, reply: result.text, elapsedMs: Date.now() - startedAt.getTime() });
   } catch (error) {
     return wahaError(error);
   }
 });
+
+async function recordLiveTest(organizationId: string, passed: boolean, elapsedMs: number) {
+  await getDb()
+    .update(schema.agentProfile)
+    .set({
+      lastLiveTestAt: new Date(),
+      lastLiveTestPassed: passed,
+      lastLiveTestElapsedMs: elapsedMs,
+    })
+    .where(scoped(schema.agentProfile.organizationId, organizationId));
+}
 
 async function waitForReply(organizationId: string, trigger: string, startedAt: Date) {
   const db = getDb();

@@ -421,6 +421,9 @@ export const agentProfile = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    lastLiveTestAt: timestamp("last_live_test_at"),
+    lastLiveTestPassed: boolean("last_live_test_passed"),
+    lastLiveTestElapsedMs: integer("last_live_test_elapsed_ms"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

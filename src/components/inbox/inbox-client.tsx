@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { PanelRight } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, PanelRight } from "lucide-react";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
@@ -12,7 +12,8 @@ import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
 
-export function InboxClient() {
+export function InboxClient({ owner }: { owner: boolean }) {
+  const router = useRouter();
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
@@ -24,7 +25,7 @@ export function InboxClient() {
   const [detailRev, setDetailRev] = useState(0);
 
   useEffect(() => {
-    setPanelOpen(localStorage.getItem("vocero.panelOpen") !== "false");
+    setPanelOpen(window.innerWidth >= 1280 && localStorage.getItem("vocero.panelOpen") !== "false");
   }, []);
   const togglePanel = useCallback((open: boolean) => {
     setPanelOpen(open);
@@ -58,7 +59,9 @@ export function InboxClient() {
   const select = useCallback(
     (id: string) => {
       setSelectedId(id);
+      if (window.innerWidth < 1280) setPanelOpen(false);
       setMessages([]);
+      router.push(`/inbox?conversation=${id}`, { scroll: false });
       void refetchMessages(id);
       void fetch(`/api/conversations/${id}`, {
         method: "PATCH",
@@ -66,17 +69,28 @@ export function InboxClient() {
         body: JSON.stringify({ markRead: true }),
       });
     },
-    [refetchMessages]
+    [refetchMessages, router]
   );
 
   // Enlace directo desde Contactos/Pipeline: /inbox?contact=<id>
   const searchParams = useSearchParams();
   const contactParam = searchParams.get("contact");
+  const conversationParam = searchParams.get("conversation");
   useEffect(() => {
+    if (!conversationParam && !contactParam && selectedIdRef.current) {
+      setSelectedId(null);
+      setMessages([]);
+      setPanelOpen(false);
+      return;
+    }
+    if (conversationParam && conversations?.some((conversation) => conversation.id === conversationParam) && selectedIdRef.current !== conversationParam) {
+      select(conversationParam);
+      return;
+    }
     if (!contactParam || selectedIdRef.current) return;
     const match = conversations?.find((c) => c.contact.id === contactParam);
     if (match) select(match.id);
-  }, [contactParam, conversations, select]);
+  }, [contactParam, conversationParam, conversations, select]);
 
   useEvents({
     onMessageNew: ({ conversationId, message }) => {
@@ -163,21 +177,29 @@ export function InboxClient() {
   );
 
   return (
-    <div className="flex h-full">
-      <section className="w-[360px] shrink-0 overflow-hidden border-r">
+    <div className="flex h-full bg-background">
+      <section className={cn("w-full shrink-0 overflow-hidden border-r md:w-[320px] xl:w-[360px]", selected && "hidden md:block")}>
         <ConversationList
           conversations={conversations}
           selectedId={selectedId}
           onSelect={select}
           onSeeded={() => void refetchConversations()}
+          owner={owner}
         />
       </section>
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className={cn("min-w-0 flex-1 flex-col", selected ? "flex" : "hidden md:flex")}>
         {selected ? (
           <>
-            <header className="flex items-center justify-between border-b bg-background px-4 py-2.5">
-              <div className="flex items-center gap-3">
+              <header className="flex items-center justify-between border-b bg-background px-4 py-2.5">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => { setSelectedId(null); router.push("/inbox", { scroll: false }); }}
+                    aria-label="Volver a conversaciones"
+                    className="rounded-md p-2 text-text-3 hover:bg-accent md:hidden"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
                 <ContactAvatar
                   name={selected.contact.name}
                   seed={selected.contact.id}
@@ -230,12 +252,12 @@ export function InboxClient() {
 
       <section
         className={cn(
-          "shrink-0 overflow-hidden border-l transition-[width] duration-[220ms]",
-          panelOpen && selected ? "w-[320px]" : "w-0 border-l-0"
+          "fixed inset-y-0 right-0 z-50 shrink-0 overflow-hidden border-l bg-background shadow-pop transition-transform duration-200 xl:static xl:z-auto xl:shadow-none xl:transition-[width]",
+          panelOpen && selected ? "w-full translate-x-0 sm:w-[360px] xl:w-[320px]" : "w-full translate-x-full border-l-0 sm:w-[360px] xl:w-0 xl:translate-x-0"
         )}
       >
         {selected && (
-          <div className="h-full w-[320px]">
+          <div className="h-full w-full xl:w-[320px]">
             <ContactPanel
               conversation={selected}
               refreshKey={detailRev}

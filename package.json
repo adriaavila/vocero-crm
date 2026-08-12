@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "node --env-file=.env scripts/e2e-selftest.mjs",
+    "test:e2e": "node --env-file=.env scripts/e2e-selftest.mjs && node --env-file=.env scripts/e2e-service-ui.mjs",
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

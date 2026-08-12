@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/api";
+import { withOwner } from "@/lib/api";
 import { getEnv } from "@/lib/env";
 import {
   disconnectGoogleOAuth,
@@ -7,7 +7,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session) => {
+export const GET = withOwner(async (session) => {
   const status = await getCalendarStatus(session.organizationId);
   const env = getEnv();
   return Response.json({
@@ -18,7 +18,7 @@ export const GET = withAuth(async (session) => {
   });
 });
 
-export const DELETE = withAuth(async (session) => {
+export const DELETE = withOwner(async (session) => {
   await disconnectGoogleOAuth(session.organizationId);
   return Response.json({ ok: true });
 });

@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { Check, ChevronRight, Sparkles, UserRound } from "lucide-react";
 import type { ConversationDto, StageDto } from "@/lib/types";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast-provider";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -51,6 +51,7 @@ export function ContactPanel({
   // cuando el agente aún no se ha configurado/encendido.
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [aiConfigured, setAiConfigured] = useState(false);
+  const notify = useToast();
 
   const contactId = conversation.contact.id;
 
@@ -65,7 +66,7 @@ export function ContactPanel({
     const [detail, stagesRes, agentRes] = await Promise.all([
       fetch(`/api/contacts/${contactId}`).then((r) => (r.ok ? r.json() : null)),
       fetch("/api/pipeline/stages").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/agent/status").then((r) => (r.ok ? r.json() : null)),
     ]).catch(() => [null, null, null]);
     if (detail) {
       setNotes(detail.contact?.notes ?? "");
@@ -75,7 +76,7 @@ export function ContactPanel({
       setBooking(detail.booking ?? null);
     }
     if (stagesRes) setStages(stagesRes.stages);
-    setAgentEnabled(Boolean(agentRes?.profile?.enabled));
+    setAgentEnabled(Boolean(agentRes?.enabled));
     setAiConfigured(Boolean(agentRes?.aiConfigured));
     setNotesLoaded(true);
   }, [contactId]);
@@ -85,7 +86,7 @@ export function ContactPanel({
   const refreshLive = useCallback(async () => {
     const [detail, agentRes] = await Promise.all([
       fetch(`/api/contacts/${contactId}`).then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
+      fetch("/api/agent/status").then((r) => (r.ok ? r.json() : null)),
     ]).catch(() => [null, null]);
     if (detail) {
       setCurrentStageId(detail.stage?.id ?? null);
@@ -94,7 +95,7 @@ export function ContactPanel({
       setBooking(detail.booking ?? null);
     }
     if (agentRes) {
-      setAgentEnabled(Boolean(agentRes.profile?.enabled));
+      setAgentEnabled(Boolean(agentRes.enabled));
       setAiConfigured(Boolean(agentRes.aiConfigured));
     }
   }, [contactId]);
@@ -111,23 +112,35 @@ export function ContactPanel({
 
   async function moveToStage(stageId: string) {
     if (!leadId || stageId === currentStageId) return;
+    const previous = currentStageId;
     setCurrentStageId(stageId); // optimista
-    await fetch(`/api/pipeline/leads/${leadId}`, {
+    const response = await fetch(`/api/pipeline/leads/${leadId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ stageId, position: 0 }),
     }).catch(() => null);
+    if (!response?.ok) {
+      setCurrentStageId(previous);
+      notify("No se pudo cambiar la etapa. Se restauró el estado anterior.", "error");
+      return;
+    }
+    notify("Etapa actualizada.");
     void refreshLive();
   }
 
   async function saveNotes() {
     setSavingNotes(true);
-    await fetch(`/api/contacts/${contactId}`, {
+    const response = await fetch(`/api/contacts/${contactId}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ notes }),
     }).catch(() => null);
     setSavingNotes(false);
+    if (!response?.ok) {
+      notify("No se pudieron guardar las notas. Inténtalo otra vez.", "error");
+      return;
+    }
+    notify("Notas guardadas.");
   }
 
   const currentIndex = stages.findIndex((s) => s.id === currentStageId);
@@ -231,16 +244,8 @@ export function ContactPanel({
                 />
                 <p className="text-[11px] leading-relaxed text-[#8a6d3b]">
                   {aiConfigured
-                    ? "El agente de Vocero no responde por su cuenta. Configura lo básico y enciéndelo (o conecta tu propio bot por la API)."
-                    : "Falta la clave de IA de la instancia (OPENROUTER_API_TOKEN) para que el agente responda, o conecta tu propio bot por la API."}
-                  {aiConfigured && (
-                    <Link
-                      href="/agent"
-                      className="ml-1 whitespace-nowrap font-medium text-brand-text underline underline-offset-2 hover:text-brand"
-                    >
-                      Configurar agente →
-                    </Link>
-                  )}
+                    ? "El agente todavía no está encendido. Contacta a quien administra tu instancia."
+                    : "La conexión de IA aún no está disponible. Contacta a quien administra tu instancia."}
                 </p>
               </div>
             )}

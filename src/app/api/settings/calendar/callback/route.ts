@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { apiError, withAuth } from "@/lib/api";
+import { apiError, withOwner } from "@/lib/api";
 import {
   createGoogleOAuthClient,
   saveGoogleOAuthConnection,
@@ -16,7 +16,7 @@ function cookie(req: Request, name: string): string | null {
   return null;
 }
 
-export const GET = withAuth(async (session, req: Request) => {
+export const GET = withOwner(async (session, req: Request) => {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");

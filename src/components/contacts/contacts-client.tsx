@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast-provider";
 
 export function ContactsClient() {
   const [contacts, setContacts] = useState<ContactDto[]>([]);
@@ -19,6 +20,7 @@ export function ContactsClient() {
   const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState<ContactDto | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const notify = useToast();
 
   // Mismo rescate que en la Bandeja: lo tecleado antes de que hidrate el JS
   // se perdía en silencio. Ver conversation-list.tsx.
@@ -53,19 +55,25 @@ export function ContactsClient() {
   }, [refetch]);
 
   async function patch(id: string, body: Record<string, unknown>) {
-    await fetch(`/api/contacts/${id}`, {
+    const response = await fetch(`/api/contacts/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
-    void refetch();
+    if (!response?.ok) {
+      notify("No se pudo actualizar el contacto. Inténtalo otra vez.", "error");
+      return false;
+    }
+    notify("Contacto actualizado.");
+    await refetch();
+    return true;
   }
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between gap-4 border-b px-6 py-4">
+      <header className="flex flex-col gap-3 border-b px-4 py-3 sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
         <h2 className="font-semibold">Contactos</h2>
-        <div className="flex items-center gap-3">
+        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-nowrap lg:gap-3">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -80,7 +88,7 @@ export function ContactsClient() {
               value={stage}
               onChange={(e) => setStage(e.target.value)}
               aria-label="Filtrar por etapa del embudo"
-              className="h-9 rounded-md border border-input bg-card px-2 text-sm"
+              className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
             >
               <option value="all">Toda etapa</option>
               {stages.map((s) => (
@@ -90,7 +98,7 @@ export function ContactsClient() {
               ))}
             </select>
           )}
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               ref={inputRef}
@@ -98,13 +106,13 @@ export function ContactsClient() {
               aria-label="Buscar contacto"
               defaultValue=""
               onChange={(e) => setQuery(e.target.value)}
-              className="w-72 pl-8"
+              className="h-11 w-full pl-8 sm:h-9 sm:w-72"
             />
           </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto p-3 sm:p-6">
         {contacts.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             {query.trim() || stage !== "all" ? (
@@ -132,7 +140,7 @@ export function ContactsClient() {
             {contacts.map((c) => (
               <li
                 key={c.id}
-                className="flex items-center gap-4 rounded-lg border bg-card px-4 py-3"
+                className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-4"
               >
                 <ContactAvatar name={c.name} seed={c.id} />
                 <div className="min-w-0 flex-1">
@@ -152,7 +160,7 @@ export function ContactsClient() {
                     {c.notes ? ` · ${c.notes.slice(0, 60)}` : ""}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="ml-11 flex w-full shrink-0 items-center gap-1.5 sm:ml-0 sm:w-auto">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -169,7 +177,11 @@ export function ContactsClient() {
                     variant="ghost"
                     size="icon"
                     aria-label={c.archivedAt ? "Desarchivar" : "Archivar"}
-                    onClick={() => void patch(c.id, { archived: !c.archivedAt })}
+                    onClick={() => {
+                      const previous = contacts;
+                      setContacts((current) => current.map((item) => item.id === c.id ? { ...item, archivedAt: c.archivedAt ? null : new Date().toISOString() } : item));
+                      void patch(c.id, { archived: !c.archivedAt }).then((ok) => { if (!ok) setContacts(previous); });
+                    }}
                   >
                     {c.archivedAt ? (
                       <ArchiveRestore className="h-4 w-4" />
@@ -189,8 +201,7 @@ export function ContactsClient() {
           contact={editing}
           onClose={() => setEditing(null)}
           onSave={async (patchBody) => {
-            await patch(editing.id, patchBody);
-            setEditing(null);
+            if (await patch(editing.id, patchBody)) setEditing(null);
           }}
         />
       )}
@@ -209,14 +220,24 @@ function EditDialog({
 }) {
   const [name, setName] = useState(contact.name);
   const [notes, setNotes] = useState(contact.notes ?? "");
+  const [saving, setSaving] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
+    <dialog
+      ref={dialogRef}
+      onClose={onClose}
+      onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}
+      className="w-[calc(100%-2rem)] max-w-md rounded-lg border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/60"
     >
       <div
-        className="w-full max-w-md rounded-lg border bg-card p-5 shadow-xl"
+        className="p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">Editar contacto</h3>
@@ -248,13 +269,13 @@ function EditDialog({
             Cancelar
           </Button>
           <Button
-            disabled={!name.trim()}
-            onClick={() => void onSave({ name: name.trim(), notes })}
+            disabled={!name.trim() || saving}
+            onClick={() => { setSaving(true); void onSave({ name: name.trim(), notes }).finally(() => setSaving(false)); }}
           >
-            Guardar
+            {saving ? "Guardando…" : "Guardar"}
           </Button>
         </div>
       </div>
-    </div>
+    </dialog>
   );
 }

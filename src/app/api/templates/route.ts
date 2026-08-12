@@ -1,6 +1,6 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withAuth, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -17,7 +17,11 @@ export const GET = withAuth(async (session) => {
   const templates = await db
     .select()
     .from(schema.template)
-    .where(scoped(schema.template.organizationId, session.organizationId))
+    .where(scoped(
+      schema.template.organizationId,
+      session.organizationId,
+      session.role === "owner" ? undefined : eq(schema.template.status, "approved")
+    ))
     .orderBy(desc(schema.template.createdAt));
   return Response.json({ templates: templates.map(serializeTemplate) });
 });
@@ -29,7 +33,7 @@ const createSchema = z.object({
   body: z.string().trim().min(1).max(1024),
 });
 
-export const POST = withAuth(async (session, req: Request) => {
+export const POST = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 

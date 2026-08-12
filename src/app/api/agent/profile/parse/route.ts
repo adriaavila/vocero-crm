@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { chatJson } from "@/lib/ai";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ const draftSchema = z.object({
   greeting: z.string().trim().min(1).max(1000).nullable(),
 });
 
-export const POST = withAuth(async (_session, req: Request) => {
+export const POST = withOwner(async (_session, req: Request) => {
   const body = await parseBody(req, bodySchema);
   if (!body.ok) return body.response;
 
@@ -38,7 +38,7 @@ export const POST = withAuth(async (_session, req: Request) => {
       notConfigured ? 409 : 503,
       result.error,
       notConfigured
-        ? "Configura OPENROUTER_API_TOKEN para usar el asistente gratuito"
+        ? "La conexión de IA aún no está disponible. Contacta a quien administra tu instancia"
         : "El modelo gratuito no pudo procesar el texto. Inténtalo otra vez."
     );
   }

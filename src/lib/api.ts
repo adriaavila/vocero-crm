@@ -36,6 +36,18 @@ export function withAuth<Args extends unknown[]>(
   };
 }
 
+/** Igual que withAuth, pero restringe la superficie al propietario. */
+export function withOwner<Args extends unknown[]>(
+  handler: (session: SessionContext, ...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return withAuth(async (session, ...args) => {
+    if (session.role !== "owner") {
+      return apiError(403, "forbidden", "Solo el propietario puede realizar esta acción");
+    }
+    return handler(session, ...args);
+  });
+}
+
 /** Parsea el body JSON con un esquema Zod; inválido → Response 422. */
 export async function parseBody<T>(
   req: Request,

@@ -7,6 +7,7 @@ import { matchesQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { formatTime, previewText } from "./helpers";
 
 const STAGE_DOT: Record<string, string> = {
@@ -17,7 +18,7 @@ const STAGE_DOT: Record<string, string> = {
   Perdido: "#a2504c",
 };
 
-function EmptyState({ onSeeded }: { onSeeded: () => void }) {
+function EmptyState({ onSeeded, owner }: { onSeeded: () => void; owner: boolean }) {
   const [seeding, setSeeding] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -38,16 +39,18 @@ function EmptyState({ onSeeded }: { onSeeded: () => void }) {
         Cuando alguien escriba a tu número de WhatsApp, su conversación
         aparecerá aquí en tiempo real.
       </p>
-      {!failed && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={seeding}
-          onClick={() => void seed()}
-        >
-          <Sparkles className="h-4 w-4" strokeWidth={1.7} />
-          {seeding ? "Cargando demo…" : "Cargar datos de demostración"}
-        </Button>
+      {owner ? (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Link href="/settings/whatsapp" className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90">Conectar WhatsApp</Link>
+          {!failed && (
+            <Button size="sm" variant="outline" disabled={seeding} onClick={() => void seed()}>
+              <Sparkles className="h-4 w-4" strokeWidth={1.7} />
+              {seeding ? "Cargando demo…" : "Cargar demostración"}
+            </Button>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-text-3">No necesitas configurar nada. Las conversaciones aparecerán cuando lleguen mensajes.</p>
       )}
     </div>
   );
@@ -58,11 +61,13 @@ export function ConversationList({
   selectedId,
   onSelect,
   onSeeded,
+  owner,
 }: {
   conversations: ConversationDto[] | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
+  owner: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
@@ -194,7 +199,7 @@ export function ConversationList({
         {loading ? (
           <p className="p-6 text-center text-xs text-text-3">Cargando…</p>
         ) : conversations.length === 0 ? (
-          <EmptyState onSeeded={onSeeded} />
+          <EmptyState onSeeded={onSeeded} owner={owner} />
         ) : visible.length === 0 ? (
           <p className="p-6 text-center text-xs text-text-3">
             Sin resultados para este filtro.

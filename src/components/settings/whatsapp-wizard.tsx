@@ -268,13 +268,14 @@ function ConnectForm({
           {existing ? "Reconectar / actualizar el número" : "Conectar tu número de WhatsApp"}
         </CardTitle>
         <CardDescription>
-          Pega las credenciales de WhatsApp Cloud API. El token se valida
-          contra Meta ANTES de guardarse y se almacena cifrado.
+          Añade los datos de conexión. Los validamos antes de guardarlos y el acceso se almacena cifrado.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-3 rounded-md border bg-background/40 p-4 text-sm">
-          <p className="font-medium">¿De dónde sale el token?</p>
+        <details className="rounded-md border bg-background/40 p-4 text-sm">
+          <summary className="cursor-pointer font-medium">Información técnica</summary>
+          <div className="mt-3">
+          <p className="mb-3 font-medium">¿De dónde sale el token?</p>
           <div className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border p-3">
               <p className="mb-1 font-medium text-primary">Modo directo</p>
@@ -297,11 +298,12 @@ function ConnectForm({
               </p>
             </div>
           </div>
-        </div>
+          </div>
+        </details>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="waba-id">WABA ID</Label>
+            <Label htmlFor="waba-id">ID de cuenta empresarial</Label>
             <Input
               id="waba-id"
               placeholder="ID de la cuenta de WhatsApp Business"
@@ -310,7 +312,7 @@ function ConnectForm({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="phone-number-id">Phone Number ID</Label>
+            <Label htmlFor="phone-number-id">ID del número</Label>
             <Input
               id="phone-number-id"
               placeholder="ID del número de teléfono"
@@ -344,7 +346,7 @@ function ConnectForm({
         )}
         {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             disabled={!canTest || testing}
@@ -378,18 +380,13 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
     <Card>
       <CardHeader>
         <CardTitle>Webhook de WhatsApp</CardTitle>
-        <CardDescription>
-          Pega estos valores en el panel de Meta (modo directo) o úsalos en el
-          override de tu backend de agencia (a nivel WABA).{" "}
-          <strong className="text-foreground">
-            Guarda la conexión ANTES de configurar el webhook:
-          </strong>{" "}
-          la verificación (handshake) funciona sin guardar, pero los mensajes
-          solo se reciben si la conexión está guardada — se enrutan por tu
-          Phone Number ID.
-        </CardDescription>
+        <CardDescription>Datos para que WhatsApp entregue mensajes a Vocero.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">Información técnica</summary>
+          <div className="mt-3 space-y-3">
+          <p className="text-xs text-muted-foreground">Usa estos valores en el panel de Meta o en el override por WABA de tu backend. Guarda primero la conexión.</p>
         {!webhook.isHttps && (
           <p className="flex items-start gap-2 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3 text-xs text-[#8a6d3b]">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -453,6 +450,8 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
             META_APP_SECRET a la instancia.
           </p>
         )}
+          </div>
+        </details>
       </CardContent>
     </Card>
   );

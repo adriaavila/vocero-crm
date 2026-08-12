@@ -30,7 +30,7 @@ export default function LoginPage() {
       );
       return;
     }
-    router.push("/inbox");
+    router.push("/overview");
     router.refresh();
   }
 
@@ -67,6 +67,9 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Entrando…" : "Entrar"}
           </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            ¿Perdiste el acceso? Pide al propietario que restablezca tu contraseña.
+          </p>
           <p className="text-center text-sm text-muted-foreground">
             ¿Primera vez aquí?{" "}
             <Link href="/register" className="text-primary hover:underline">

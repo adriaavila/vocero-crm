@@ -20,6 +20,7 @@ export type EventHandlers = {
   }) => void;
   /** Se llama tras RECONECTAR (no en la conexión inicial): catch-up con refetch. */
   onReconnect?: () => void;
+  onConnectionChange?: (status: "connected" | "reconnecting") => void;
 };
 
 /**
@@ -56,8 +57,10 @@ export function useEvents(handlers: EventHandlers): void {
 
     source.onerror = () => {
       hadError = true;
+      handlersRef.current.onConnectionChange?.("reconnecting");
     };
     source.onopen = () => {
+      handlersRef.current.onConnectionChange?.("connected");
       if (hadError) {
         hadError = false;
         handlersRef.current.onReconnect?.();

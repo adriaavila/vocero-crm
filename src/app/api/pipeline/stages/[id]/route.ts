@@ -1,6 +1,6 @@
 import { count, eq } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 
@@ -13,7 +13,7 @@ const patchSchema = z.object({
   position: z.number().int().min(0).optional(),
 });
 
-export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
+export const PATCH = withOwner(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
@@ -39,7 +39,7 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   return Response.json({ stage: updated[0] });
 });
 
-export const DELETE = withAuth(async (session, req: Request, ctx: Params) => {
+export const DELETE = withOwner(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const url = new URL(req.url);
   const moveTo = url.searchParams.get("moveTo");

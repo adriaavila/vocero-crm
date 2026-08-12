@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,8 @@ export function AgentClient() {
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const activationDialog = useRef<HTMLDialogElement>(null);
+  const [pendingSteps, setPendingSteps] = useState<{ label: string; detail: string }[]>([]);
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -81,9 +83,21 @@ export function AgentClient() {
     return true;
   }
 
+  async function toggleAgent() {
+    if (!profile) return;
+    if (profile.enabled) return void saveProfile({ enabled: false });
+    const readiness = await fetch("/api/readiness").then((response) => response.ok ? response.json() : null).catch(() => null) as { overall?: string; steps?: { status: string; label: string; detail: string }[] } | null;
+    if (readiness?.overall === "needs_attention") {
+      setPendingSteps(readiness.steps?.filter((step) => step.status !== "complete") ?? []);
+      activationDialog.current?.showModal();
+      return;
+    }
+    void saveProfile({ enabled: true });
+  }
+
   return (
     <div className="h-full overflow-y-auto">
-      <header className="flex items-center justify-between border-b px-6 py-4">
+      <header className="flex items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
         <h2 className="font-semibold">Agente de IA</h2>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
@@ -96,7 +110,7 @@ export function AgentClient() {
             aria-checked={profile.enabled}
             aria-label="Agente encendido"
             disabled={!aiConfigured}
-            onClick={() => void saveProfile({ enabled: !profile.enabled })}
+            onClick={() => void toggleAgent()}
             className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
               profile.enabled ? "bg-primary" : "bg-secondary"
             }`}
@@ -111,19 +125,17 @@ export function AgentClient() {
       </header>
 
       {!aiConfigured && (
-        <div className="mx-6 mt-6 rounded-lg border border-brand-soft bg-brand-tint p-6 text-center">
+        <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-5 text-center sm:mx-6 sm:mt-6 sm:p-6">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">Configura tu proveedor de IA para activar el agente</p>
+          <p className="font-medium">La conexión de IA aún no está disponible</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Agrega <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> y{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_MODEL</code> a las variables
-            de entorno de la instancia y reiníciala. Mientras tanto puedes dejar listo el
-            comportamiento y el conocimiento aquí abajo.
+            Contacta a quien administra tu instancia. Mientras tanto puedes dejar listo el
+            comportamiento y la información del negocio.
           </p>
         </div>
       )}
 
-      <div className="grid gap-6 p-6 lg:grid-cols-2">
+      <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
         <div className="space-y-6">
           <ProfileSection profile={profile} onSave={saveProfile} />
           <ActivationMessagesSection profile={profile} onSave={saveProfile} />
@@ -131,6 +143,11 @@ export function AgentClient() {
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
+      <dialog ref={activationDialog} className="w-[min(32rem,calc(100vw-2rem))] rounded-lg border bg-card p-0 text-foreground shadow-pop backdrop:bg-black/35">
+        <div className="module-cap border-b p-5"><h3 className="font-semibold">Aún hay pasos pendientes</h3><p className="mt-1 text-sm text-text-3">Puedes activar el agente, pero recomendamos revisar esto primero.</p></div>
+        <div className="space-y-2 p-5">{pendingSteps.map((step) => <div key={step.label} className="rounded-md border p-3"><p className="text-sm font-semibold">{step.label}</p><p className="mt-0.5 text-xs text-text-3">{step.detail}</p></div>)}</div>
+        <div className="flex justify-end gap-2 border-t p-4"><Button variant="ghost" onClick={() => activationDialog.current?.close()}>Volver y corregir</Button><Button onClick={() => { activationDialog.current?.close(); void saveProfile({ enabled: true }); }}>Activar de todas formas</Button></div>
+      </dialog>
     </div>
   );
 }
@@ -474,7 +491,7 @@ function KbSection({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Knowledge base</CardTitle>
+            <CardTitle>Información del negocio</CardTitle>
             <CardDescription>
               La única fuente de verdad del agente: lo que no está aquí, no lo
               afirma.

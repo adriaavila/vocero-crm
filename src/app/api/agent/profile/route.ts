@@ -1,4 +1,4 @@
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 import { agentProfilePutSchema, compatibleActivation } from "@/lib/agent-profile-compat";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -6,7 +6,7 @@ import { isAgentConfigured } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session) => {
+export const GET = withOwner(async (session) => {
   const db = getDb();
   const rows = await db
     .select()
@@ -36,7 +36,7 @@ export const GET = withAuth(async (session) => {
   });
 });
 
-export const PUT = withAuth(async (session, req: Request) => {
+export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, agentProfilePutSchema);
   if (!body.ok) return body.response;
 
