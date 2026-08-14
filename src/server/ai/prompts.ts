@@ -29,8 +29,15 @@ export function buildAgentSystemPrompt(input: {
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
+  const now = new Date();
+  const dateStr = new Intl.DateTimeFormat("es-ES", {
+    dateStyle: "full",
+    timeZone: "America/Caracas",
+  }).format(now);
+
   return [
     `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
+    `Fecha actual de referencia: ${dateStr}.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio:\n${profile.instructions}` : null,
     profile.escalationRules
@@ -50,6 +57,7 @@ export function buildAgentSystemPrompt(input: {
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
       "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
+      "- NUNCA inventes enlaces web, URLs de agendamiento (como cal.com o calendly) ni datos de contacto que no estén explícitamente en el CONOCIMIENTO DEL NEGOCIO.",
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]
