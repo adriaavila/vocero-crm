@@ -3,7 +3,7 @@ import { JUDGE_MARKER } from "@/server/ai/prompts";
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
  * Despacha por contenido del último mensaje `user` (o del system si es el
- * juez). JAMÁS es fallback en runtime: solo responde si OPENROUTER_BASE_URL
+ * juez). JAMÁS es fallback en runtime: solo responde si OPENAI_BASE_URL
  * apunta explícitamente a él y el gate de mocks está activo.
  */
 

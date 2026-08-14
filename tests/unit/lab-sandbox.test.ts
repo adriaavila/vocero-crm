@@ -80,7 +80,7 @@ describe("sandbox del Laboratorio en el pipeline del agente", () => {
     graphRequest.mockReset();
     selectQueue.length = 0;
     inserts.length = 0;
-    vi.stubEnv("OPENROUTER_API_TOKEN", "token-test");
+    vi.stubEnv("OPENAI_API_KEY", "token-test");
   });
 
   it("turno sobre conversación is_test → persiste la respuesta y NO llama a Graph", async () => {

@@ -76,9 +76,10 @@ Ver `.env.example` (cada una con guía inline). Las claves: `APP_BASE_URL`,
 (opcional, firma), y para IA:
 
 ```bash
-OPENROUTER_API_TOKEN=sk-or-...
-OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
-OPENROUTER_JUDGE_MODEL=anthropic/claude-haiku-4.5   # opcional: juez más barato
+OPENAI_API_KEY=sk-proj-...
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_JUDGE_MODEL=   # opcional: modelo más barato solo para el juez del Laboratorio
+OPENAI_BASE_URL=https://api.openai.com   # opcional, este es el default
 ```
 
 Para el self-test local existe además el modo de pruebas interno (mocks) —
@@ -96,7 +97,7 @@ deploy, las vars van también en la plataforma de hosting (runtime, no build).
 "Typecheck + lint + build (+ tests)" es el piso, NO el techo. Una feature no
 está "Hecha" hasta correr el **self-test de COMPORTAMIENTO de punta a punta**
 (Playwright + mocks: `WA_MOCK_ENABLED=true`, `META_GRAPH_BASE_URL` → wa-mock,
-`OPENROUTER_BASE_URL` → ai-mock) y dejarlo verde: flujo real como usuario,
+`OPENAI_BASE_URL` → ai-mock) y dejarlo verde: flujo real como usuario,
 resultado observable, y el camino infeliz degradando sin colgarse. Prohibido
 delegar la prueba al usuario. Si algo depende de un LLM/proveedor externo,
 todo turno tolera formato inesperado con extracción robusta + reintentos — un

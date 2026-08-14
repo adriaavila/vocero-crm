@@ -2,7 +2,7 @@ import type { z } from "zod";
 import { getEnv, isAiConfigured } from "@/lib/env";
 
 /**
- * Adaptador LLM OpenRouter-compatible — ÚNICA frontera con el proveedor de IA
+ * Adaptador LLM OpenAI-compatible — ÚNICA frontera con el proveedor de IA
  * (Constitución II). Regla operativa: la salida del modelo es impredecible;
  * todo consumo pasa por extracción robusta + Zod + reintentos, y un hipo del
  * proveedor jamás propaga excepción (resultado `error` tipado).
@@ -29,20 +29,26 @@ export async function chatJson<T>(
     return {
       ok: false,
       error: "not_configured",
-      detail: "Sin OPENROUTER_API_TOKEN configurado",
+      detail: "Sin OPENAI_API_KEY configurado",
     };
   }
   const env = getEnv();
+  const token = env.OPENAI_API_KEY;
+  if (!token) {
+    return {
+      ok: false,
+      error: "not_configured",
+      detail: "Sin OPENAI_API_KEY configurado",
+    };
+  }
   const model =
     opts?.model ??
-    (opts?.judge
-      ? (env.OPENROUTER_JUDGE_MODEL ?? env.OPENROUTER_MODEL)
-      : env.OPENROUTER_MODEL);
+    (opts?.judge ? (env.OPENAI_JUDGE_MODEL ?? env.OPENAI_MODEL) : env.OPENAI_MODEL);
   if (!model?.trim()) {
     return {
       ok: false,
       error: "not_configured",
-      detail: "Sin OPENROUTER_MODEL configurado",
+      detail: "Sin OPENAI_MODEL configurado",
     };
   }
 
@@ -60,7 +66,13 @@ export async function chatJson<T>(
             },
           ];
     try {
-      const raw = await callProvider(model, attemptMessages, opts?.timeoutMs);
+      const raw = await callProvider(
+        env.OPENAI_BASE_URL,
+        token,
+        model,
+        attemptMessages,
+        opts?.timeoutMs
+      );
       const extracted = extractJson(raw);
       if (extracted === null) {
         lastDetail = `sin JSON extraíble (raw=${truncate(raw)})`;
@@ -92,19 +104,20 @@ export async function chatJson<T>(
 }
 
 async function callProvider(
+  baseUrl: string,
+  token: string,
   model: string,
   messages: ChatMessage[],
   timeoutMs = 60_000
 ): Promise<string> {
-  const env = getEnv();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${env.OPENROUTER_BASE_URL}/v1/chat/completions`, {
+    const res = await fetch(`${baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: {
         // El token jamás se loguea; solo viaja en este header.
-        Authorization: `Bearer ${env.OPENROUTER_API_TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ model, messages }),

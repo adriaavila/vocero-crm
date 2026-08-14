@@ -22,10 +22,12 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
-  OPENROUTER_API_TOKEN: z.string().optional(),
-  OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api"),
-  OPENROUTER_MODEL: z.string().optional(),
-  OPENROUTER_JUDGE_MODEL: z.string().optional(),
+  // Proveedor de IA (agente, parseo de perfil y juez del Laboratorio).
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z.string().url().default("https://api.openai.com"),
+  OPENAI_MODEL: z.string().optional(),
+  // Modelo distinto para el juez (p. ej. uno más barato); si se omite usa OPENAI_MODEL.
+  OPENAI_JUDGE_MODEL: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
@@ -78,6 +80,11 @@ export function getEnv(): Env {
   return cached;
 }
 
+/** Solo para tests: limpia el cache para que el próximo getEnv() re-lea process.env. */
+export function resetEnvCacheForTests(): void {
+  cached = null;
+}
+
 function stripEmpty(env: NodeJS.ProcessEnv): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
@@ -94,9 +101,9 @@ export function isMockEnabled(): boolean {
   );
 }
 
-/** true si hay proveedor de IA configurado (token presente y no vacío). */
+/** true si hay proveedor principal de IA configurado (token presente y no vacío). */
 export function isAiConfigured(): boolean {
-  const token = process.env.OPENROUTER_API_TOKEN;
+  const token = process.env.OPENAI_API_KEY;
   return typeof token === "string" && token.trim().length > 0;
 }
 

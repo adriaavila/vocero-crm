@@ -205,10 +205,10 @@ del cliente se conecta con el **override de callback por WABA**:
 En las variables de la instancia:
 
 ```bash
-OPENROUTER_API_TOKEN=sk-or-...        # tu key
-OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
-OPENROUTER_JUDGE_MODEL=               # opcional: modelo distinto para el juez del Laboratorio
-OPENROUTER_BASE_URL=https://openrouter.ai/api   # o tu proveedor OpenAI-compatible
+OPENAI_API_KEY=sk-proj-...            # tu key
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_JUDGE_MODEL=                   # opcional: modelo distinto (más barato) para el juez del Laboratorio
+OPENAI_BASE_URL=https://api.openai.com   # o tu proveedor OpenAI-compatible
 ```
 
 Sin token, todo lo demás funciona; Agente y Laboratorio muestran cómo

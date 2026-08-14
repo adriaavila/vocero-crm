@@ -24,8 +24,8 @@ En `.env` de desarrollo:
 ```
 WA_MOCK_ENABLED=true
 META_GRAPH_BASE_URL=http://localhost:3000/api/dev/wa-mock/graph
-OPENROUTER_BASE_URL=http://localhost:3000/api/dev/ai-mock
-OPENROUTER_API_TOKEN=test-token
+OPENAI_BASE_URL=http://localhost:3000/api/dev/ai-mock
+OPENAI_API_KEY=test-token
 ```
 
 Conectar el número en Settings → WhatsApp con IDs de prueba (cualquier token SIN el

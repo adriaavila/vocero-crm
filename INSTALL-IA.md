@@ -18,7 +18,7 @@
 1. Pregunta al usuario ÚNICAMENTE estas tres cosas, en un solo mensaje:
    - **Dominio** donde vivirá el CRM (obligatorio, ej. `crm.sunegocio.com`).
      Debe apuntar ya a la IP del VPS (registro A).
-   - **Token de OpenRouter** (opcional — sin él, el CRM funciona completo
+   - **Key de OpenAI** (opcional — sin ella, el CRM funciona completo
      excepto el agente de IA y el Laboratorio; se puede agregar después).
    - **Ruta A o B**: A = el VPS tiene panel Coolify · B = el VPS solo tiene
      Docker.
@@ -45,8 +45,8 @@
 | `ENCRYPTION_KEY` | generado (base64, 44 caracteres) |
 | `META_WEBHOOK_VERIFY_TOKEN` | generado |
 | `META_GRAPH_API_VERSION` | `v25.0` |
-| `OPENROUTER_API_TOKEN` | del usuario (si lo dio) |
-| `OPENROUTER_MODEL` | si hay token: sugiere `anthropic/claude-sonnet-4.5` u otro a elección |
+| `OPENAI_API_KEY` | del usuario (si la dio) |
+| `OPENAI_MODEL` | si hay key: sugiere `gpt-4o-mini` u otro a elección |
 
 `DOMAIN` solo aplica en la Ruta B (para Caddy).
 
