@@ -53,6 +53,7 @@ export async function chatJson<T>(
   }
 
   let lastDetail = "";
+  let lastIssues = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const attemptMessages: ChatMessage[] =
       attempt === 1
@@ -61,8 +62,7 @@ export async function chatJson<T>(
             ...messages,
             {
               role: "system",
-              content:
-                "STRICT: tu respuesta anterior no fue JSON válido según el esquema. Responde ÚNICAMENTE el objeto JSON, sin explicaciones ni markdown.",
+              content: `STRICT: tu respuesta anterior no fue válida${lastIssues ? ` (${lastIssues})` : ""}. Responde ÚNICAMENTE el objeto JSON, sin explicaciones ni markdown, con cada valor como string plano.`,
             },
           ];
     try {
@@ -75,14 +75,16 @@ export async function chatJson<T>(
       );
       const extracted = extractJson(raw);
       if (extracted === null) {
-        lastDetail = `sin JSON extraíble (raw=${truncate(raw)})`;
+        lastIssues = "sin JSON extraíble";
+        lastDetail = `${lastIssues} (raw=${truncate(raw)})`;
         continue;
       }
       const parsed = schema.safeParse(extracted);
       if (!parsed.success) {
-        lastDetail = `no cumple el esquema: ${parsed.error.issues
+        lastIssues = parsed.error.issues
           .map((i) => i.path.join(".") + " " + i.message)
-          .join("; ")} (raw=${truncate(raw)})`;
+          .join("; ");
+        lastDetail = `no cumple el esquema: ${lastIssues} (raw=${truncate(raw)})`;
         continue;
       }
       return { ok: true, data: parsed.data, raw };
