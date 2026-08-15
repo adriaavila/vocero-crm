@@ -101,6 +101,11 @@ export async function getOrCreateContactByIdentity(
       patch.waUserId = resolved.waUserId;
     if (resolved.phone && !existing.phone) patch.phone = resolved.phone;
     if (existing.archivedAt) patch.archivedAt = null;
+    // Backfill: si el contacto quedó con el nombre de respaldo (nunca tuvo
+    // profile.name en el primer mensaje) y ahora llega uno, lo adopta. Jamás
+    // pisa un nombre que el operador haya editado a mano.
+    const profileName = resolved.profileName?.trim();
+    if (profileName && isFallbackName(existing)) patch.name = profileName;
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = new Date();
       await db
@@ -144,8 +149,15 @@ export async function getOrCreateContactByIdentity(
   return { contact, isNew: false };
 }
 
+const FALLBACK_NAME = "Contacto de WhatsApp";
+
 /** Nombre de respaldo cuando no hay nombre de perfil: nunca el BSUID crudo. */
 function displayFallback(resolved: ResolvedIdentity): string {
   if (resolved.phone) return resolved.phone;
-  return "Contacto de WhatsApp";
+  return FALLBACK_NAME;
+}
+
+/** true si el nombre actual es un respaldo (nunca lo editó el operador). */
+export function isFallbackName(contact: { name: string; phone: string | null }): boolean {
+  return contact.name === FALLBACK_NAME || contact.name === contact.phone;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeMx } from "@/lib/meta/client";
-import { BSUID_PREFIX, resolveIdentity } from "@/server/inbox/identity";
+import { BSUID_PREFIX, isFallbackName, resolveIdentity } from "@/server/inbox/identity";
 import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
 
 /** Feature 003: identidad resiliente de contacto (BSUID). */
@@ -83,5 +83,20 @@ describe("resolveIdentity: sin wa_id (mundo BSUID)", () => {
     // Sin perfil: profileName null — el fallback de display se decide al crear
     // el contacto (nunca el BSUID crudo).
     expect(r!.profileName).toBeNull();
+  });
+});
+
+describe("isFallbackName (backfill de nombre desde profile.name)", () => {
+  it("nombre = teléfono (respaldo por identidad con phone) → true", () => {
+    expect(isFallbackName({ name: "524621349768", phone: "524621349768" })).toBe(true);
+  });
+
+  it("nombre = respaldo genérico (identidad BSUID sin profile.name) → true", () => {
+    expect(isFallbackName({ name: "Contacto de WhatsApp", phone: null })).toBe(true);
+  });
+
+  it("nombre real (de profile.name o editado a mano) → false, nunca se pisa", () => {
+    expect(isFallbackName({ name: "Kevin", phone: "524621349768" })).toBe(false);
+    expect(isFallbackName({ name: "Panadería Buenos Aires", phone: null })).toBe(false);
   });
 });
