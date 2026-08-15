@@ -47,6 +47,8 @@
 | `META_GRAPH_API_VERSION` | `v25.0` |
 | `OPENAI_API_KEY` | del usuario (si la dio) |
 | `OPENAI_MODEL` | si hay key: sugiere `gpt-4o-mini` u otro a elección |
+| `OPENROUTER_API_TOKEN` | opcional — respaldo automático si OpenAI falla; también elegible como preferido en Configuración → Agente |
+| `OPENROUTER_MODEL` | si hay token OpenRouter: ej. `meta-llama/llama-3.1-8b-instruct:free` |
 
 `DOMAIN` solo aplica en la Ruta B (para Caddy).
 

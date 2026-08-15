@@ -155,7 +155,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
       })),
   ];
 
-  const result = await chatJson(AgentAction, messages);
+  const result = await chatJson(AgentAction, messages, { provider: profile.aiProvider });
   if (!result.ok) {
     if (result.error === "not_configured") return;
     // Fallo persistente del proveedor o salida imposible → escalar (FR-022).

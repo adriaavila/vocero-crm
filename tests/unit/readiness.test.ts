@@ -20,6 +20,7 @@ function input(overrides: Record<string, unknown> = {}) {
       activationMessages: [],
       allowlistEnabled: false,
       allowedWaIds: [],
+      aiProvider: "openai" as const,
       lastLiveTestAt: liveAt,
       lastLiveTestPassed: true,
       lastLiveTestElapsedMs: 800,

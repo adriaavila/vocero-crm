@@ -22,12 +22,17 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
-  // Proveedor de IA (agente, parseo de perfil y juez del Laboratorio).
+  // Proveedor de IA principal (agente, parseo de perfil y juez del Laboratorio).
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().url().default("https://api.openai.com"),
   OPENAI_MODEL: z.string().optional(),
   // Modelo distinto para el juez (p. ej. uno más barato); si se omite usa OPENAI_MODEL.
   OPENAI_JUDGE_MODEL: z.string().optional(),
+  // Proveedor alterno (modelo gratuito): fallback automático si el preferido
+  // no está configurado o falla, y elegible por org en Configuración → Agente.
+  OPENROUTER_API_TOKEN: z.string().optional(),
+  OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api"),
+  OPENROUTER_MODEL: z.string().optional(),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
@@ -101,10 +106,10 @@ export function isMockEnabled(): boolean {
   );
 }
 
-/** true si hay proveedor principal de IA configurado (token presente y no vacío). */
+/** true si hay al menos un proveedor de IA configurado (OpenAI u OpenRouter). */
 export function isAiConfigured(): boolean {
-  const token = process.env.OPENAI_API_KEY;
-  return typeof token === "string" && token.trim().length > 0;
+  const hasToken = (v: string | undefined) => typeof v === "string" && v.trim().length > 0;
+  return hasToken(process.env.OPENAI_API_KEY) || hasToken(process.env.OPENROUTER_API_TOKEN);
 }
 
 /** El bot externo tiene prioridad para no responder dos veces al mismo mensaje. */

@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN "ai_provider" text DEFAULT 'openai' NOT NULL;

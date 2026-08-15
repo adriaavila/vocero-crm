@@ -209,12 +209,18 @@ OPENAI_API_KEY=sk-proj-...            # tu key
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_JUDGE_MODEL=                   # opcional: modelo distinto (más barato) para el juez del Laboratorio
 OPENAI_BASE_URL=https://api.openai.com   # o tu proveedor OpenAI-compatible
+
+# Proveedor alterno (modelo gratuito): fallback automático si el preferido
+# falla, y elegible por org en Configuración → Agente.
+OPENROUTER_API_TOKEN=sk-or-...
+OPENROUTER_MODEL=meta-llama/llama-3.1-8b-instruct:free
+OPENROUTER_BASE_URL=https://openrouter.ai/api
 ```
 
-Sin token, todo lo demás funciona; Agente y Laboratorio muestran cómo
-activarlos. Después configura el comportamiento y el conocimiento en la
-pestaña **Agente** y corre el **Laboratorio** antes de encender el agente con
-clientes reales.
+Sin ninguno de los dos, todo lo demás funciona; Agente y Laboratorio muestran
+cómo activarlos. Después configura el comportamiento y el conocimiento en la
+pestaña **Agente** (ahí también se elige el proveedor preferido) y corre el
+**Laboratorio** antes de encender el agente con clientes reales.
 
 ## Cumplimiento con las políticas de Meta
 

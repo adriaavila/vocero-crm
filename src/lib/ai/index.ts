@@ -1,11 +1,15 @@
 import type { z } from "zod";
-import { getEnv, isAiConfigured } from "@/lib/env";
+import { getEnv, isAiConfigured, type Env } from "@/lib/env";
 
 /**
  * Adaptador LLM OpenAI-compatible — ÚNICA frontera con el proveedor de IA
- * (Constitución II). Regla operativa: la salida del modelo es impredecible;
- * todo consumo pasa por extracción robusta + Zod + reintentos, y un hipo del
- * proveedor jamás propaga excepción (resultado `error` tipado).
+ * (Constitución II). Dos proveedores posibles (OpenAI y OpenRouter, ambos
+ * hablan el mismo formato chat/completions): el llamador elige preferido con
+ * `opts.provider`, y si ese no está configurado o falla tras sus reintentos,
+ * se cae automáticamente al otro proveedor configurado. Regla operativa: la
+ * salida del modelo es impredecible; todo consumo pasa por extracción
+ * robusta + Zod + reintentos, y un hipo del proveedor jamás propaga
+ * excepción (resultado `error` tipado).
  */
 
 export type ChatMessage = {
@@ -17,41 +21,76 @@ export type ChatJsonResult<T> =
   | { ok: true; data: T; raw: string }
   | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
 
+export type AiProvider = "openai" | "openrouter";
+
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
+
+type ResolvedProvider = { name: AiProvider; baseUrl: string; token: string; model: string };
+
+function resolveProvider(
+  name: AiProvider,
+  judge: boolean,
+  modelOverride: string | undefined,
+  env: Env
+): ResolvedProvider | null {
+  if (name === "openrouter") {
+    const token = env.OPENROUTER_API_TOKEN;
+    const model = modelOverride ?? env.OPENROUTER_MODEL;
+    if (!token || !model?.trim()) return null;
+    return { name, baseUrl: env.OPENROUTER_BASE_URL, token, model };
+  }
+  const token = env.OPENAI_API_KEY;
+  const model = modelOverride ?? (judge ? (env.OPENAI_JUDGE_MODEL ?? env.OPENAI_MODEL) : env.OPENAI_MODEL);
+  if (!token || !model?.trim()) return null;
+  return { name, baseUrl: env.OPENAI_BASE_URL, token, model };
+}
+
+/** Preferido primero; el otro queda como fallback si el preferido no sirve. */
+function providerOrder(preferred: AiProvider): AiProvider[] {
+  return preferred === "openrouter" ? ["openrouter", "openai"] : ["openai", "openrouter"];
+}
 
 export async function chatJson<T>(
   schema: z.ZodType<T>,
   messages: ChatMessage[],
-  opts?: { model?: string; judge?: boolean; timeoutMs?: number }
+  opts?: { model?: string; judge?: boolean; timeoutMs?: number; provider?: AiProvider }
 ): Promise<ChatJsonResult<T>> {
   if (!isAiConfigured()) {
     return {
       ok: false,
       error: "not_configured",
-      detail: "Sin OPENAI_API_KEY configurado",
+      detail: "Sin proveedor de IA configurado (OPENAI_API_KEY u OPENROUTER_API_TOKEN)",
     };
   }
   const env = getEnv();
-  const token = env.OPENAI_API_KEY;
-  if (!token) {
+  const order = providerOrder(opts?.provider ?? "openai");
+  const candidates = order
+    .map((name) => resolveProvider(name, opts?.judge ?? false, opts?.model, env))
+    .filter((p): p is ResolvedProvider => p !== null);
+  if (candidates.length === 0) {
     return {
       ok: false,
       error: "not_configured",
-      detail: "Sin OPENAI_API_KEY configurado",
-    };
-  }
-  const model =
-    opts?.model ??
-    (opts?.judge ? (env.OPENAI_JUDGE_MODEL ?? env.OPENAI_MODEL) : env.OPENAI_MODEL);
-  if (!model?.trim()) {
-    return {
-      ok: false,
-      error: "not_configured",
-      detail: "Sin OPENAI_MODEL configurado",
+      detail: "Ningún proveedor tiene token + modelo configurados",
     };
   }
 
+  let lastResult: ChatJsonResult<T> | null = null;
+  for (const provider of candidates) {
+    const result = await attemptProvider(schema, messages, provider, opts?.timeoutMs);
+    if (result.ok) return result;
+    lastResult = result;
+  }
+  return lastResult!;
+}
+
+async function attemptProvider<T>(
+  schema: z.ZodType<T>,
+  messages: ChatMessage[],
+  provider: ResolvedProvider,
+  timeoutMs: number | undefined
+): Promise<ChatJsonResult<T>> {
   let lastDetail = "";
   let lastIssues = "";
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -67,16 +106,16 @@ export async function chatJson<T>(
           ];
     try {
       const raw = await callProvider(
-        env.OPENAI_BASE_URL,
-        token,
-        model,
+        provider.baseUrl,
+        provider.token,
+        provider.model,
         attemptMessages,
-        opts?.timeoutMs
+        timeoutMs
       );
       const extracted = extractJson(raw);
       if (extracted === null) {
         lastIssues = "sin JSON extraíble";
-        lastDetail = `${lastIssues} (raw=${truncate(raw)})`;
+        lastDetail = `[${provider.name}] ${lastIssues} (raw=${truncate(raw)})`;
         continue;
       }
       const parsed = schema.safeParse(extracted);
@@ -84,12 +123,12 @@ export async function chatJson<T>(
         lastIssues = parsed.error.issues
           .map((i) => i.path.join(".") + " " + i.message)
           .join("; ");
-        lastDetail = `no cumple el esquema: ${lastIssues} (raw=${truncate(raw)})`;
+        lastDetail = `[${provider.name}] no cumple el esquema: ${lastIssues} (raw=${truncate(raw)})`;
         continue;
       }
       return { ok: true, data: parsed.data, raw };
     } catch (err) {
-      lastDetail = err instanceof Error ? err.message : String(err);
+      lastDetail = `[${provider.name}] ${err instanceof Error ? err.message : String(err)}`;
       if (attempt < MAX_ATTEMPTS) {
         await sleep(RETRY_DELAY_MS * attempt);
       }

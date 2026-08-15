@@ -20,6 +20,7 @@ type Profile = {
   activationMessages: string[];
   allowlistEnabled: boolean;
   allowedWaIds: string[];
+  aiProvider: "openai" | "openrouter";
 };
 
 type KbEntry = {
@@ -438,6 +439,23 @@ function ProfileSection({
             value={form.greeting ?? ""}
             onChange={(e) => setForm({ ...form, greeting: e.target.value })}
           />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="agent-provider">Proveedor de IA</Label>
+          <select
+            id="agent-provider"
+            value={form.aiProvider}
+            onChange={(e) =>
+              setForm({ ...form, aiProvider: e.target.value as Profile["aiProvider"] })
+            }
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="openai">OpenAI (recomendado)</option>
+            <option value="openrouter">OpenRouter — modelo gratuito</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            Si el preferido falla o no está configurado, el agente cae automáticamente al otro.
+          </p>
         </div>
         <Button onClick={() => void onSave(form)}>Guardar comportamiento</Button>
       </CardContent>

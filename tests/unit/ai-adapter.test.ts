@@ -173,4 +173,81 @@ describe("chatJson (reintentos y errores tipados)", () => {
     const requestBody = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
     expect(requestBody.model).toBe("modelo-test");
   });
+
+  it("provider:openrouter pega a OpenRouter con su propio modelo", async () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "token-openrouter-test");
+    vi.stubEnv("OPENROUTER_MODEL", "modelo-openrouter-test");
+    const fetchMock = vi.fn().mockResolvedValue(
+      providerResponse('{"action":"reply","text":"ok"}')
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(
+      schema,
+      [{ role: "user", content: "hola" }],
+      { provider: "openrouter" }
+    );
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1); // no cae a OpenAI si el preferido responde bien
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    const requestBody = JSON.parse(init!.body as string);
+    expect(requestBody.model).toBe("modelo-openrouter-test");
+  });
+
+  it("preferido sin token configurado → cae directo al otro proveedor", async () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "token-openrouter-test");
+    vi.stubEnv("OPENROUTER_MODEL", "modelo-openrouter-test");
+    const fetchMock = vi.fn().mockResolvedValue(
+      providerResponse('{"action":"reply","text":"ok"}')
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    // OPENAI_API_KEY sigue seteado (beforeEach) para pasar isAiConfigured();
+    // solo OpenRouter queda como preferido con OpenAI configurado de respaldo.
+    const result = await chatJson(
+      schema,
+      [{ role: "user", content: "hola" }],
+      { provider: "openrouter" }
+    );
+
+    expect(result.ok).toBe(true);
+    const requestBody = JSON.parse(fetchMock.mock.calls[0]![1]!.body as string);
+    expect(requestBody.model).toBe("modelo-openrouter-test");
+  });
+
+  it("preferido falla los 3 intentos → cae al otro proveedor configurado", async () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "token-openrouter-test");
+    vi.stubEnv("OPENROUTER_MODEL", "modelo-openrouter-test");
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          url.includes("openai")
+            ? new Response("boom", { status: 500 })
+            : providerResponse('{"action":"reply","text":"ok"}')
+        )
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }]); // preferido default: openai
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(4); // 3 intentos a OpenAI + 1 a OpenRouter
+    const lastCall = fetchMock.mock.calls[3]!;
+    expect(lastCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+  });
+
+  it("ningún proveedor configurado → not_configured sin tocar la red", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("OPENROUTER_API_TOKEN", "");
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("not_configured");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

@@ -424,6 +424,12 @@ export const agentProfile = pgTable(
     lastLiveTestAt: timestamp("last_live_test_at"),
     lastLiveTestPassed: boolean("last_live_test_passed"),
     lastLiveTestElapsedMs: integer("last_live_test_elapsed_ms"),
+    // Proveedor de IA preferido para este agente. "openrouter" fuerza el
+    // modelo gratuito aunque OpenAI esté configurado (ahorro de costo); si el
+    // preferido no responde, el adaptador cae al otro proveedor disponible.
+    aiProvider: text("ai_provider", { enum: ["openai", "openrouter"] })
+      .notNull()
+      .default("openai"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

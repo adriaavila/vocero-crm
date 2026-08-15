@@ -38,6 +38,7 @@ export const agentProfilePutSchema = z
       )
       .max(100)
       .optional(),
+    aiProvider: z.enum(["openai", "openrouter"]).optional(),
     presetOnly: z.boolean().optional(),
     presetReplies: z
       .array(

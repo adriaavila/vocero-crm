@@ -80,6 +80,12 @@ OPENAI_API_KEY=sk-proj-...
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_JUDGE_MODEL=   # opcional: modelo más barato solo para el juez del Laboratorio
 OPENAI_BASE_URL=https://api.openai.com   # opcional, este es el default
+
+# Alterno (modelo gratuito): fallback automático si el preferido falla o no
+# está configurado; elegible como preferido por org en Configuración → Agente.
+OPENROUTER_API_TOKEN=sk-or-...
+OPENROUTER_MODEL=meta-llama/llama-3.1-8b-instruct:free
+OPENROUTER_BASE_URL=https://openrouter.ai/api   # opcional, este es el default
 ```
 
 Para el self-test local existe además el modo de pruebas interno (mocks) —

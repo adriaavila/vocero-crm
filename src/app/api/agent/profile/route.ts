@@ -28,6 +28,7 @@ export const GET = withOwner(async (session) => {
       activationMessages: activation.activationMessages,
       allowlistEnabled: p.allowlistEnabled,
       allowedWaIds: p.allowedWaIds,
+      aiProvider: p.aiProvider,
       // Compatibility for tabs that loaded the previous deployment.
       presetOnly: p.activationEnabled,
       presetReplies: activation.presetReplies,
