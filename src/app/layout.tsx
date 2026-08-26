@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
@@ -12,6 +12,15 @@ const geist = Geist({
 });
 
 export const dynamic = "force-dynamic";
+
+// `viewportFit: cover` es lo que activa env(safe-area-inset-*) en iOS; sin él
+// la barra inferior queda debajo del indicador de inicio al instalar la app.
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  viewportFit: "cover",
+  width: "device-width",
+  initialScale: 1,
+};
 
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
@@ -34,6 +43,9 @@ export async function generateMetadata(): Promise<Metadata> {
       title,
       description,
     },
+    // Instalable en el teléfono: pantalla completa, sin barra de URL.
+    appleWebApp: { capable: true, title: branding.name, statusBarStyle: "default" },
+    formatDetection: { telephone: false },
   };
 }
 

@@ -137,7 +137,7 @@ export function AppNav({ branding, userName, role }: { branding: Branding; userN
 
       {connection === "reconnecting" && <div className="fixed inset-x-0 top-0 z-50 bg-[#8a6d3b] px-3 py-1 text-center text-xs font-medium text-white md:hidden">Reconectando…</div>}
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-16 grid-cols-4 border-t bg-background/95 px-2 backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid h-[calc(4rem+env(safe-area-inset-bottom))] grid-cols-4 border-t bg-background/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
         {MAIN.slice(0, 3).map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
@@ -154,7 +154,7 @@ export function AppNav({ branding, userName, role }: { branding: Branding; userN
 
       {moreOpen && (
         <div className="fixed inset-0 z-50 bg-black/30 md:hidden" onClick={() => setMoreOpen(false)}>
-          <div className="absolute inset-x-0 bottom-0 rounded-t-xl border-t bg-background p-4 pb-8 shadow-pop" onClick={(event) => event.stopPropagation()}>
+          <div className="absolute inset-x-0 bottom-0 rounded-t-xl border-t bg-background p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] shadow-pop" onClick={(event) => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2.5"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-[#20242c] font-bold text-white">{branding.name.charAt(0)}</span><div><p className="font-semibold">{branding.name}</p><p className="text-xs text-text-3">{userName} · {owner ? "Propietario" : "Equipo"}</p></div></div>
               <button onClick={() => setMoreOpen(false)} aria-label="Cerrar menú" className="rounded-md border p-2"><X className="h-4 w-4" /></button>

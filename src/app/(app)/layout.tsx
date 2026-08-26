@@ -24,7 +24,7 @@ export default async function AppLayout({
           userName={authSession?.user.name ?? "Usuario"}
           role={session.role}
         />
-        <main className="min-w-0 flex-1 overflow-hidden pb-16 md:pb-0">{children}</main>
+        <main className="min-w-0 flex-1 overflow-hidden pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       </div>
     </ToastProvider>
   );
