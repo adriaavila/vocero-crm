@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
@@ -15,9 +15,25 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const branding = await getBranding().catch(() => DEFAULT_BRANDING);
+  const title = `${branding.name} — CRM de WhatsApp`;
+  const description = "Gestiona conversaciones, contactos y ventas por WhatsApp";
   return {
-    title: `${branding.name} — CRM de WhatsApp`,
-    description: "CRM de WhatsApp con agente de IA y Laboratorio de auto-evaluación",
+    metadataBase: new URL("https://crm.allok.fun"),
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: "https://crm.allok.fun",
+      siteName: branding.name,
+      locale: "es_VE",
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+    },
   };
 }
 
