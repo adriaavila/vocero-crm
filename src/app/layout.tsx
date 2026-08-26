@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
