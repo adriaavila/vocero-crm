@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   CalendarDays,
+  CircleUserRound,
+  Gauge,
   FlaskConical,
   Inbox,
   Kanban,
@@ -31,6 +33,10 @@ type NavItem = {
 };
 
 const NAV: NavItem[] = [
+  // Capa de agencia: "Inicio" es el tablero de puesta en marcha
+  // (`/api/readiness` + resumen). En una instancia que se entrega a un cliente
+  // es la primera pantalla útil — qué falta para poder encender el agente.
+  { href: "/overview", label: "Inicio", icon: Gauge },
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
@@ -169,6 +175,19 @@ export function AppNav({
       </nav>
 
       <div className="flex-1" />
+
+      {/* Capa de agencia: cada miembro del equipo del cliente cambia aquí su
+          nombre y su contraseña, sin pasar por la agencia. */}
+      <Link href="/account" className={navItemClass(pathname.startsWith("/account"))}>
+        <CircleUserRound
+          className={cn(
+            "h-[17px] w-[17px]",
+            pathname.startsWith("/account") ? "text-brand" : "text-text-3"
+          )}
+          strokeWidth={1.8}
+        />
+        Mi cuenta
+      </Link>
 
       <Link href="/settings" className={navItemClass(settingsActive)}>
         <Settings

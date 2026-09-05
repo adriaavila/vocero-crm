@@ -8,6 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+// Capa de agencia (fork). Todo lo propio vive en components/agencia/ para que
+// la próxima fusión con upstream no toque este archivo más que en esta línea.
+import {
+  AgencyAgentCards,
+  type AgencyProfile,
+} from "@/components/agencia/agent-agency-cards";
+import { useActivationGate } from "@/components/agencia/activation-gate";
 
 type Profile = {
   enabled: boolean;
@@ -16,7 +23,7 @@ type Profile = {
   instructions: string | null;
   escalationRules: string | null;
   greeting: string | null;
-};
+} & AgencyProfile;
 
 type KbEntry = {
   id: string;
@@ -32,6 +39,10 @@ export function AgentClient() {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
+  const { toggle, gate } = useActivationGate({
+    enabled: profile?.enabled ?? false,
+    onConfirm: (enabled) => void saveProfile({ enabled }),
+  });
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -59,15 +70,17 @@ export function AgentClient() {
     );
   }
 
-  async function saveProfile(patch: Partial<Profile>) {
-    await fetch("/api/agent/profile", {
+  async function saveProfile(patch: Partial<Profile>): Promise<boolean> {
+    const response = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => null);
+    if (!response?.ok) return false;
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-    void refetch();
+    await refetch();
+    return true;
   }
 
   return (
@@ -84,7 +97,7 @@ export function AgentClient() {
             aria-checked={profile.enabled}
             aria-label="Agente encendido"
             disabled={!aiConfigured}
-            onClick={() => void saveProfile({ enabled: !profile.enabled })}
+            onClick={() => void toggle()}
             className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
               profile.enabled ? "bg-primary" : "bg-secondary"
             }`}
@@ -112,9 +125,13 @@ export function AgentClient() {
       )}
 
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
-        <ProfileSection profile={profile} onSave={saveProfile} />
+        <div className="space-y-4 sm:space-y-6">
+          <ProfileSection profile={profile} onSave={saveProfile} />
+          <AgencyAgentCards profile={profile} onSave={saveProfile} />
+        </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
+      {gate}
     </div>
   );
 }
@@ -124,7 +141,7 @@ function ProfileSection({
   onSave,
 }: {
   profile: Profile;
-  onSave: (patch: Partial<Profile>) => Promise<void>;
+  onSave: (patch: Partial<Profile>) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(profile);
   useEffect(() => setForm(profile), [profile]);

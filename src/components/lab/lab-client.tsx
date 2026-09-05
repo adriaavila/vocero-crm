@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEvents } from "@/components/use-events";
 import { Badge } from "@/components/ui/badge";
+import { LiveWhatsappTest } from "@/components/agencia/live-whatsapp-test";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -163,6 +164,13 @@ export function LabClient() {
           </div>
         </div>
       )}
+
+      {/* Capa de agencia: el round-trip real por WhatsApp. Vive en
+          components/agencia/ para que la próxima fusión con upstream no toque
+          este archivo más que en esta línea. */}
+      <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+        <LiveWhatsappTest />
+      </div>
 
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-[280px_1fr]">
         <HistoryList
