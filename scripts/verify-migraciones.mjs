@@ -13,9 +13,7 @@
  * Uso:  node scripts/verify-migraciones.mjs
  * Requiere: un Postgres alcanzable en PGURL (default: postgres local).
  */
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 
@@ -33,22 +31,66 @@ const ok = (nombre, cond, extra = "") => {
   }
 };
 
-/** Las migraciones del fork ANTES de la fusión, sacadas del historial. */
-function migracionesViejasDelFork() {
-  const tags = [
-    "0003_whole_lizard",
-    "0004_mushy_beast",
-    "0005_lethal_celestials",
-    "0006_tiny_gladiator",
-    "0007_melodic_switch",
-    "0008_worried_outlaw_kid",
-  ];
-  return tags.map((tag) =>
-    execFileSync("git", ["show", `2b03538:drizzle/${tag}.sql`], {
-      encoding: "utf8",
-    })
-  );
-}
+/**
+ * Las migraciones del fork ANTES de la fusión con upstream.
+ *
+ * Van en duro y no se leen del historial de git a propósito: son historia
+ * congelada (nunca van a cambiar) y sacarlas con `git show <sha>` ataría este
+ * arnés a un clon completo del repo — en CI, con clon superficial, ese commit
+ * no existe y la mitad más importante de la prueba se saltaría en silencio.
+ */
+const MIGRACIONES_VIEJAS_DEL_FORK = [
+  // 0003_whole_lizard
+  `CREATE TABLE "booking" (
+	"id" text PRIMARY KEY NOT NULL,
+	"organization_id" text NOT NULL,
+	"conversation_id" text NOT NULL,
+	"contact_id" text NOT NULL,
+	"start_at" timestamp NOT NULL,
+	"end_at" timestamp NOT NULL,
+	"google_event_id" text NOT NULL,
+	"meet_url" text,
+	"status" text DEFAULT 'pending' NOT NULL,
+	"error" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "google_calendar_connection" (
+	"id" text PRIMARY KEY NOT NULL,
+	"organization_id" text NOT NULL,
+	"account_email" text,
+	"calendar_id" text DEFAULT 'primary' NOT NULL,
+	"refresh_token_cipher" text NOT NULL,
+	"refresh_token_iv" text NOT NULL,
+	"refresh_token_tag" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "contact" ADD COLUMN "ficha" jsonb DEFAULT '{}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "booking" ADD CONSTRAINT "booking_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "booking" ADD CONSTRAINT "booking_conversation_id_conversation_id_fk" FOREIGN KEY ("conversation_id") REFERENCES "public"."conversation"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "booking" ADD CONSTRAINT "booking_contact_id_contact_id_fk" FOREIGN KEY ("contact_id") REFERENCES "public"."contact"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "google_calendar_connection" ADD CONSTRAINT "google_calendar_connection_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "booking_org_start_uq" ON "booking" USING btree ("organization_id","start_at");--> statement-breakpoint
+CREATE INDEX "booking_org_contact_start_idx" ON "booking" USING btree ("organization_id","contact_id","start_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "google_calendar_connection_org_uq" ON "google_calendar_connection" USING btree ("organization_id");`,
+  // 0004_mushy_beast
+  `ALTER TABLE "agent_profile" ADD COLUMN "preset_only" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "agent_profile" ADD COLUMN "preset_replies" jsonb DEFAULT '[]'::jsonb NOT NULL;`,
+  // 0005_lethal_celestials
+  `ALTER TABLE "conversation" ALTER COLUMN "ai_enabled" SET DEFAULT false;`,
+  // 0006_tiny_gladiator
+  `ALTER TABLE "agent_profile" ADD COLUMN "allowlist_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "agent_profile" ADD COLUMN "allowed_wa_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;`,
+  // 0007_melodic_switch
+  `ALTER TABLE "agent_profile" ADD COLUMN "last_live_test_at" timestamp;--> statement-breakpoint
+ALTER TABLE "agent_profile" ADD COLUMN "last_live_test_passed" boolean;--> statement-breakpoint
+ALTER TABLE "agent_profile" ADD COLUMN "last_live_test_elapsed_ms" integer;`,
+  // 0008_worried_outlaw_kid
+  `ALTER TABLE "agent_profile" ADD COLUMN "ai_provider" text DEFAULT 'openai' NOT NULL;`
+];
 
 function sqlDe(tag) {
   return readFileSync(path.join(DRIZZLE, `${tag}.sql`), "utf8");
@@ -141,7 +183,7 @@ await conBase("vocero_mig_piloto", async (sql) => {
   ]) {
     await aplicar(sql, sqlDe(tag));
   }
-  for (const texto of migracionesViejasDelFork()) await aplicar(sql, texto);
+  for (const texto of MIGRACIONES_VIEJAS_DEL_FORK) await aplicar(sql, texto);
 
   // 2. Datos reales que NO se pueden perder.
   await sql`INSERT INTO "organization" ("id","name","slug","created_at") VALUES ('org_1','Piloto','piloto',now())`;

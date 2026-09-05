@@ -1,11 +1,27 @@
-name: Verify
+name: E2E
 
+# El gate de COMPORTAMIENTO del fork, el que corre la app de verdad.
+#
+# `ci.yml` (de upstream) ya cubre typecheck, lint, test y build en las dos
+# configuraciones de banderas. Repetirlo aquí solo alargaría la espera: esto
+# levanta Postgres, migra, arranca la app con los mocks y conduce los 15
+# guiones de `scripts/e2e-*.mjs` — que es donde aparecen los fallos que la
+# compilación no ve (un webhook que 401ea, un aviso que se pierde, un agente
+# que se queda callado).
 on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
 jobs:
-  verify:
+  e2e:
+    name: comportamiento de punta a punta
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -34,27 +50,53 @@ jobs:
       OPENAI_MODEL: ci-model
       OPENAI_BASE_URL: http://localhost:3000/api/dev/ai-mock
       BOT_API_KEY: ci-bot-key-long-enough
+      # Todo encendido: es la configuración que ejercitan los guiones. Que las
+      # banderas apagadas tampoco estorben lo prueba `ci.yml` en su matriz.
+      AGENDA: "on"
+      CHANNELS: whatsapp,instagram,messenger
+      ATRIBUCION: "on"
+      # Los conectores y la API unificada, contra sus mocks. Sin esto los
+      # guiones salen a internet de verdad y fallan por red, no por el código.
+      ZERNIO_BASE_URL: http://localhost:3000/api/dev/zernio-mock
+      ZOOM_BASE_URL: http://localhost:3000/api/dev/zoom-mock
+      ZOOM_OAUTH_BASE_URL: http://localhost:3000/api/dev/zoom-mock
+      GOOGLE_CAL_BASE_URL: http://localhost:3000/api/dev/google-mock
+      GOOGLE_OAUTH_BASE_URL: http://localhost:3000/api/dev/google-mock
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
-          version: 11.5.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm verify
-      - run: pnpm exec playwright install --with-deps chromium
+
+      # Las migraciones, por los DOS caminos: base nueva y base que viene del
+      # fork viejo. El segundo es el del piloto en producción.
+      - name: migraciones (arnés)
+        run: node scripts/verify-migraciones.mjs
+        env:
+          PGURL: postgresql://postgres:postgres@localhost:5432/postgres
+
       - run: pnpm db:migrate
+      - run: pnpm exec playwright install --with-deps chromium
+
+      # `--env-file=.env` de los guiones necesita el archivo, aunque esté
+      # vacío: las variables reales vienen del entorno del job.
       - run: touch .env
-      - name: Start app
+
+      - name: arrancar la app
         run: |
           pnpm dev > /tmp/vocero-next.log 2>&1 &
-          for attempt in $(seq 1 60); do
+          for attempt in $(seq 1 90); do
             curl --fail --silent http://localhost:3000/api/health && exit 0
             sleep 1
           done
           cat /tmp/vocero-next.log
           exit 1
+
       - run: pnpm test:e2e
+
+      - name: log de la app si algo falló
+        if: failure()
+        run: tail -200 /tmp/vocero-next.log
