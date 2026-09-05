@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
 
-export const alt = "Vocero de Allok — CRM de WhatsApp";
+export const alt = "Vocero — CRM de WhatsApp";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -31,7 +31,7 @@ export default async function Image() {
             <rect width="64" height="64" rx="16" fill="#151618" />
             <path d="M0 32 Q2.08 30.35 4.17 32 Q6.25 40.86 8.33 32 Q10.42 14.22 12.5 32 Q14.58 55.17 16.67 32 Q18.75 10.62 20.83 32 Q22.92 44.55 25 32 Q27.08 19.45 29.17 32 Q31.25 53.38 33.33 32 Q35.42 8.83 37.5 32 Q39.58 49.78 41.67 32 Q43.75 23.14 45.83 32 Q47.92 33.65 50 32" transform="translate(7,0)" fill="none" stroke="#c5f04a" strokeWidth="2.6" strokeLinecap="round" />
           </svg>
-          <span style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em" }}>Allok</span>
+          <span style={{ fontSize: 30, fontWeight: 600, letterSpacing: "-0.03em" }}>Vocero</span>
         </div>
         <span style={{ fontSize: 20, color: "#8a8a8a", letterSpacing: "0.12em" }}>CRM · WHATSAPP</span>
       </div>

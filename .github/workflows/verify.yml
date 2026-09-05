@@ -1,0 +1,60 @@
+name: Verify
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vocero
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vocero"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_BASE_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vocero
+      BETTER_AUTH_SECRET: ci-secret-long-enough
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      META_WEBHOOK_VERIFY_TOKEN: ci-webhook-token
+      META_APP_SECRET: ci-meta-app-secret
+      META_GRAPH_BASE_URL: http://localhost:3000/api/dev/wa-mock/graph
+      WA_MOCK_ENABLED: "true"
+      OPENAI_API_KEY: ci-openai-token
+      OPENAI_MODEL: ci-model
+      OPENAI_BASE_URL: http://localhost:3000/api/dev/ai-mock
+      BOT_API_KEY: ci-bot-key-long-enough
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm verify
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm db:migrate
+      - run: touch .env
+      - name: Start app
+        run: |
+          pnpm dev > /tmp/vocero-next.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            curl --fail --silent http://localhost:3000/api/health && exit 0
+            sleep 1
+          done
+          cat /tmp/vocero-next.log
+          exit 1
+      - run: pnpm test:e2e

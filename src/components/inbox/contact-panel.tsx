@@ -326,7 +326,7 @@ export function ContactPanel({
         {Object.keys(ficha).length > 0 && (
           <section className="border-b p-4">
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-text-3">
-              Ficha NEA
+              Ficha del contacto
             </p>
             <dl className="space-y-2 rounded-md border bg-secondary/30 p-3">
               {Object.entries(ficha).map(([key, value]) => (

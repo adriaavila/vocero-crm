@@ -88,4 +88,32 @@ describe("sandbox del Laboratorio en el sender", () => {
     }
     expect(graphRequest).not.toHaveBeenCalled();
   });
+
+  it("respuesta IA obsoleta tras handoff → no llama a Graph", async () => {
+    selectRows.push([
+      {
+        conversation: {
+          id: "cv_handoff",
+          organizationId: "org_1",
+          isTest: false,
+          aiEnabled: false,
+          handoffAt: new Date(),
+          lastInboundAt: new Date(),
+        },
+        contact: { id: "ct_1", phone: "5215511111111" },
+      },
+    ]);
+    const { sendText } = await import("@/server/inbox/send");
+
+    await expect(
+      sendText({
+        conversationId: "cv_handoff",
+        organizationId: "org_1",
+        text: "respuesta tardía",
+        aiGenerated: true,
+      })
+    ).rejects.toMatchObject({ code: "ai_disabled" });
+
+    expect(graphRequest).not.toHaveBeenCalled();
+  });
 });

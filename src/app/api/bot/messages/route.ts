@@ -49,8 +49,11 @@ export async function POST(req: Request) {
     });
     return Response.json({ messageId: sent.messageId });
   } catch (error) {
-    if (error instanceof SendError && error.code === "window_closed") {
-      return Response.json({ code: "window_closed" }, { status: 409 });
+    if (
+      error instanceof SendError &&
+      (error.code === "window_closed" || error.code === "ai_disabled")
+    ) {
+      return Response.json({ code: error.code }, { status: 409 });
     }
     if (error instanceof SendError) {
       const status = error.code === "meta_unavailable" ? 503 : 422;

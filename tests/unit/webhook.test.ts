@@ -46,9 +46,9 @@ describe("capa 2: firma x-hub-signature-256 (FR-042)", () => {
     expect(isValidSignature(body, null, secret)).toBe(false);
   });
 
-  it("sin secreto configurado la capa está desactivada → pasa", () => {
-    expect(isValidSignature(body, null, undefined)).toBe(true);
-    expect(isValidSignature(body, "sha256=basura", undefined)).toBe(true);
+  it("sin secreto configurado → rechaza", () => {
+    expect(isValidSignature(body, null, undefined)).toBe(false);
+    expect(isValidSignature(body, "sha256=basura", undefined)).toBe(false);
   });
 });
 

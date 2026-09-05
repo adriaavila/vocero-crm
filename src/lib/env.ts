@@ -46,6 +46,13 @@ const envSchema = z.object({
   GOOGLE_SERVICE_ACCOUNT_JSON_B64: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  CALENDAR_TIME_ZONE: z.string().min(1).default("UTC"),
+  CALENDAR_UTC_OFFSET_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(-14 * 60)
+    .max(14 * 60)
+    .default(0),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
   NODE_ENV: z.string().default("development"),
@@ -124,4 +131,8 @@ export function isAgentConfigured(): boolean {
 
 export function isWahaConfigured(): boolean {
   return Boolean(process.env.WAHA_API_URL?.trim() && process.env.WAHA_API_KEY?.trim());
+}
+
+export function calendarTimeZone(): string {
+  return process.env.CALENDAR_TIME_ZONE?.trim() || "UTC";
 }

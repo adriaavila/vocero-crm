@@ -135,8 +135,8 @@ Embedded Signup. Hay dos formas de obtenerlo:
 4. En el panel de Meta (WhatsApp → Configuration → Webhook) pega la **URL del
    webhook** y el **verify token** que Vocero te muestra, y suscribe el campo
    `messages` (y `message_template_status_update` si usarás plantillas).
-5. Recomendado: agrega `META_APP_SECRET` (App Secret de tu app) a las
-   variables de la instancia para la verificación de firma de cada evento.
+5. Agrega `META_APP_SECRET` (App Secret de la app que entrega el webhook) a
+   las variables de la instancia. Sin él, Vocero rechaza eventos reales.
 
 ### Modo agencia (Tech Provider) — para agencias
 
@@ -190,9 +190,8 @@ del cliente se conecta con el **override de callback por WABA**:
    llegan directo a SU instancia, no a tu backend.
 
 > ⚠️ **Seguridad**: la URL del webhook contiene el verify token como segmento
-> secreto — trátala como una contraseña (no la publiques ni la mandes por
-> canales inseguros). En modo directo puedes añadir la capa extra de firma con
-> `META_APP_SECRET`.
+> secreto — trátala como una contraseña. Vocero también exige la firma de Meta
+> mediante `META_APP_SECRET` para todo evento real.
 >
 > ℹ️ **Limitación conocida de Meta**: los eventos de estado de PLANTILLAS
 > (`message_template_status_update`) no siguen el override de callback — van a
@@ -235,7 +234,7 @@ pestaña **Agente** (ahí también se elige el proveedor preferido) y corre el
    conversaciones reales de venta y soporte.
 5. **Datos del cliente en su servidor**: cada negocio aloja su instancia; el
    token va cifrado en reposo y los webhooks se validan por URL secreta y
-   firma opcional.
+   firma obligatoria de Meta.
 
 ## FAQ de errores comunes
 
@@ -269,12 +268,10 @@ base64 (44 caracteres): `openssl rand -base64 32`.
 
 ## Roadmap
 
-- Multimedia completa en la bandeja (hoy: indicador de tipo).
 - RAG para knowledge bases grandes (hoy: se inyecta completo con aviso de tamaño).
-- Personas configurables del Laboratorio y comparativas entre corridas.
+- Personas configurables del Laboratorio.
 - Variables múltiples y borrado de plantillas.
-- Analytics de conversación y plantillas.
-- Broadcast con opt-in verificado.
+- Analytics de conversación, pipeline y plantillas.
 
 ## Stack
 

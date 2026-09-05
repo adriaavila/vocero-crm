@@ -40,3 +40,7 @@ Thumbs.db
 .playwright-mcp/
 .tmp-seed-demo.mjs
 .dev-media/
+
+# --- Salidas de herramientas locales (capturas, trazas) ---
+output/
+.playwright-cli/

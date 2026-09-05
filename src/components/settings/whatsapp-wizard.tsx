@@ -443,11 +443,10 @@ function WebhookCard({ webhook }: { webhook: WebhookInfo }) {
             x-hub-signature-256.
           </p>
         ) : (
-          <p className="flex items-start gap-2 text-xs text-muted-foreground">
-            <Info className="mt-0.5 h-4 w-4 shrink-0" /> Sin App Secret
-            configurado: el webhook queda protegido por la URL secreta (normal
-            en modo agencia). Para la capa extra de firma, agrega
-            META_APP_SECRET a la instancia.
+          <p className="flex items-start gap-2 text-xs text-destructive">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" /> Falta
+            META_APP_SECRET: los eventos reales serán rechazados hasta
+            configurarlo en la instancia.
           </p>
         )}
           </div>

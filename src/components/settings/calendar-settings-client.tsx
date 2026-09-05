@@ -12,6 +12,7 @@ type Status = {
   meetSupported: boolean;
   error: string | null;
   oauthAvailable: boolean;
+  timeZone: string;
 };
 
 export function CalendarSettingsClient() {
@@ -47,14 +48,14 @@ export function CalendarSettingsClient() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Google Calendar</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          NEA consulta disponibilidad real y crea citas de 30 minutos con Google Meet.
+          El agente consulta disponibilidad real y crea citas de 30 minutos con Google Meet.
         </p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarDays className="h-4 w-4" /> Agenda de NEA
+            <CalendarDays className="h-4 w-4" /> Agenda del agente
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -80,7 +81,7 @@ export function CalendarSettingsClient() {
           )}
 
           <div className="rounded-md border bg-secondary/30 p-3 text-xs leading-5 text-text-2">
-            Lunes a viernes · 09:00–17:00 · America/Caracas · 30 min · 15 min de margen
+            Lunes a viernes · 09:00–17:00 · {status?.timeZone ?? "UTC"} · 30 min · 15 min de margen
           </div>
 
           {status?.oauthAvailable && status.mode !== "oauth" && (

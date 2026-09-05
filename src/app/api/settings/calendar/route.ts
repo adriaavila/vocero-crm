@@ -15,6 +15,7 @@ export const GET = withOwner(async (session) => {
     oauthAvailable: Boolean(
       env.GOOGLE_OAUTH_CLIENT_ID && env.GOOGLE_OAUTH_CLIENT_SECRET
     ),
+    timeZone: env.CALENDAR_TIME_ZONE,
   });
 });
 

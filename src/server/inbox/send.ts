@@ -22,6 +22,7 @@ export class SendError extends Error {
     | "sandbox_violation"
     | "not_connected"
     | "reconnect_required"
+    | "ai_disabled"
     | "window_closed"
     | "meta_error"
     | "meta_unavailable"
@@ -51,7 +52,8 @@ type SendTarget = {
  */
 async function prepareSend(
   conversationId: string,
-  organizationId: string
+  organizationId: string,
+  requireAiEnabled = false
 ): Promise<SendTarget> {
   const db = getDb();
   const rows = await db
@@ -75,6 +77,16 @@ async function prepareSend(
     throw new SendError(
       "sandbox_violation",
       "Conversación de prueba del Laboratorio: el envío real está prohibido"
+    );
+  }
+
+  if (
+    requireAiEnabled &&
+    (!row.conversation.aiEnabled || row.conversation.handoffAt)
+  ) {
+    throw new SendError(
+      "ai_disabled",
+      "La IA fue pausada antes de entregar esta respuesta"
     );
   }
 
@@ -169,7 +181,8 @@ export async function sendText(input: {
 }): Promise<SendResult> {
   const { credentials, recipient } = await prepareSend(
     input.conversationId,
-    input.organizationId
+    input.organizationId,
+    input.aiGenerated
   );
 
   const waMessageId = await callGraphSend(credentials, {

@@ -73,7 +73,7 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
 Ver `.env.example` (cada una con guía inline). Las claves: `APP_BASE_URL`,
 `DATABASE_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY` (32 bytes base64),
 `META_WEBHOOK_VERIFY_TOKEN` (segmento secreto del webhook), `META_APP_SECRET`
-(opcional, firma), y para IA:
+(obligatorio para eventos reales), y para IA:
 
 ```bash
 OPENAI_API_KEY=sk-proj-...

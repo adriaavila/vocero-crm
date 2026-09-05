@@ -11,8 +11,6 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 
-const TIME_ZONE = "America/Caracas";
-const CARACAS_OFFSET_MS = 4 * 60 * 60 * 1000;
 const DURATION_MS = 30 * 60 * 1000;
 const BUFFER_MS = 15 * 60 * 1000;
 const SLOT_STEP_MINUTES = 45;
@@ -28,6 +26,25 @@ export type CalendarSlot = {
   endUtc: string;
   label: string;
 };
+
+export type CalendarSchedule = {
+  timeZone: string;
+  /** Desfase local respecto de UTC; Caracas = -240. */
+  utcOffsetMinutes: number;
+};
+
+const DEFAULT_SCHEDULE: CalendarSchedule = {
+  timeZone: "UTC",
+  utcOffsetMinutes: 0,
+};
+
+function configuredSchedule(): CalendarSchedule {
+  const env = getEnv();
+  return {
+    timeZone: env.CALENDAR_TIME_ZONE,
+    utcOffsetMinutes: env.CALENDAR_UTC_OFFSET_MINUTES,
+  };
+}
 
 type BusyInterval = { start: Date; end: Date };
 type CalendarClient = {
@@ -234,7 +251,8 @@ export async function getCalendarStatus(organizationId: string): Promise<{
 async function queryBusy(
   client: CalendarClient,
   timeMin: Date,
-  timeMax: Date
+  timeMax: Date,
+  schedule: CalendarSchedule
 ): Promise<BusyInterval[]> {
   try {
     const response = await client.auth.request<{
@@ -248,7 +266,7 @@ async function queryBusy(
       data: {
         timeMin: timeMin.toISOString(),
         timeMax: timeMax.toISOString(),
-        timeZone: TIME_ZONE,
+        timeZone: schedule.timeZone,
         items: [{ id: client.calendarId }],
       },
     });
@@ -271,9 +289,11 @@ async function queryBusy(
 export function buildAvailability(
   now: Date,
   busy: BusyInterval[],
-  limit: number
+  limit: number,
+  schedule: CalendarSchedule = DEFAULT_SCHEDULE
 ): CalendarSlot[] {
-  const wallNow = new Date(now.getTime() - CARACAS_OFFSET_MS);
+  const offsetMs = schedule.utcOffsetMinutes * 60 * 1000;
+  const wallNow = new Date(now.getTime() + offsetMs);
   const localMidnight = Date.UTC(
     wallNow.getUTCFullYear(),
     wallNow.getUTCMonth(),
@@ -291,7 +311,7 @@ export function buildAvailability(
       minute + DURATION_MS / 60_000 <= 17 * 60 && slots.length < limit;
       minute += SLOT_STEP_MINUTES
     ) {
-      const start = new Date(localDay + minute * 60_000 + CARACAS_OFFSET_MS);
+      const start = new Date(localDay + minute * 60_000 - offsetMs);
       const end = new Date(start.getTime() + DURATION_MS);
       if (start <= now) continue;
       const overlaps = busy.some(
@@ -304,7 +324,7 @@ export function buildAvailability(
           startUtc: start.toISOString(),
           endUtc: end.toISOString(),
           label: new Intl.DateTimeFormat("es-VE", {
-            timeZone: TIME_ZONE,
+            timeZone: schedule.timeZone,
             weekday: "long",
             day: "numeric",
             month: "short",
@@ -324,9 +344,15 @@ export async function listAvailability(
   now = new Date()
 ): Promise<CalendarSlot[]> {
   const client = await getCalendarClient(organizationId);
+  const schedule = configuredSchedule();
   const end = new Date(now.getTime() + HORIZON_DAYS * 24 * 60 * 60 * 1000);
-  const busy = await queryBusy(client, now, end);
-  return buildAvailability(now, busy, Math.max(1, Math.min(limit, 200)));
+  const busy = await queryBusy(client, now, end, schedule);
+  return buildAvailability(
+    now,
+    busy,
+    Math.max(1, Math.min(limit, 200)),
+    schedule
+  );
 }
 
 function eventId(organizationId: string, startUtc: string): string {
@@ -369,6 +395,7 @@ async function insertOrGetEvent(
     end: Date;
   }
 ): Promise<GoogleEvent> {
+  const timeZone = configuredSchedule().timeZone;
   const url = `${calendarUrl(client.calendarId, "/events")}?conferenceDataVersion=1&sendUpdates=none`;
   try {
     const response = await client.auth.request<GoogleEvent>({
@@ -379,8 +406,8 @@ async function insertOrGetEvent(
         summary: input.summary,
         description: input.description,
         visibility: "private",
-        start: { dateTime: input.start.toISOString(), timeZone: TIME_ZONE },
-        end: { dateTime: input.end.toISOString(), timeZone: TIME_ZONE },
+        start: { dateTime: input.start.toISOString(), timeZone },
+        end: { dateTime: input.end.toISOString(), timeZone },
         conferenceData: {
           createRequest: {
             requestId: `meet-${input.eventId}`,
@@ -550,7 +577,7 @@ export async function getUpcomingBooking(
     scheduledAt: booking.startAt.toISOString(),
     endAt: booking.endAt.toISOString(),
     label: new Intl.DateTimeFormat("es-VE", {
-      timeZone: TIME_ZONE,
+      timeZone: configuredSchedule().timeZone,
       weekday: "long",
       day: "numeric",
       month: "short",

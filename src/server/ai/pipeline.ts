@@ -1,7 +1,7 @@
 import { asc, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { getEnv, isAiConfigured } from "@/lib/env";
+import { calendarTimeZone, getEnv, isAiConfigured } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
@@ -145,7 +145,12 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: buildAgentSystemPrompt({ profile, kb, stages }),
+      content: buildAgentSystemPrompt({
+        profile,
+        kb,
+        stages,
+        timeZone: calendarTimeZone(),
+      }),
     },
     ...history
       .filter((m) => m.text)
@@ -223,6 +228,7 @@ async function deliverReply(
       aiGenerated: true,
     });
   } catch (err) {
+    if (err instanceof SendError && err.code === "ai_disabled") return;
     if (err instanceof SendError && err.code === "window_closed") {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
       return;

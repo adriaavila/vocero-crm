@@ -26,13 +26,14 @@ export function buildAgentSystemPrompt(input: {
   profile: AgentProfile;
   kb: KbEntry[];
   stages: { name: string }[];
+  timeZone?: string;
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
   const now = new Date();
   const dateStr = new Intl.DateTimeFormat("es-ES", {
     dateStyle: "full",
-    timeZone: "America/Caracas",
+    timeZone: input.timeZone ?? "UTC",
   }).format(now);
 
   return [
