@@ -39,7 +39,13 @@ export const GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 const CONFERENCE_POLLS = 3;
 const POLL_DELAY_MS = 400;
 
-async function getAccessToken(creds: GoogleCreds): Promise<string> {
+/**
+ * Exportada para la capa de agencia (`server/agencia/google-eventos.ts`), que
+ * lee los eventos del calendario para espejarlos como bloqueos. Compartir el
+ * refresco del token en vez de duplicarlo: un segundo camino de autenticación
+ * sería un segundo camino que auditar y que caducaría distinto.
+ */
+export async function getAccessToken(creds: GoogleCreds): Promise<string> {
   const key = `${creds.clientId}:${creds.calendarId}`;
   const cached = getCachedGoogleToken(key);
   if (cached) return cached;

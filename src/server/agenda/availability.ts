@@ -13,6 +13,7 @@ import {
   type SlotUtc,
 } from "@/lib/time/slots";
 import { getSettings, type CalendarSettings } from "@/server/agenda/settings";
+import { sincronizarSiHaceFalta } from "@/server/agencia/agenda-externa";
 
 /**
  * 015 — Motor de disponibilidad:
@@ -88,6 +89,19 @@ export async function computeAvailability(
   const settings = opts?.settings ?? (await getSettings(organizationId));
   const now = opts?.now ?? new Date();
   const tz = settings.timezone;
+
+  /**
+   * Capa de agencia (fork): antes de calcular, espeja el calendario externo
+   * como bloqueos. Es la ÚNICA línea del fork en este archivo y engancha aquí
+   * a propósito — así lo heredan las cuatro entradas (bot, operador, agente
+   * in-process y la revalidación al confirmar) sin tocar ninguna.
+   *
+   * No contradice la limitación documentada arriba: el cálculo sigue siendo
+   * 100% local contra la tabla `booking`. Esto solo mantiene esa tabla al día.
+   * Nunca lanza, se salta si sincronizó hace menos de un minuto, y corta a los
+   * 4 s: si Google no contesta, se calcula con los bloqueos de la última vez.
+   */
+  await sincronizarSiHaceFalta(organizationId, { now });
 
   const from = opts?.fromISO ?? todayInTz(now, tz);
   const to = opts?.toISO ?? addDaysISO(from, settings.maxDaysAhead);
