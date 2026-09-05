@@ -99,6 +99,13 @@
       "when": 1788310823966,
       "tag": "0012_messenger_zernio",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788647134222,
+      "tag": "9002_capa_agencia",
+      "breakpoints": true
     }
   ]
 }
