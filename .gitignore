@@ -42,5 +42,7 @@ Thumbs.db
 .dev-media/
 
 # --- Salidas de herramientas locales (capturas, trazas) ---
+# scratch/ es la de los self-tests de upstream (scripts/e2e-responsive.mjs).
 output/
+scratch/
 .playwright-cli/

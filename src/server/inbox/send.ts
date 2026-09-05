@@ -9,6 +9,26 @@ import {
   type Credentials,
 } from "@/server/whatsapp/credentials";
 import { isWindowOpen } from "@/server/inbox/window";
+import { IG_PREFIX } from "@/server/inbox/identity";
+import {
+  getInstagramCredentialsByOrg,
+  markInstagramReconnectRequired,
+  type InstagramCredentials,
+} from "@/server/instagram/credentials";
+import { sendInstagramText } from "@/server/instagram/send";
+import { FB_PREFIX } from "@/server/inbox/identity";
+import {
+  getMessengerCredentialsByOrg,
+  markMessengerReconnectRequired,
+  type MessengerCredentials,
+} from "@/server/messenger/credentials";
+import { sendMessengerText } from "@/server/messenger/send";
+import {
+  capabilitiesFor,
+  textFits,
+  windowClosedMessage,
+} from "@/server/channels/capabilities";
+import { isChannelEnabled } from "@/server/channels/enabled";
 import { serializeMessage } from "@/server/inbox/ingest";
 import {
   saveMediaFile,
@@ -41,8 +61,13 @@ type SendResult = { messageId: string };
 
 type SendTarget = {
   conversation: typeof schema.conversation.$inferSelect;
-  credentials: Credentials;
+  /** null cuando el destino no es WhatsApp (014). */
+  credentials: Credentials | null;
   recipient: string;
+  /** 014: presente solo en conversaciones de Instagram. */
+  instagram?: InstagramCredentials;
+  /** 017: presente solo en conversaciones de Messenger. */
+  messenger?: MessengerCredentials;
 };
 
 /**
@@ -80,6 +105,11 @@ async function prepareSend(
     );
   }
 
+  // La pausa se comprueba AQUÍ, contra la fila fresca, y no donde nació la
+  // respuesta: entre que el modelo empieza a redactar y el mensaje sale pueden
+  // pasar segundos, y en ese hueco el dueño pudo tomar la conversación. Sin
+  // esto, el cliente recibe una respuesta del bot DESPUÉS de que un humano ya
+  // entró — el error que más caro cuesta en una cuenta entregada.
   if (
     requireAiEnabled &&
     (!row.conversation.aiEnabled || row.conversation.handoffAt)
@@ -90,10 +120,87 @@ async function prepareSend(
     );
   }
 
-  if (!isWindowOpen(row.conversation.lastInboundAt)) {
+  // 014: Instagram tiene su propio transporte, su propia ventana y NO tiene
+  // plantillas. Se resuelve antes que las credenciales de WhatsApp para no
+  // exigirle a una instancia de solo-Instagram un numero conectado.
+  if (row.conversation.channel === "instagram") {
+    // Una conversacion de un canal apagado puede existir (se apago despues de
+    // recibirla): falla claro en vez de intentar un transporte que no aplica.
+    if (!isChannelEnabled("instagram")) {
+      throw new SendError(
+        "not_connected",
+        "El canal de Instagram está desactivado en esta instancia"
+      );
+    }
+    const igCreds = await getInstagramCredentialsByOrg(organizationId);
+    if (!igCreds) {
+      throw new SendError(
+        "not_connected",
+        "No hay cuenta de Instagram conectada"
+      );
+    }
+    if (igCreds.status === "reconnect_required") {
+      throw new SendError(
+        "reconnect_required",
+        "El token de Instagram expiró: reconecta la cuenta en Configuración"
+      );
+    }
+    const igRecipient = row.contact.waIdentity.startsWith(IG_PREFIX)
+      ? row.contact.waIdentity.slice(IG_PREFIX.length)
+      : row.contact.waIdentity;
+    return {
+      conversation: row.conversation,
+      credentials: null,
+      recipient: igRecipient,
+      instagram: igCreds,
+    };
+  }
+
+  // 017: Messenger, mismo trato que Instagram: transporte propio, ventana
+  // propia (con etiqueta fuera de ella) y sin plantillas.
+  if (row.conversation.channel === "messenger") {
+    if (!isChannelEnabled("messenger")) {
+      throw new SendError(
+        "not_connected",
+        "El canal de Messenger está desactivado en esta instancia"
+      );
+    }
+    const fbCreds = await getMessengerCredentialsByOrg(organizationId);
+    if (!fbCreds) {
+      throw new SendError(
+        "not_connected",
+        "No hay página de Facebook conectada"
+      );
+    }
+    if (fbCreds.status === "reconnect_required") {
+      throw new SendError(
+        "reconnect_required",
+        "El token de la página expiró: reconecta Messenger en Configuración"
+      );
+    }
+    const fbRecipient = row.contact.waIdentity.startsWith(FB_PREFIX)
+      ? row.contact.waIdentity.slice(FB_PREFIX.length)
+      : row.contact.waIdentity;
+    return {
+      conversation: row.conversation,
+      credentials: null,
+      recipient: fbRecipient,
+      messenger: fbCreds,
+    };
+  }
+
+  // El nucleo no decide la politica: la consulta. WhatsApp exige plantilla
+  // fuera de ventana; Instagram etiqueta y sigue; otro canal podria no tener
+  // ventana en absoluto.
+  const caps = capabilitiesFor(row.conversation.channel);
+  if (
+    caps.windowMs !== null &&
+    caps.outsideWindow === "template" &&
+    !isWindowOpen(row.conversation.lastInboundAt)
+  ) {
     throw new SendError(
       "window_closed",
-      "La ventana de 24 horas está cerrada; usa una plantilla aprobada"
+      windowClosedMessage(row.conversation.channel)
     );
   }
 
@@ -129,7 +236,14 @@ async function persistOutbound(input: {
   waMessageId: string | null;
   type: string;
   text: string | null;
-  status: "pending" | "failed";
+  /**
+   * 014: 'sent' existe porque no todos los canales confirman por webhook.
+   * WhatsApp entra como 'pending' y avanza con los `statuses` de Meta;
+   * Instagram no manda ese evento salvo que se suscriba aparte, asi que la
+   * aceptacion de la plataforma ES la confirmacion. Sin esto el mensaje se
+   * queda con el reloj puesto para siempre aunque ya se haya entregado.
+   */
+  status: "pending" | "sent" | "failed";
   error?: string | null;
   aiGenerated?: boolean;
   origin: "ai" | "operator";
@@ -179,18 +293,23 @@ export async function sendText(input: {
   text: string;
   aiGenerated?: boolean;
 }): Promise<SendResult> {
-  const { credentials, recipient } = await prepareSend(
+  const target = await prepareSend(
     input.conversationId,
     input.organizationId,
     input.aiGenerated
   );
+  const { credentials, recipient } = target;
 
-  const waMessageId = await callGraphSend(credentials, {
-    messaging_product: "whatsapp",
-    to: recipient,
-    type: "text",
-    text: { body: input.text },
-  });
+  const waMessageId = target.instagram
+    ? await callInstagramSend(target, input.text)
+    : target.messenger
+      ? await callMessengerSend(target, input.text)
+      : await callGraphSend(credentials!, {
+          messaging_product: "whatsapp",
+          to: recipient,
+          type: "text",
+          text: { body: input.text },
+        });
 
   const messageId = await persistOutbound({
     organizationId: input.organizationId,
@@ -198,7 +317,12 @@ export async function sendText(input: {
     waMessageId,
     type: "text",
     text: input.text,
-    status: "pending",
+    // Un canal sin acuses de entrega confirma al aceptar; uno con acuses
+    // avanza despues por webhook. Sin esta distincion el mensaje se queda
+    // con el reloj puesto para siempre.
+    status: capabilitiesFor(target.conversation.channel).deliveryReceipts
+      ? "pending"
+      : "sent",
     aiGenerated: input.aiGenerated,
     origin: input.aiGenerated ? "ai" : "operator",
   });
@@ -221,10 +345,15 @@ export async function sendMediaMessage(input: {
   // Validación previa (FR-007): tipo y tamaño antes de tocar disco o red.
   const kind = validateOutgoing(input.file.mimeType, input.file.data.byteLength);
 
-  const { credentials, recipient } = await prepareSend(
-    input.conversationId,
-    input.organizationId
-  );
+  const target = await prepareSend(input.conversationId, input.organizationId);
+  const { credentials, recipient } = target;
+  const sendCaps = capabilitiesFor(target.conversation.channel);
+  if (!sendCaps.outboundMedia) {
+    throw new SendError(
+      "meta_error",
+      `Todavía no se pueden enviar adjuntos por ${sendCaps.label}; manda el texto`
+    );
+  }
 
   const db = getDb();
   const assetId = newId("mediaAsset");
@@ -250,7 +379,7 @@ export async function sendMediaMessage(input: {
   const asset = assetRows[0]!;
 
   try {
-    const waMediaId = await uploadGraphMedia(credentials, input.file);
+    const waMediaId = await uploadGraphMedia(credentials!, input.file);
     await db
       .update(schema.mediaAsset)
       .set({ waMediaId, updatedAt: new Date() })
@@ -261,7 +390,7 @@ export async function sendMediaMessage(input: {
     if (kind === "document" && input.file.fileName) {
       mediaPayload.filename = input.file.fileName;
     }
-    const waMessageId = await callGraphSend(credentials, {
+    const waMessageId = await callGraphSend(credentials!, {
       messaging_product: "whatsapp",
       to: recipient,
       type: kind,
@@ -337,6 +466,14 @@ export async function sendStructured(
     input.conversationId,
     input.organizationId
   );
+  // Ubicaciones y contactos son mensajes de WhatsApp: en los demás canales no
+  // hay credenciales de WhatsApp que usar y Graph los rechazaría.
+  if (!credentials) {
+    throw new SendError(
+      "meta_error",
+      "Este canal no admite ubicaciones ni contactos; manda el texto"
+    );
+  }
 
   const payload =
     input.kind === "location"
@@ -406,6 +543,114 @@ export async function callGraphSend(
       }
       if (err.status === 0 || err.status >= 500) {
         throw new SendError("meta_unavailable", "Meta no está disponible ahora");
+      }
+      throw new SendError("meta_error", err.message);
+    }
+    throw err;
+  }
+}
+
+
+/**
+ * 014 — Envío por el canal de Instagram. Traduce los fallos al mismo
+ * vocabulario de SendError que ya usa WhatsApp, para que la bandeja no tenga
+ * que aprender un idioma por plataforma.
+ */
+async function callInstagramSend(
+  target: SendTarget,
+  text: string
+): Promise<string> {
+  const creds = target.instagram!;
+
+  const caps = capabilitiesFor("instagram");
+  if (!textFits("instagram", text)) {
+    throw new SendError(
+      "meta_error",
+      `${caps.label} no acepta mensajes de más de ${caps.maxTextBytes} bytes: acorta el texto`
+    );
+  }
+
+  // Instagram no tiene plantillas: fuera de la ventana de 24 h la única vía
+  // es la etiqueta de agente humano (hasta 7 días).
+  const humanAgentTag = !isWindowOpen(target.conversation.lastInboundAt);
+
+  try {
+    const res = await sendInstagramText({
+      credentials: creds,
+      recipient: target.recipient,
+      threadRef: target.conversation.channelThreadRef,
+      text,
+      humanAgentTag,
+    });
+    return res.platformMessageId;
+  } catch (err) {
+    if (err instanceof MetaApiError) {
+      if (err.isAuthError) {
+        await markInstagramReconnectRequired(creds.organizationId);
+        throw new SendError(
+          "reconnect_required",
+          "El token de Instagram expiró o fue revocado: reconecta la cuenta"
+        );
+      }
+      if (err.status === 0 || err.status >= 500) {
+        throw new SendError(
+          "meta_unavailable",
+          "Instagram no está disponible en este momento; intenta de nuevo"
+        );
+      }
+      throw new SendError("meta_error", err.message);
+    }
+    throw err;
+  }
+}
+
+/**
+ * 017 — Envío por el canal de Messenger. Mismo vocabulario de SendError que
+ * WhatsApp e Instagram: la bandeja no aprende un idioma por plataforma.
+ */
+async function callMessengerSend(
+  target: SendTarget,
+  text: string
+): Promise<string> {
+  const creds = target.messenger!;
+
+  const caps = capabilitiesFor("messenger");
+  if (!textFits("messenger", text)) {
+    throw new SendError(
+      "meta_error",
+      `${caps.label} no acepta mensajes de más de ${caps.maxTextBytes} bytes: acorta el texto`
+    );
+  }
+
+  // Messenger no tiene plantillas: fuera de la ventana de 24 h la única vía
+  // es la etiqueta de agente humano (hasta 7 días).
+  const humanAgentTag = !isWindowOpen(target.conversation.lastInboundAt);
+
+  try {
+    const res = await sendMessengerText({
+      credentials: creds,
+      recipient: target.recipient,
+      // Zernio responde dentro de SU conversación, no al PSID: sin esta
+      // referencia el envío no tiene a dónde ir.
+      threadRef: target.conversation.channelThreadRef,
+      text,
+      humanAgentTag,
+    });
+    return res.platformMessageId;
+  } catch (err) {
+    if (err instanceof MetaApiError) {
+      if (err.isAuthError) {
+        await markMessengerReconnectRequired(creds.organizationId);
+        throw new SendError(
+          "reconnect_required",
+          "El token de la página expiró o fue revocado: reconecta Messenger"
+        );
+      }
+      if (err.status === 0 || err.status >= 500) {
+        throw new SendError(
+          "meta_unavailable",
+          "Messenger no está disponible en este momento; intenta de nuevo"
+        );
       }
       throw new SendError("meta_error", err.message);
     }

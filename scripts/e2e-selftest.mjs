@@ -179,6 +179,60 @@ async function main() {
   );
   ok("el contacto reconciliado conserva su conversación", !!mxConv);
 
+  // Issue #35: un destinatario argentino llega como `549` + 10 dígitos y hay
+  // que ENVIARLE sin el 9. La identidad, en cambio, conserva lo que Meta
+  // reporta: si se reescribiera, dejaría de casar con el `wa_id` de cada
+  // webhook y el contacto se partiría en dos.
+  console.log("\n== us-bsuid: destinatario argentino (549 → 54) ==");
+  const AR_REPORTADO = "5491122334455";
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: AR_REPORTADO,
+      name: "Lead AR",
+      text: "hola desde Argentina",
+      waMessageId: "wamid.e2e.ar.1",
+    }),
+  });
+  await sleep(1200);
+  const convAr = ((await api("/api/conversations")).json?.conversations ?? []).find(
+    (c) => c.contact.name === "Lead AR"
+  );
+  ok("la conversación argentina se creó", Boolean(convAr));
+  ok(
+    "la identidad guardada conserva el 9 que reporta Meta",
+    convAr?.contact.phone === AR_REPORTADO,
+    `phone=${convAr?.contact.phone}`
+  );
+
+  if (convAr) {
+    // Se cuenta lo que ya había en vez de vaciar el outbox: el DELETE del
+    // wa-mock reinicia su contador de wa_message_id, y en una RE-CORRIDA eso
+    // choca con los mensajes que ya están en la base (unique) y tumba el envío
+    // con un 500 que no tiene nada que ver con lo que se está probando.
+    const outboxAntes =
+      ((await api("/api/dev/wa-mock/outbox")).json?.outbox ?? []).length;
+    const envioAr = await api(`/api/conversations/${convAr.id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text: "respuesta a Argentina" }),
+    });
+    ok("el mensaje a Argentina se envía", envioAr.res.ok, `status=${envioAr.res.status}`);
+    const outboxAr = (
+      (await api("/api/dev/wa-mock/outbox")).json?.outbox ?? []
+    ).slice(outboxAntes);
+    ok(
+      "por el cable viaja SIN el 9 (lo que la lista de permitidos acepta)",
+      outboxAr.some((o) => o.to === "541122334455"),
+      JSON.stringify(outboxAr.map((o) => o.to))
+    );
+    ok(
+      "…y nunca con el 9, que es lo que devolvía 131030",
+      !outboxAr.some((o) => o.to === AR_REPORTADO),
+      JSON.stringify(outboxAr.map((o) => o.to))
+    );
+  }
+
   console.log("\n== us-bot-api: autorización ==");
   const noKey = await api("/api/bot/media/media123");
   ok("media sin API key → 401", noKey.res.status === 401);
@@ -254,6 +308,321 @@ async function main() {
     `status=${medBad.res.status}`
   );
 
+  console.log("\n== us-bot-api: perfil del agente + knowledge base ==");
+  const profNoKey = await api("/api/bot/profile");
+  ok("perfil sin API key → 401", profNoKey.res.status === 401);
+
+  const putProf = await api("/api/agent/profile", {
+    method: "PUT",
+    body: JSON.stringify({
+      name: "Sofi",
+      tone: "cálido y directo",
+      instructions: "Vendemos limpiezas dentales.",
+      escalationRules: "Urgencias de dolor → humano.",
+      greeting: "¡Hola! Soy Sofi",
+      enabled: false,
+    }),
+  });
+  ok("perfil guardado desde la pantalla Agente", putProf.res.ok);
+  const kbQa = await api("/api/kb", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "qa",
+      question: "¿Cuánto cuesta?",
+      answer: "$800.",
+    }),
+  });
+  ok("entrada de KB creada desde la pantalla", kbQa.res.ok, JSON.stringify(kbQa.json));
+
+  const prof = await bot("/api/bot/profile");
+  ok(
+    "GET /api/bot/profile → 200 con el perfil de la pantalla",
+    prof.res.ok && prof.json?.profile?.name === "Sofi",
+    JSON.stringify(prof.json?.profile)
+  );
+  ok(
+    "el knowledge base viaja renderizado (P:/R:)",
+    typeof prof.json?.kb === "string" && prof.json.kb.includes("P: ¿Cuánto cuesta?"),
+    JSON.stringify(prof.json?.kb)
+  );
+  ok(
+    "`enabled` NO viaja: gobierna la IA in-process, no al bot externo",
+    prof.json?.profile && !("enabled" in prof.json.profile)
+  );
+  ok("`resources` presente y vacío", Array.isArray(prof.json?.resources));
+
+  await api("/api/agent/profile", {
+    method: "PUT",
+    body: JSON.stringify({ tone: "seco y breve" }),
+  });
+  const profAgain = await bot("/api/bot/profile");
+  ok(
+    "editar el tono se refleja al instante (sin caché)",
+    profAgain.json?.profile?.tone === "seco y breve",
+    JSON.stringify(profAgain.json?.profile?.tone)
+  );
+
+  console.log("\n== us-bot-api: contexto conversacional ==");
+  const ctxNoKey = await api(`/api/bot/context?conversationId=${convId}`);
+  ok("contexto sin API key → 401", ctxNoKey.res.status === 401);
+
+  const ctx = await bot(`/api/bot/context?conversationId=${convId}`);
+  ok(
+    "GET /api/bot/context por conversationId → 200",
+    ctx.res.ok && ctx.json?.conversation?.id === convId,
+    JSON.stringify(ctx.json?.conversation)
+  );
+  ok(
+    "trae la identidad estable del contacto (no solo el teléfono)",
+    typeof ctx.json?.contact?.waIdentity === "string" &&
+      ctx.json.contact.waIdentity.length > 0
+  );
+  ok(
+    "trae la etapa del lead en el pipeline",
+    typeof ctx.json?.lead?.stageName === "string",
+    JSON.stringify(ctx.json?.lead)
+  );
+  ok(
+    "la ventana de 24 h viaja abierta tras un entrante reciente",
+    ctx.json?.conversation?.windowOpen === true &&
+      ctx.json?.conversation?.windowRemainingMs > 0,
+    JSON.stringify(ctx.json?.conversation)
+  );
+
+  const ctxByIdentity = await bot(
+    `/api/bot/context?waIdentity=${encodeURIComponent(ctx.json.contact.waIdentity)}`
+  );
+  ok(
+    "resolver por waIdentity da la MISMA conversación",
+    ctxByIdentity.json?.conversation?.id === convId,
+    JSON.stringify(ctxByIdentity.json?.conversation?.id)
+  );
+
+  const ctxSinArgs = await bot("/api/bot/context");
+  ok("contexto sin waIdentity ni conversationId → 422", ctxSinArgs.res.status === 422);
+  const ctx404 = await bot("/api/bot/context?conversationId=cv_no_existe");
+  ok("contexto de una conversación inexistente → 404", ctx404.res.status === 404);
+
+  console.log("\n== us-bot-api: ficha de calificación ==");
+  const fichaNoKey = await api("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({ conversationId: convId, ficha: { rubro: "x" } }),
+  });
+  ok("ficha sin API key → 401", fichaNoKey.res.status === 401);
+
+  const f1 = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({
+      conversationId: convId,
+      ficha: { rubro: "dentista", geo: "Querétaro", calificado: true },
+    }),
+  });
+  ok(
+    "PUT /api/bot/ficha → 200 con la ficha completa",
+    f1.res.ok && f1.json?.ficha?.rubro === "dentista",
+    JSON.stringify(f1.json)
+  );
+  ok(
+    "las claves las pone el negocio: el CRM guarda lo que le manden",
+    f1.json?.ficha?.geo === "Querétaro" && f1.json?.ficha?.calificado === true,
+    JSON.stringify(f1.json?.ficha)
+  );
+
+  const ctxConFicha = await bot(`/api/bot/context?conversationId=${convId}`);
+  ok(
+    "la ficha viaja en el contexto del siguiente turno",
+    ctxConFicha.json?.contact?.ficha?.rubro === "dentista",
+    JSON.stringify(ctxConFicha.json?.contact?.ficha)
+  );
+
+  const f2 = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({
+      conversationId: convId,
+      ficha: { presupuesto: "20 mil", geo: null },
+    }),
+  });
+  ok(
+    "merge campo a campo: lo ausente se conserva",
+    f2.json?.ficha?.rubro === "dentista" && f2.json?.ficha?.presupuesto === "20 mil",
+    JSON.stringify(f2.json?.ficha)
+  );
+  ok(
+    "null explícito borra la clave",
+    f2.json?.ficha && !("geo" in f2.json.ficha),
+    JSON.stringify(f2.json?.ficha)
+  );
+
+  const fBasura = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({
+      conversationId: convId,
+      ficha: { anidado: { a: 1 }, vacío: "", bueno: "  sí  " },
+    }),
+  });
+  ok(
+    "lo que no se entiende se ignora sin 422 (no se le tiran datos al bot)",
+    fBasura.res.ok &&
+      fBasura.json?.ficha?.bueno === "sí" &&
+      !("anidado" in fBasura.json.ficha) &&
+      !("vacío" in fBasura.json.ficha),
+    JSON.stringify(fBasura.json?.ficha)
+  );
+
+  const fNoConv = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({ conversationId: "cv_no_existe", ficha: { a: "b" } }),
+  });
+  ok("ficha de conversación inexistente → 404", fNoConv.res.status === 404);
+  const fSinFicha = await bot("/api/bot/ficha", {
+    method: "PUT",
+    body: JSON.stringify({ conversationId: convId }),
+  });
+  ok("cuerpo sin `ficha` → 422", fSinFicha.res.status === 422);
+
+  console.log("\n== us-bot-api: el bot envía a través del CRM ==");
+  const sendNoKey = await api("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, text: "hola" }),
+  });
+  ok("envío sin API key → 401", sendNoKey.res.status === 401);
+
+  const outboxBeforeBot =
+    ((await api("/api/dev/wa-mock/outbox")).json?.outbox ?? []).length;
+  const botSend = await bot("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, text: "Hola, soy el bot." }),
+  });
+  ok(
+    "POST /api/bot/messages → 200 con messageId",
+    botSend.res.ok && typeof botSend.json?.messageId === "string",
+    JSON.stringify(botSend.json)
+  );
+  const outboxAfterBot =
+    ((await api("/api/dev/wa-mock/outbox")).json?.outbox ?? []).length;
+  ok(
+    "el mensaje salió de verdad por el canal de WhatsApp",
+    outboxAfterBot === outboxBeforeBot + 1,
+    `antes=${outboxBeforeBot} después=${outboxAfterBot}`
+  );
+  const botMsg = ((await api(`/api/conversations/${convId}/messages`)).json
+    ?.messages ?? []).find((m) => m.id === botSend.json?.messageId);
+  ok(
+    "queda en la bandeja marcado como IA (aiGenerated + origin=ai)",
+    botMsg?.aiGenerated === true && botMsg?.origin === "ai",
+    JSON.stringify({ aiGenerated: botMsg?.aiGenerated, origin: botMsg?.origin })
+  );
+  const sendNoConv = await bot("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: "cv_no_existe", text: "hola" }),
+  });
+  ok("envío a conversación inexistente → 404", sendNoConv.res.status === 404);
+  const sendVacio = await bot("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, text: "" }),
+  });
+  ok("texto vacío → 422 (no se manda un mensaje en blanco)", sendVacio.res.status === 422);
+
+  console.log("\n== us-bot-api: el bot pide un humano ==");
+  const hoNoKey = await api("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, reason: "cliente" }),
+  });
+  ok("handoff sin API key → 401", hoNoKey.res.status === 401);
+
+  const ho = await bot("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, reason: "hostilidad" }),
+  });
+  ok("POST /api/bot/handoff → 200", ho.res.ok && ho.json?.ok === true);
+  await sleep(300);
+  let convTrasHandoff = ((await api("/api/conversations")).json?.conversations ?? [])
+    .find((c) => c.id === convId);
+  ok(
+    "la conversación queda pausada y con su motivo",
+    convTrasHandoff?.aiEnabled === false &&
+      !!convTrasHandoff?.handoffAt &&
+      convTrasHandoff?.handoffReason === "hostilidad",
+    JSON.stringify({
+      aiEnabled: convTrasHandoff?.aiEnabled,
+      reason: convTrasHandoff?.handoffReason,
+    })
+  );
+  const primerHandoffAt = convTrasHandoff?.handoffAt;
+
+  const hoRepe = await bot("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, reason: "cliente" }),
+  });
+  await sleep(300);
+  convTrasHandoff = ((await api("/api/conversations")).json?.conversations ?? [])
+    .find((c) => c.id === convId);
+  ok(
+    "repetir el handoff es idempotente: no pisa la hora ni el motivo original",
+    hoRepe.res.ok &&
+      convTrasHandoff?.handoffAt === primerHandoffAt &&
+      convTrasHandoff?.handoffReason === "hostilidad",
+    JSON.stringify({
+      antes: primerHandoffAt,
+      ahora: convTrasHandoff?.handoffAt,
+      reason: convTrasHandoff?.handoffReason,
+    })
+  );
+
+  const hoNoConv = await bot("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: "cv_no_existe", reason: "cliente" }),
+  });
+  ok("handoff de conversación inexistente → 404", hoNoConv.res.status === 404);
+
+  // El handoff jamás debe perderse por un motivo que no esté en el catálogo:
+  // el bot se quedaría hablándole a alguien que pidió un humano.
+  await bot("/api/bot/reset", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId }),
+  });
+  await sleep(300);
+  const hoRaro = await bot("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, reason: "porque sí" }),
+  });
+  await sleep(300);
+  convTrasHandoff = ((await api("/api/conversations")).json?.conversations ?? [])
+    .find((c) => c.id === convId);
+  ok(
+    "un motivo fuera del catálogo NO tira el handoff (cae a 'modelo')",
+    hoRaro.res.ok &&
+      convTrasHandoff?.aiEnabled === false &&
+      convTrasHandoff?.handoffReason === "modelo",
+    JSON.stringify({
+      status: hoRaro.res.status,
+      reason: convTrasHandoff?.handoffReason,
+    })
+  );
+
+  await bot("/api/bot/reset", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId }),
+  });
+  await sleep(300);
+  const hoSinReason = await bot("/api/bot/handoff", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId }),
+  });
+  await sleep(300);
+  convTrasHandoff = ((await api("/api/conversations")).json?.conversations ?? [])
+    .find((c) => c.id === convId);
+  ok(
+    "sin motivo también pausa (cae a 'modelo')",
+    hoSinReason.res.ok && convTrasHandoff?.handoffReason === "modelo",
+    JSON.stringify(convTrasHandoff?.handoffReason)
+  );
+  await bot("/api/bot/reset", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId }),
+  });
+  await sleep(300);
+
   console.log("\n== us-bot-api: IA pausada y reset ==");
   const pause = await api(`/api/conversations/${convId}`, {
     method: "PATCH",
@@ -281,6 +650,26 @@ async function main() {
       typPaused.json?.ok === false &&
       typPaused.json?.reason === "ai_paused",
     JSON.stringify(typPaused.json)
+  );
+
+  const outboxBeforePaused =
+    ((await api("/api/dev/wa-mock/outbox")).json?.outbox ?? []).length;
+  const sendPaused = await bot("/api/bot/messages", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convId, text: "¿sigo yo?" }),
+  });
+  ok(
+    "el bot NO habla sobre una conversación tomada por un humano → 409 ai_paused",
+    sendPaused.res.status === 409 &&
+      sendPaused.json?.error?.code === "ai_paused",
+    JSON.stringify(sendPaused.json)
+  );
+  const outboxAfterPaused =
+    ((await api("/api/dev/wa-mock/outbox")).json?.outbox ?? []).length;
+  ok(
+    "y el rechazo ocurre ANTES de tocar Meta",
+    outboxAfterPaused === outboxBeforePaused,
+    `antes=${outboxBeforePaused} después=${outboxAfterPaused}`
   );
 
   const msgsBeforeReset =
@@ -693,11 +1082,816 @@ async function main() {
     JSON.stringify(echoImg?.media)
   );
 
+  await agendaChecks();
+  await atribucionChecks();
+
   console.log(`\n===== ${checks - failures}/${checks} checks OK, ${failures} fallos =====`);
   process.exit(failures > 0 ? 1 : 0);
+}
+
+/* ============================================================
+ * 015 — Motor de agenda universal (tests/e2e/us-agenda.md)
+ *
+ * Cubre las dos configuraciones de la bandera, las dos garantías
+ * innegociables con sus CÓDIGOS EXACTOS, la carrera del hueco, el enlace
+ * pendiente cuando el proveedor falla, y el sandbox del Laboratorio.
+ * ============================================================ */
+
+async function agendaChecks() {
+  const encendida = /^(on|1|true|si|sí|yes)$/i.test(
+    (process.env.AGENDA ?? "").trim()
+  );
+
+  console.log("\n== 015: la bandera de la agenda ==");
+  const rutas = [
+    "/api/calendar/settings",
+    "/api/calendar/availability",
+    "/api/bookings",
+  ];
+
+  if (!encendida) {
+    // Con la bandera apagada la agenda NO EXISTE: ni rutas de operador, ni de
+    // servicio, ni pantallas. Es la mitad del contrato que casi nunca se
+    // prueba, y la que toda instancia normal usa.
+    for (const ruta of rutas) {
+      const { res } = await api(ruta);
+      ok(`${ruta} → 404 con la agenda apagada`, res.status === 404, `status=${res.status}`);
+    }
+    const botAvail = await bot("/api/bot/availability?conversationId=x");
+    ok(
+      "/api/bot/availability → 404 con la agenda apagada",
+      botAvail.res.status === 404,
+      `status=${botAvail.res.status}`
+    );
+    const page = await fetch(`${BASE}/bookings`, { headers: { cookie } });
+    ok("la pantalla /bookings no existe", page.status === 404, `status=${page.status}`);
+    console.log("  (agenda apagada: el resto de los checks de 015 no aplican)");
+    return;
+  }
+
+  for (const ruta of rutas) {
+    const { res } = await api(ruta);
+    ok(`${ruta} responde con la agenda encendida`, res.ok, `status=${res.status}`);
+  }
+
+  console.log("\n== 015: configuración de la agenda (US2) ==");
+  const defaults = (await api("/api/calendar/settings")).json?.settings;
+  ok(
+    "una instancia sin configurar da defaults usables, no 404",
+    defaults?.slotMinutes === 30 && defaults?.connector === "enlace-fijo",
+    JSON.stringify(defaults)
+  );
+
+  const SALA = "https://meet.ejemplo.test/sala-fija";
+  const guardado = await api("/api/calendar/settings", {
+    method: "PUT",
+    body: JSON.stringify({
+      weeklyHours: {
+        mon: [{ start: "09:00", end: "18:00" }],
+        tue: [{ start: "09:00", end: "18:00" }],
+        wed: [{ start: "09:00", end: "18:00" }],
+        thu: [{ start: "09:00", end: "18:00" }],
+        fri: [{ start: "09:00", end: "18:00" }],
+        sat: [{ start: "09:00", end: "18:00" }],
+        sun: [{ start: "09:00", end: "18:00" }],
+      },
+      slotMinutes: 30,
+      minNoticeHours: 0,
+      maxDaysAhead: 7,
+      connector: "enlace-fijo",
+      meetingLink: SALA,
+    }),
+  });
+  ok("se guarda el horario y la sala fija", guardado.res.ok, `status=${guardado.res.status}`);
+
+  const tzMala = await api("/api/calendar/settings", {
+    method: "PUT",
+    body: JSON.stringify({ timezone: "Marte/Olympus" }),
+  });
+  ok(
+    "una zona horaria inventada se rechaza (422) en vez de romper el motor",
+    tzMala.res.status === 422,
+    `status=${tzMala.res.status}`
+  );
+
+  const disp = (await api("/api/calendar/availability")).json?.slots ?? [];
+  ok("hay huecos ofrecibles tras configurar", disp.length > 0, `slots=${disp.length}`);
+  ok(
+    "cada hueco trae el día EN PALABRAS, no solo la hora",
+    Boolean(disp[0]?.dayLabel && disp[0]?.time),
+    JSON.stringify(disp[0])
+  );
+
+  console.log("\n== 015: las dos garantías (US3) ==");
+  const LEAD_A = "5214627015001";
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: LEAD_A,
+      name: "Lead agenda A",
+      text: "quiero agendar",
+      waMessageId: "wamid.e2e.015.a.1",
+    }),
+  });
+  const LEAD_B = "5214627015002";
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: LEAD_B,
+      name: "Lead agenda B",
+      text: "yo también quiero",
+      waMessageId: "wamid.e2e.015.b.1",
+    }),
+  });
+  await sleep(1500);
+
+  const convsAgenda = (await api("/api/conversations")).json?.conversations ?? [];
+  const convA = convsAgenda.find((c) => c.contact.phone === "524627015001");
+  const convB = convsAgenda.find((c) => c.contact.phone === "524627015002");
+  ok("dos conversaciones de prueba listas", Boolean(convA && convB));
+  if (!convA || !convB) return;
+
+  const ofertaA = await bot(
+    `/api/bot/availability?conversationId=${convA.id}&limit=12&perDay=3&days=5`
+  );
+  const slotsA = ofertaA.json?.slots ?? [];
+  ok("ofrecer horarios devuelve huecos", slotsA.length > 0, `slots=${slotsA.length}`);
+  ok(
+    "el reparto cubre más de un día (no todo hoy)",
+    (ofertaA.json?.diasConAgenda ?? []).length > 1,
+    JSON.stringify(ofertaA.json?.diasConAgenda)
+  );
+
+  // GARANTÍA 1: un instante libre pero JAMÁS ofrecido se rechaza.
+  const noOfrecido = await bot("/api/bot/bookings", {
+    method: "POST",
+    body: JSON.stringify({
+      conversationId: convA.id,
+      // Un minuto después de un hueco real: válido, libre, y nunca ofrecido.
+      startUtc: new Date(Date.parse(slotsA[0].startUtc) + 60_000).toISOString(),
+    }),
+  });
+  ok(
+    "horario no ofrecido → 409 slot_not_offered (código EXACTO)",
+    noOfrecido.res.status === 409 &&
+      noOfrecido.json?.error?.code === "slot_not_offered",
+    `status=${noOfrecido.res.status} body=${JSON.stringify(noOfrecido.json)}`
+  );
+  ok(
+    "y devuelve lo que SÍ se ofreció, para re-ofrecer sin inventar",
+    (noOfrecido.json?.slots ?? []).length > 0
+  );
+
+  // Camino feliz: 201 EXACTO, no 200.
+  const elegido = slotsA[0].startUtc;
+  const creada = await bot("/api/bot/bookings", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convA.id, startUtc: elegido }),
+  });
+  ok(
+    "reservar responde 201 Created (NO 200): es contrato",
+    creada.res.status === 201,
+    `status=${creada.res.status}`
+  );
+  ok(
+    "la respuesta trae etiqueta y el enlace de la sala fija",
+    creada.json?.label && creada.json?.meetingLink === SALA,
+    JSON.stringify(creada.json)
+  );
+  ok("el enlace no queda pendiente con el conector soberano", creada.json?.linkPending === false);
+
+  const dispTrasReserva = (await api("/api/calendar/availability")).json?.slots ?? [];
+  ok(
+    "el hueco reservado desaparece de la disponibilidad",
+    !dispTrasReserva.some((s) => s.startUtc === elegido)
+  );
+
+  const lista = (await api("/api/bookings")).json?.bookings ?? [];
+  ok(
+    "la cita aparece en Citas, marcada como agendada por la IA",
+    lista.some((b) => b.id === creada.json?.bookingId && b.source === "ai"),
+    JSON.stringify(lista.map((b) => ({ id: b.id, source: b.source })))
+  );
+
+  // GARANTÍA 2: la carrera. B tenía el mismo hueco ofrecido y llega tarde.
+  const ofertaB = await bot(
+    `/api/bot/availability?conversationId=${convB.id}&limit=12&perDay=3&days=5`
+  );
+  // Se le ofrece a B exactamente el hueco que A acaba de tomar: se simula la
+  // oferta previa a la reserva de A, que es como ocurre en la vida real.
+  const tomado = await bot("/api/bot/bookings", {
+    method: "POST",
+    body: JSON.stringify({ conversationId: convB.id, startUtc: elegido }),
+  });
+  ok(
+    "el hueco ya tomado → 409 (nunca una segunda cita)",
+    tomado.res.status === 409,
+    `status=${tomado.res.status} body=${JSON.stringify(tomado.json)}`
+  );
+  ok(
+    "el sobre del error va ANIDADO y `slots` es HERMANO",
+    typeof tomado.json?.error?.code === "string" && Array.isArray(tomado.json?.slots),
+    JSON.stringify(tomado.json)
+  );
+
+  const listaTrasCarrera = (await api("/api/bookings")).json?.bookings ?? [];
+  const activasEnElHueco = listaTrasCarrera.filter(
+    (b) =>
+      b.scheduledAtUtc === elegido &&
+      (b.status === "agendada" || b.status === "realizada")
+  );
+  ok(
+    "CERO doble-agendamiento: una sola cita activa en ese instante",
+    activasEnElHueco.length === 1,
+    `activas=${activasEnElHueco.length}`
+  );
+
+  // Las alternativas del 409 ya son la oferta vigente: reservables de una.
+  const alternativa = (tomado.json?.slots ?? [])[0];
+  if (alternativa) {
+    const conAlternativa = await bot("/api/bot/bookings", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: convB.id,
+        startUtc: alternativa.startUtc,
+      }),
+    });
+    ok(
+      "una alternativa del 409 se reserva de inmediato (201)",
+      conAlternativa.res.status === 201,
+      `status=${conAlternativa.res.status}`
+    );
+  } else {
+    ok("el 409 trajo alternativas frescas", false, "lista vacía");
+  }
+
+  // Reprogramar por la superficie del bot: 200, no 201.
+  const ofertaMover = await bot(
+    `/api/bot/availability?conversationId=${convA.id}&limit=12&perDay=3&days=5`
+  );
+  const destino = (ofertaMover.json?.slots ?? [])[0];
+  if (destino) {
+    const movida = await bot("/api/bot/bookings", {
+      method: "PATCH",
+      body: JSON.stringify({
+        conversationId: convA.id,
+        startUtc: destino.startUtc,
+      }),
+    });
+    ok(
+      "reprogramar responde 200 (NO 201): no crea un recurso nuevo",
+      movida.res.status === 200,
+      `status=${movida.res.status}`
+    );
+  }
+
+  console.log("\n== 015: el operador y el enlace pendiente (US4) ==");
+  const bookingId = creada.json?.bookingId;
+  const cancelada1 = await api(`/api/bookings/${bookingId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "cancel" }),
+  });
+  const cancelada2 = await api(`/api/bookings/${bookingId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "cancel" }),
+  });
+  ok(
+    "cancelar dos veces no falla (idempotente)",
+    cancelada1.res.ok && cancelada2.res.ok,
+    `${cancelada1.res.status}/${cancelada2.res.status}`
+  );
+
+  const reintentoInvalido = await api(`/api/bookings/${bookingId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ action: "retry_link" }),
+  });
+  ok(
+    "reintentar el enlace de una cita que sí lo tiene → 422",
+    reintentoInvalido.res.status === 422,
+    `status=${reintentoInvalido.res.status}`
+  );
+
+  // El conector caído: la cita SE CREA igual, con el enlace pendiente.
+  await api("/api/calendar/settings", {
+    method: "PUT",
+    body: JSON.stringify({ connector: "zoom" }),
+  });
+  const ofertaPend = await bot(
+    `/api/bot/availability?conversationId=${convA.id}&limit=12&perDay=3&days=5`
+  );
+  const slotPend = (ofertaPend.json?.slots ?? [])[0];
+  if (slotPend) {
+    const sinProveedor = await bot("/api/bot/bookings", {
+      method: "POST",
+      body: JSON.stringify({
+        conversationId: convA.id,
+        startUtc: slotPend.startUtc,
+      }),
+    });
+    ok(
+      "con el proveedor sin conectar, la cita SE CREA igual (201)",
+      sinProveedor.res.status === 201,
+      `status=${sinProveedor.res.status}`
+    );
+    ok(
+      "…y avisa que el enlace queda pendiente, en vez de prometerlo",
+      sinProveedor.json?.linkPending === true &&
+        sinProveedor.json?.meetingLink === null,
+      JSON.stringify(sinProveedor.json)
+    );
+
+    const listaPend = (await api("/api/bookings")).json?.bookings ?? [];
+    ok(
+      "la cita sin enlace se ve como tal en Citas",
+      listaPend.some(
+        (b) => b.id === sinProveedor.json?.bookingId && b.linkPending === true
+      )
+    );
+  }
+
+  // Se restaura el conector soberano para no dejar la instancia a medias.
+  await api("/api/calendar/settings", {
+    method: "PUT",
+    body: JSON.stringify({ connector: "enlace-fijo" }),
+  });
+
+  console.log("\n== 015: conector Zoom contra su mock ==");
+  const zoomMockUp = await fetch(`${BASE}/api/dev/zoom-mock/_state`);
+  if (!zoomMockUp.ok) {
+    console.log("  (zoom-mock no disponible: se omiten los checks del conector)");
+  } else {
+    await fetch(`${BASE}/api/dev/zoom-mock/_reset`, { method: "POST" });
+
+    const malas = await api("/api/settings/zoom", {
+      method: "PUT",
+      body: JSON.stringify({
+        accountId: "acc",
+        clientId: "cli",
+        clientSecret: "secreto-invalid",
+      }),
+    });
+    ok(
+      "credenciales que el proveedor rechaza NO se guardan (422)",
+      malas.res.status === 422,
+      `status=${malas.res.status}`
+    );
+    ok(
+      "…y la conexión sigue sin existir",
+      (await api("/api/settings/zoom")).json?.connection === null
+    );
+
+    const buenas = await api("/api/settings/zoom", {
+      method: "PUT",
+      body: JSON.stringify({
+        accountId: "acc",
+        clientId: "cli",
+        clientSecret: "secreto-bueno",
+      }),
+    });
+    ok("credenciales válidas se guardan", buenas.res.ok, `status=${buenas.res.status}`);
+    ok(
+      "hacia el navegador solo salen los últimos 4 del secreto",
+      buenas.json?.connection?.secretLast4 === "ueno" &&
+        !JSON.stringify(buenas.json).includes("secreto-bueno"),
+      JSON.stringify(buenas.json)
+    );
+
+    await api("/api/calendar/settings", {
+      method: "PUT",
+      body: JSON.stringify({ connector: "zoom" }),
+    });
+    const ofertaZoom = await bot(
+      `/api/bot/availability?conversationId=${convB.id}&limit=12&perDay=3&days=5`
+    );
+    const slotZoom = (ofertaZoom.json?.slots ?? [])[0];
+    if (slotZoom) {
+      const conZoom = await bot("/api/bot/bookings", {
+        method: "POST",
+        body: JSON.stringify({
+          conversationId: convB.id,
+          startUtc: slotZoom.startUtc,
+        }),
+      });
+      ok(
+        "agendar con Zoom crea la reunión y devuelve su enlace",
+        conZoom.res.status === 201 &&
+          typeof conZoom.json?.meetingLink === "string" &&
+          conZoom.json.meetingLink.includes("zoom.mock"),
+        JSON.stringify(conZoom.json)
+      );
+
+      const estado = await (await fetch(`${BASE}/api/dev/zoom-mock/_state`)).json();
+      ok(
+        "el proveedor recibió la reunión con su tema y su hora",
+        estado.meetings?.length === 1 &&
+          estado.meetings[0].topic.startsWith("Cita —"),
+        JSON.stringify(estado.meetings)
+      );
+
+      // Cancelar borra la reunión en el proveedor.
+      await api(`/api/bookings/${conZoom.json.bookingId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ action: "cancel" }),
+      });
+      const estado2 = await (await fetch(`${BASE}/api/dev/zoom-mock/_state`)).json();
+      ok(
+        "cancelar la cita borra la reunión en el proveedor",
+        (estado2.deleted ?? []).length === 1,
+        JSON.stringify(estado2)
+      );
+    }
+
+    await api("/api/settings/zoom", { method: "DELETE" });
+    await api("/api/calendar/settings", {
+      method: "PUT",
+      body: JSON.stringify({ connector: "enlace-fijo" }),
+    });
+  }
+
+  // El sandbox del Laboratorio (una cita de prueba jamás llega a un conector)
+  // NO se verifica aquí: las conversaciones del Laboratorio no son alcanzables
+  // desde la API pública —a propósito—, así que desde fuera solo podría
+  // observarse por ausencia, que es una prueba débil. Vive en
+  // `tests/unit/agenda-sandbox.test.ts`, que afirma lo que de verdad importa:
+  // que el conector no se llama, ni al crear, ni al reprogramar, ni al
+  // cancelar.
 }
 
 main().catch((err) => {
   console.error("ERROR FATAL:", err);
   process.exit(1);
 });
+
+/* ============================================================
+ * 016 — Atribución de anuncios y Conversions API (tests/e2e/us-atribucion.md)
+ *
+ * Cubre las dos configuraciones de la bandera, la conexión del dataset, la
+ * captura del anuncio, los dos eventos con la FORMA de su payload, el dedup,
+ * y —lo que más importa— que un fallo de Meta jamás cuesta el movimiento del
+ * lead.
+ *
+ * Los contactos llevan un sufijo por corrida: el dedup de conversiones es
+ * permanente por diseño, así que re-correr el arnés contra la MISMA base
+ * tiene que estrenar leads o estaría midiendo los de la corrida anterior.
+ * ============================================================ */
+
+async function atribucionChecks() {
+  const encendida = /^(on|1|true|si|sí|yes)$/i.test(
+    (process.env.ATRIBUCION ?? "").trim()
+  );
+  const SUF = String(Date.now()).slice(-6);
+  const tel = (n) => `52155${SUF}${n}`;
+  const nom = (base) => `${base} ${SUF}`;
+
+  console.log("\n== 016: la bandera de la atribución ==");
+
+  if (!encendida) {
+    for (const ruta of ["/api/settings/capi", "/api/settings/capi/events"]) {
+      const { res } = await api(ruta);
+      ok(
+        `${ruta} → 404 con la atribución apagada`,
+        res.status === 404,
+        `status=${res.status}`
+      );
+    }
+    const put = await api("/api/settings/capi", {
+      method: "PUT",
+      body: JSON.stringify({ datasetId: "ds-e2e" }),
+    });
+    ok(
+      "PUT /api/settings/capi → 404 con la atribución apagada",
+      put.res.status === 404,
+      `status=${put.res.status}`
+    );
+    const page = await fetch(`${BASE}/settings/ads`, { headers: { cookie } });
+    ok(
+      "la pantalla /settings/ads no existe",
+      page.status === 404,
+      `status=${page.status}`
+    );
+
+    // Y un mensaje que SÍ viene de un anuncio se atiende como cualquier otro:
+    // la instancia que no atribuye no se entera del referral, pero tampoco se
+    // rompe con él.
+    const inb = await api("/api/dev/wa-mock/inbound", {
+      method: "POST",
+      body: JSON.stringify({
+        phoneNumberId: PN,
+        from: tel("1"),
+        name: nom("Lead con anuncio apagada"),
+        text: "vi su anuncio",
+        ctwaClid: "clid-apagada",
+        waMessageId: `wamid.e2e.016.off.${SUF}`,
+      }),
+    });
+    ok("inbound con anuncio entregado igual", inb.res.ok);
+    await sleep(1400);
+    const convsOff = (await api("/api/conversations")).json?.conversations ?? [];
+    ok(
+      "la conversación del anuncio existe (la ingesta no se rompe)",
+      convsOff.some((c) => c.contact.name === nom("Lead con anuncio apagada"))
+    );
+    console.log(
+      "  (atribución apagada: el resto de los checks de 016 no aplican)"
+    );
+    return;
+  }
+
+  /* ---------------- US2: conectar el dataset ---------------- */
+
+  console.log("\n== 016: conectar el dataset (US2) ==");
+  // Se parte de desconectado: así el primer check afirma lo que dice afirmar
+  // aunque el arnés se re-corra sobre la misma base.
+  await api("/api/settings/capi", { method: "DELETE" });
+  const vacio = await api("/api/settings/capi");
+  ok(
+    "sin configurar responde 200 con capi: null (no 404)",
+    vacio.res.status === 200 && vacio.json?.capi === null,
+    JSON.stringify(vacio.json)
+  );
+
+  const board0 = (await api("/api/pipeline/board")).json;
+  const etapaCalificado = board0.stages.filter((s) => s.kind === "open").at(-1);
+  const etapaGanada = board0.stages.find((s) => s.kind === "won");
+  const etapaInicial = board0.stages.find((s) => s.kind === "open");
+
+  const etapaAjena = await api("/api/settings/capi", {
+    method: "PUT",
+    body: JSON.stringify({
+      datasetId: "ds-e2e",
+      qualifiedStageId: "stg_de_otro_negocio",
+    }),
+  });
+  ok(
+    "una etapa que no es del negocio se rechaza con 422 etapa_invalida",
+    etapaAjena.res.status === 422 &&
+      etapaAjena.json?.error?.code === "etapa_invalida",
+    `status=${etapaAjena.res.status} ${JSON.stringify(etapaAjena.json)}`
+  );
+
+  const guardado = await api("/api/settings/capi", {
+    method: "PUT",
+    body: JSON.stringify({
+      datasetId: "ds-e2e",
+      qualifiedStageId: etapaCalificado.id,
+    }),
+  });
+  ok(
+    "se guarda el dataset sin pegar token",
+    guardado.res.ok,
+    `status=${guardado.res.status}`
+  );
+
+  const cfg = (await api("/api/settings/capi")).json?.capi;
+  ok(
+    "reusó el token de WhatsApp y solo muestra sus últimos 4",
+    cfg?.datasetId === "ds-e2e" && cfg?.tokenLast4 === "-e2e",
+    JSON.stringify(cfg)
+  );
+  ok(
+    "el token completo NUNCA sale del servidor",
+    !JSON.stringify(cfg).includes("tok-e2e"),
+    JSON.stringify(cfg)
+  );
+
+  /* ---------------- US3 + US4: capturar y calificar ---------------- */
+
+  console.log("\n== 016: del anuncio al lead calificado (US3/US4) ==");
+  await api("/api/dev/wa-mock/capi-events", { method: "DELETE" });
+
+  const CLID = `clid-e2e-${SUF}`;
+  const NOMBRE_AD = nom("Lead de anuncio");
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: tel("2"),
+      name: NOMBRE_AD,
+      text: "hola, vengo del anuncio",
+      ctwaClid: CLID,
+      adHeadline: "Kit de verano",
+      waMessageId: `wamid.e2e.016.ad.${SUF}.1`,
+    }),
+  });
+  await sleep(1400);
+
+  // Segundo mensaje con OTRO referral: el primero gana y no se sobreescribe.
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: tel("2"),
+      name: NOMBRE_AD,
+      text: "sigo aquí",
+      ctwaClid: "clid-que-no-debe-ganar",
+      waMessageId: `wamid.e2e.016.ad.${SUF}.2`,
+    }),
+  });
+  await sleep(1200);
+
+  const board1 = (await api("/api/pipeline/board")).json;
+  const leadAd = board1.leads.find((l) => l.contact.name === NOMBRE_AD);
+  ok("el lead del anuncio existe en el tablero", !!leadAd);
+
+  const mov1 = await api(`/api/pipeline/leads/${leadAd.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaCalificado.id }),
+  });
+  ok(
+    "el lead se mueve a la etapa calificada",
+    mov1.res.ok,
+    `status=${mov1.res.status}`
+  );
+  await sleep(800);
+
+  const act1 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  const calificado = act1.find(
+    (e) => e.eventName === "QualifiedLead" && e.contactName === NOMBRE_AD
+  );
+  ok(
+    "se reportó QualifiedLead con acuse de Meta",
+    calificado?.status === "sent" && !!calificado?.fbTraceId,
+    JSON.stringify(calificado)
+  );
+  ok(
+    "la actividad dice de qué anuncio vino",
+    calificado?.adHeadline === "Kit de verano",
+    JSON.stringify(calificado)
+  );
+
+  const capi1 = (await api("/api/dev/wa-mock/capi-events")).json?.capiEvents ?? [];
+  const evento1 = capi1.find((e) => e.eventName === "QualifiedLead");
+  ok(
+    "el evento viajó con el ctwa_clid del PRIMER referral",
+    evento1?.ctwaClid === CLID,
+    JSON.stringify(evento1?.ctwaClid)
+  );
+  ok(
+    "y con custom_data.lead_stage (lo único reglable en Meta)",
+    evento1?.customData?.lead_stage === "qualified",
+    JSON.stringify(evento1?.customData)
+  );
+
+  // Dedup: sacarlo y volverlo a meter no re-reporta.
+  await api(`/api/pipeline/leads/${leadAd.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaInicial.id }),
+  });
+  await api(`/api/pipeline/leads/${leadAd.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaCalificado.id }),
+  });
+  await sleep(800);
+  const act2 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  const califsDeEste = act2.filter(
+    (e) => e.eventName === "QualifiedLead" && e.contactName === NOMBRE_AD
+  );
+  ok(
+    "volver a calificar NO reporta dos veces",
+    califsDeEste.length === 1,
+    `${califsDeEste.length} filas`
+  );
+
+  /* ---------------- US5: la venta ---------------- */
+
+  console.log("\n== 016: la venta (US5) ==");
+  const venta = await api(`/api/pipeline/leads/${leadAd.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      stageId: etapaGanada.id,
+      amountCents: 45050,
+      currency: "MXN",
+    }),
+  });
+  ok("el trato se marca como ganado", venta.res.ok, `status=${venta.res.status}`);
+  await sleep(800);
+
+  const act3 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  const compra = act3.find(
+    (e) => e.eventName === "Purchase" && e.contactName === NOMBRE_AD
+  );
+  ok("se reportó la venta", compra?.status === "sent", JSON.stringify(compra));
+
+  const capi2 = (await api("/api/dev/wa-mock/capi-events")).json?.capiEvents ?? [];
+  const evento2 = capi2.find((e) => e.eventName === "Purchase");
+  ok(
+    "la venta viajó en UNIDADES de la moneda, no en centavos",
+    evento2?.customData?.value === 450.5 &&
+      evento2?.customData?.currency === "MXN",
+    JSON.stringify(evento2?.customData)
+  );
+
+  await api(`/api/pipeline/leads/${leadAd.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaCalificado.id }),
+  });
+  await api(`/api/pipeline/leads/${leadAd.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaGanada.id }),
+  });
+  await sleep(800);
+  const act4 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  const comprasDeEste = act4.filter(
+    (e) => e.eventName === "Purchase" && e.contactName === NOMBRE_AD
+  );
+  ok(
+    "re-ganar NO manda una segunda compra (a Meta no se le des-envía nada)",
+    comprasDeEste.length === 1,
+    `${comprasDeEste.length} filas`
+  );
+
+  /* ---------------- Los caminos infelices ---------------- */
+
+  console.log("\n== 016: caminos infelices ==");
+
+  // Un lead que no vino de un anuncio: se registra el motivo y nada falla.
+  const NOMBRE_ORG = nom("Lead organico");
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: tel("3"),
+      name: NOMBRE_ORG,
+      text: "hola",
+      waMessageId: `wamid.e2e.016.org.${SUF}`,
+    }),
+  });
+  await sleep(1400);
+  const board2 = (await api("/api/pipeline/board")).json;
+  const leadOrg = board2.leads.find((l) => l.contact.name === NOMBRE_ORG);
+  await api(`/api/pipeline/leads/${leadOrg.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaCalificado.id }),
+  });
+  await sleep(800);
+  const act5 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  const omitido = act5.find((e) => e.contactName === NOMBRE_ORG);
+  ok(
+    "un lead sin anuncio queda OMITIDO con el motivo escrito",
+    omitido?.status === "skipped" && /ctwa_clid/.test(omitido?.error ?? ""),
+    JSON.stringify(omitido)
+  );
+
+  // Meta rechazando: el 200 mentiroso (events_received: 0).
+  const NOMBRE_FAIL = nom("Lead con Meta caido");
+  await api("/api/settings/capi", {
+    method: "PUT",
+    body: JSON.stringify({
+      datasetId: "ds-e2e-fail",
+      qualifiedStageId: etapaCalificado.id,
+    }),
+  });
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: tel("4"),
+      name: NOMBRE_FAIL,
+      text: "vengo del anuncio",
+      ctwaClid: `clid-fail-${SUF}`,
+      waMessageId: `wamid.e2e.016.fail.${SUF}`,
+    }),
+  });
+  await sleep(1400);
+  const board3 = (await api("/api/pipeline/board")).json;
+  const leadFail = board3.leads.find((l) => l.contact.name === NOMBRE_FAIL);
+  const movFail = await api(`/api/pipeline/leads/${leadFail.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ stageId: etapaCalificado.id }),
+  });
+  ok(
+    "con Meta rechazando, el lead SE MUEVE igual",
+    movFail.res.ok,
+    `status=${movFail.res.status}`
+  );
+  await sleep(800);
+  const board4 = (await api("/api/pipeline/board")).json;
+  const leadFail2 = board4.leads.find((l) => l.contact.name === NOMBRE_FAIL);
+  ok(
+    "y se queda en la etapa a la que lo movieron",
+    leadFail2?.stageId === etapaCalificado.id,
+    JSON.stringify(leadFail2?.stageId)
+  );
+  const act6 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  const fallido = act6.find((e) => e.contactName === NOMBRE_FAIL);
+  ok(
+    "la fila queda FALLIDA con lo que dijo Meta (200 pero events_received=0)",
+    fallido?.status === "failed" &&
+      /events_received=0/.test(fallido?.error ?? ""),
+    JSON.stringify(fallido)
+  );
+
+  // Desconectar: deja de reportarse, pero la bitácora de lo ya dicho se queda.
+  const del = await api("/api/settings/capi", { method: "DELETE" });
+  ok("se puede desconectar", del.res.ok);
+  const trasBorrar = (await api("/api/settings/capi")).json;
+  ok("tras desconectar, no hay configuración", trasBorrar?.capi === null);
+  const act7 = (await api("/api/settings/capi/events")).json?.events ?? [];
+  ok(
+    "los eventos ya reportados NO se borran al desconectar",
+    act7.length >= 3,
+    `${act7.length} filas`
+  );
+}

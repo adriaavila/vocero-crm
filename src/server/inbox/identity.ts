@@ -1,4 +1,5 @@
 import { and, eq, or } from "drizzle-orm";
+import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { normalizeMx } from "@/lib/meta/client";
@@ -15,10 +16,20 @@ import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
  */
 
 export const BSUID_PREFIX = "bsuid:";
+/** 014: identidad de Instagram, analoga al BSUID de WhatsApp. */
+export const IG_PREFIX = "ig:";
+/** 017: identidad de Messenger: el Page-Scoped ID (PSID) del remitente. */
+export const FB_PREFIX = "fb:";
+
+// El tipo vive en lib/ porque la interfaz tambien lo necesita; se reexporta
+// aqui para no tocar a quien ya lo importaba de este modulo.
+export type { Channel };
 
 export type ResolvedIdentity = {
   /** Llave estable de resolución: teléfono normalizado o `bsuid:<id>`. */
   identity: string;
+  /** 014: canal del contacto. Ausente = whatsapp (compatibilidad). */
+  channel?: Channel;
   phone: string | null;
   waUserId: string | null;
   profileName: string | null;
@@ -76,6 +87,71 @@ export async function getOrCreateContactByIdentity(
 ) {
   const db = getDb();
 
+  const channel: Channel = resolved.channel ?? "whatsapp";
+
+  // 014/017: los canales de Meta (Instagram, Messenger) no comparten espacio
+  // de identidades con WhatsApp. La reconciliacion telefono<->BSUID es
+  // exclusiva de WhatsApp, asi que en ellos la busqueda es directa por
+  // identidad dentro de su canal.
+  if (channel !== "whatsapp") {
+    const found = await db
+      .select()
+      .from(schema.contact)
+      .where(
+        and(
+          eq(schema.contact.organizationId, organizationId),
+          eq(schema.contact.channel, channel),
+          eq(schema.contact.waIdentity, resolved.identity)
+        )
+      )
+      .limit(1);
+    const existingIg = found[0];
+    if (existingIg) {
+      if (existingIg.archivedAt) {
+        await db
+          .update(schema.contact)
+          .set({ archivedAt: null, updatedAt: new Date() })
+          .where(eq(schema.contact.id, existingIg.id));
+        existingIg.archivedAt = null;
+      }
+      return { contact: existingIg, isNew: false };
+    }
+    const createdIg = await db
+      .insert(schema.contact)
+      .values({
+        id: newId("contact"),
+        organizationId,
+        channel,
+        waIdentity: resolved.identity,
+        phone: null,
+        waUserId: null,
+        name: resolved.profileName?.trim() || channelFallback(channel),
+      })
+      .onConflictDoNothing({
+        target: [
+          schema.contact.organizationId,
+          schema.contact.channel,
+          schema.contact.waIdentity,
+        ],
+      })
+      .returning();
+    if (createdIg[0]) return { contact: createdIg[0], isNew: true };
+    const racedIg = await db
+      .select()
+      .from(schema.contact)
+      .where(
+        and(
+          eq(schema.contact.organizationId, organizationId),
+          eq(schema.contact.channel, channel),
+          eq(schema.contact.waIdentity, resolved.identity)
+        )
+      )
+      .limit(1);
+    const contactIg = racedIg[0];
+    if (!contactIg) throw new Error("contacto no encontrado tras upsert");
+    return { contact: contactIg, isNew: false };
+  }
+
   const matchers = [eq(schema.contact.waIdentity, resolved.identity)];
   if (resolved.waUserId) {
     matchers.push(eq(schema.contact.waUserId, resolved.waUserId));
@@ -90,7 +166,13 @@ export async function getOrCreateContactByIdentity(
   const rows = await db
     .select()
     .from(schema.contact)
-    .where(and(eq(schema.contact.organizationId, organizationId), or(...matchers)))
+    .where(
+      and(
+        eq(schema.contact.organizationId, organizationId),
+        eq(schema.contact.channel, "whatsapp"),
+        or(...matchers)
+      )
+    )
     .orderBy(schema.contact.createdAt)
     .limit(1);
 
@@ -128,7 +210,11 @@ export async function getOrCreateContactByIdentity(
       name: resolved.profileName?.trim() || displayFallback(resolved),
     })
     .onConflictDoNothing({
-      target: [schema.contact.organizationId, schema.contact.waIdentity],
+      target: [
+        schema.contact.organizationId,
+        schema.contact.channel,
+        schema.contact.waIdentity,
+      ],
     })
     .returning();
   if (inserted[0]) return { contact: inserted[0], isNew: true };
@@ -160,4 +246,12 @@ function displayFallback(resolved: ResolvedIdentity): string {
 /** true si el nombre actual es un respaldo (nunca lo editó el operador). */
 export function isFallbackName(contact: { name: string; phone: string | null }): boolean {
   return contact.name === FALLBACK_NAME || contact.name === contact.phone;
+}
+
+/**
+ * Respaldo para los canales cuyo webhook no trae nombre: nunca el IGSID ni el
+ * PSID crudos, que en la bandeja no le dicen nada al operador.
+ */
+function channelFallback(channel: Channel): string {
+  return `Contacto de ${CHANNEL_LABEL[channel] ?? channel}`;
 }

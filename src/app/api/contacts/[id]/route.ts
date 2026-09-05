@@ -8,7 +8,7 @@ import {
   getContactStage,
   serializeContact,
 } from "@/server/contacts";
-import { getUpcomingBooking } from "@/server/calendar";
+import { upsertFicha } from "@/server/bot/ficha";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +19,6 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
   const contact = await getContactById(session.organizationId, id);
   if (!contact) return apiError(404, "not_found", "Contacto no encontrado");
   const stageRow = await getContactStage(session.organizationId, id);
-  const booking = await getUpcomingBooking(session.organizationId, id);
   return Response.json({
     contact: serializeContact(contact),
     stage: stageRow
@@ -31,7 +30,6 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
         }
       : null,
     lead: stageRow ? { id: stageRow.lead.id } : null,
-    booking,
   });
 });
 
@@ -39,12 +37,31 @@ const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   notes: z.string().max(4000).nullable().optional(),
   archived: z.boolean().optional(),
+  /**
+   * Parche de la ficha: solo las claves que cambian. `null` borra una clave.
+   * No es un reemplazo — el agente sigue escribiendo mientras el dueño
+   * corrige, y mandar la ficha entera haría que el último en guardar le
+   * borrara lo recién descubierto al otro.
+   */
+  ficha: z.record(z.unknown()).optional(),
 });
 
 export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
   const { id } = await ctx.params;
   const body = await parseBody(req, patchSchema);
   if (!body.ok) return body.response;
+
+  // La ficha va por su propia puerta —la MISMA que usa el cerebro externo en
+  // `PUT /api/bot/ficha`— para heredar el merge y las cotas. Escribirla aquí
+  // con un `set` plano sería un segundo camino con otras reglas.
+  if (body.data.ficha !== undefined) {
+    const res = await upsertFicha({
+      organizationId: session.organizationId,
+      contactId: id,
+      ficha: body.data.ficha,
+    });
+    if (!res) return apiError(404, "not_found", "Contacto no encontrado");
+  }
 
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (body.data.name !== undefined) set.name = body.data.name;

@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ACCENT_PRESETS, isValidHex, resolveAccentSet, type Branding } from "@/lib/branding";
+import {
+  ACCENT_PRESETS,
+  DEFAULT_BRANDING,
+  isValidHex,
+  resolveAccentSet,
+  type Branding,
+} from "@/lib/branding";
+import { CURRENCIES, DEFAULT_CURRENCY, type Currency } from "@/lib/money";
 import { cn } from "@/lib/utils";
+import { useResolvedTheme } from "@/components/use-theme";
+import { BrandLogo } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,8 +20,10 @@ import { Label } from "@/components/ui/label";
 
 export function BrandingClient() {
   const router = useRouter();
+  const mode = useResolvedTheme();
   const [name, setName] = useState("");
-  const [accent, setAccent] = useState("#3f5972");
+  const [accent, setAccent] = useState<string>(DEFAULT_BRANDING.accent);
+  const [currency, setCurrency] = useState<Currency>(DEFAULT_CURRENCY);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +36,7 @@ export function BrandingClient() {
         if (d) {
           setName(d.branding.name);
           setAccent(d.branding.accent);
+          if (d.branding.currency) setCurrency(d.branding.currency);
         }
         setLoaded(true);
       })
@@ -32,7 +44,9 @@ export function BrandingClient() {
   }, []);
 
   const isPreset = accent.toLowerCase() in ACCENT_PRESETS;
-  const previewSet = resolveAccentSet(accent);
+  // La vista previa muestra el acento tal como se verá en el tema activo: los
+  // presets están pensados para fondo claro y en oscuro se aclaran.
+  const previewSet = resolveAccentSet(accent, mode);
 
   async function save() {
     setSaving(true);
@@ -41,7 +55,7 @@ export function BrandingClient() {
     const res = await fetch("/api/settings/branding", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.trim(), accent }),
+      body: JSON.stringify({ name: name.trim(), accent, currency }),
     }).catch(() => null);
     setSaving(false);
     if (!res?.ok) {
@@ -81,6 +95,26 @@ export function BrandingClient() {
             />
           </div>
 
+          <div className="space-y-1.5">
+            <Label htmlFor="brand-currency">Moneda del negocio</Label>
+            <select
+              id="brand-currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value as Currency)}
+              className="h-9 max-w-xs rounded-md border border-input bg-card px-2 text-sm"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-text-3">
+              Es la única que el Pipeline suma. Los montos capturados en otra
+              moneda se muestran, pero quedan fuera del total de su columna.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label>Color de acento</Label>
             <div className="flex flex-wrap items-center gap-2">
@@ -93,13 +127,13 @@ export function BrandingClient() {
                   className={cn(
                     "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
                     accent.toLowerCase() === hex
-                      ? "border-foreground/40 bg-secondary"
-                      : "hover:bg-accent"
+                      ? "border-text-2 bg-secondary"
+                      : "border-border-strong hover:bg-accent"
                   )}
                 >
                   <span
                     className="h-4 w-4 rounded-full"
-                    style={{ background: hex }}
+                    style={{ background: resolveAccentSet(hex, mode).accent }}
                   />
                   {preset.label}
                 </button>
@@ -107,12 +141,12 @@ export function BrandingClient() {
               <label
                 className={cn(
                   "flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
-                  !isPreset ? "border-foreground/40 bg-secondary" : "hover:bg-accent"
+                  !isPreset ? "border-text-2 bg-secondary" : "border-border-strong hover:bg-accent"
                 )}
               >
                 <input
                   type="color"
-                  value={isValidHex(accent) ? accent : "#3f5972"}
+                  value={isValidHex(accent) ? accent : DEFAULT_BRANDING.accent}
                   onChange={(e) => setAccent(e.target.value)}
                   className="h-4 w-4 cursor-pointer appearance-none border-0 bg-transparent p-0"
                 />
@@ -125,26 +159,30 @@ export function BrandingClient() {
             </p>
           </div>
 
-          {/* Vista previa */}
-          <div className="rounded-md border p-4" style={{ background: previewSet.tint }}>
+          {/* Vista previa. Los tokens del acento se sobreescriben SOLO dentro
+              de esta caja, así la marca y el botón se pintan con el color que
+              se está eligiendo (aún sin guardar) y con los mismos componentes
+              que la barra lateral real. */}
+          <div
+            className="rounded-md border border-border-strong bg-brand-tint p-4"
+            style={
+              {
+                "--accent": previewSet.accent,
+                "--accent-hover": previewSet.hover,
+                "--accent-soft": previewSet.soft,
+                "--accent-tint": previewSet.tint,
+                "--accent-text": previewSet.text,
+                "--accent-fg": previewSet.fg,
+              } as React.CSSProperties
+            }
+          >
             <div className="flex items-center gap-2.5">
-              <span
-                className="flex h-[30px] w-[30px] items-center justify-center rounded-sm text-[15px] font-bold text-white"
-                style={{ background: previewSet.accent }}
-              >
-                {(name.trim() || "Vocero").charAt(0).toUpperCase()}
-              </span>
-              <span>
-                <span className="block text-[15px] font-[650] leading-tight">
-                  {name.trim() || "Vocero"}
-                </span>
-                <span className="block text-[11px] text-text-3">CRM · WhatsApp</span>
-              </span>
+              <div className="min-w-0">
+                <BrandLogo branding={{ name: name.trim() || DEFAULT_BRANDING.name }} />
+                <span className="kicker mt-1.5 block">CRM · WhatsApp</span>
+              </div>
               <span className="flex-1" />
-              <span
-                className="rounded-md px-3 py-1.5 text-xs font-medium text-white"
-                style={{ background: previewSet.accent }}
-              >
+              <span className="rounded-full bg-brand px-3.5 py-1.5 text-xs font-semibold text-brand-fg shadow-sm">
                 Botón de ejemplo
               </span>
             </div>

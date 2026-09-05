@@ -1,2 +1,0 @@
-ALTER TABLE "agent_profile" ADD COLUMN "allowlist_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
-ALTER TABLE "agent_profile" ADD COLUMN "allowed_wa_ids" jsonb DEFAULT '[]'::jsonb NOT NULL;

@@ -35,7 +35,7 @@ export default function LoginPage() {
   }
 
   return (
-    <Card>
+    <Card className="shadow-md">
       <CardHeader>
         <CardTitle>Iniciar sesión</CardTitle>
       </CardHeader>

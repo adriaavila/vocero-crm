@@ -269,8 +269,15 @@ async function upsertTestContact(
       name: persona.contactName,
       archivedAt: new Date(),
     })
+    // Ídem que en el alta manual: desde 014 el índice único incluye `channel`,
+    // y un ON CONFLICT que no lo nombra no corresponde a ningún índice. Sin
+    // esto, TODA corrida del Laboratorio muere antes de la primera persona.
     .onConflictDoNothing({
-      target: [schema.contact.organizationId, schema.contact.waIdentity],
+      target: [
+        schema.contact.organizationId,
+        schema.contact.channel,
+        schema.contact.waIdentity,
+      ],
     })
     .returning();
   if (inserted[0]) return inserted[0].id;

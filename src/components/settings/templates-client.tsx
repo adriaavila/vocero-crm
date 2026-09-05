@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { TemplateDto } from "@/lib/types";
+import { countVariables, validateBodyVariables } from "@/lib/templates";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -134,6 +135,10 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Misma validación que el servidor: avisa antes de gastar una llamada a Meta.
+  const bodyError = body.trim() ? validateBodyVariables(body) : null;
+  const variableCount = countVariables(body);
+
   async function create() {
     setSaving(true);
     setError(null);
@@ -160,8 +165,9 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
       <CardHeader>
         <CardTitle>Nueva plantilla</CardTitle>
         <CardDescription>
-          Cuerpo con máximo UNA variable <code>{"{{1}}"}</code> (v1). Se envía a
-          aprobación de Meta al crearla.
+          Cuerpo con las variables que necesites: numéralas{" "}
+          <code>{"{{1}}"}</code>, <code>{"{{2}}"}</code>, <code>{"{{3}}"}</code>
+          … en orden y sin saltos. Se envía a aprobación de Meta al crearla.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -209,14 +215,25 @@ function CreateForm({ onCreated }: { onCreated: () => void }) {
           <Textarea
             id="tpl-body"
             rows={3}
-            placeholder="Hola {{1}}, seguimos disponibles. ¿Retomamos tu cotización?"
+            placeholder="Hola {{1}}, te confirmo tu sesión el {{2}} a las {{3}}."
             value={body}
             onChange={(e) => setBody(e.target.value)}
           />
+          {bodyError ? (
+            <p className="text-xs text-destructive">{bodyError}</p>
+          ) : (
+            variableCount > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {variableCount === 1
+                  ? "1 variable: al enviar pedirá su valor."
+                  : `${variableCount} variables: al enviar pedirá los ${variableCount} valores.`}
+              </p>
+            )
+          )}
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button
-          disabled={saving || !name.trim() || !body.trim()}
+          disabled={saving || !name.trim() || !body.trim() || bodyError !== null}
           onClick={() => void create()}
         >
           {saving ? "Enviando a Meta…" : "Crear y enviar a aprobación"}

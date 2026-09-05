@@ -1,39 +1,76 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, PanelRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ChevronLeft, PanelRight } from "lucide-react";
 import { cn, formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import type { ConversationDto, MessageDto } from "@/lib/types";
+import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
+import { ChannelBadge } from "@/components/channel-badge";
 import { useEvents } from "@/components/use-events";
 import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
 
-export function InboxClient({ owner }: { owner: boolean }) {
-  const router = useRouter();
+/**
+ * Texto que ya salió del compositor pero cuyo POST todavía viaja. Existe solo
+ * en el cliente: se pinta como burbuja "enviando" para que escribir el
+ * siguiente renglón no espere a Meta (~1,5 s de ida y vuelta).
+ */
+type PendingOut = {
+  id: string;
+  conversationId: string;
+  text: string;
+  createdAt: string;
+};
+
+/**
+ * `xl` es el umbral donde caben las tres columnas (lista + hilo + detalles).
+ * Debajo, el panel de detalles flota sobre el hilo. Debe coincidir con el
+ * breakpoint `xl:` que usan las clases de la sección de detalles.
+ */
+const PANEL_MEDIA_QUERY = "(min-width: 1280px)";
+const isWideEnoughForPanel = () =>
+  typeof window !== "undefined" && window.matchMedia(PANEL_MEDIA_QUERY).matches;
+
+export function InboxClient({ channels }: { channels: readonly Channel[] }) {
+  const multiChannel = channels.length > 1;
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageDto[]>([]);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [pending, setPending] = useState<PendingOut[]>([]);
+  // Arranca cerrado: en pantallas angostas el panel de detalles es un cajón
+  // ENCIMA del hilo, así que abrirlo por defecto taparía la conversación. El
+  // efecto de abajo lo abre solo si de veras hay tres columnas de ancho.
+  const [panelOpen, setPanelOpen] = useState(false);
   // Se incrementa con cada evento SSE que puede cambiar la etapa/lead o el
   // estado del agente: el panel de detalles lo observa y refetch en vivo.
   const [detailRev, setDetailRev] = useState(0);
 
   useEffect(() => {
-    setPanelOpen(window.innerWidth >= 1280 && localStorage.getItem("vocero.panelOpen") !== "false");
+    if (!isWideEnoughForPanel()) return;
+    setPanelOpen(localStorage.getItem("vocero.panelOpen") !== "false");
   }, []);
   const togglePanel = useCallback((open: boolean) => {
     setPanelOpen(open);
-    localStorage.setItem("vocero.panelOpen", String(open));
+    // La preferencia es de escritorio: abrir el cajón en el teléfono no debe
+    // reescribir cómo queda la Bandeja en la computadora.
+    if (isWideEnoughForPanel()) {
+      localStorage.setItem("vocero.panelOpen", String(open));
+    }
   }, []);
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
   const lastFetchRef = useRef<string | null>(null);
+  const tmpSeq = useRef(0);
+  // Los envíos salen en fila: el compositor ya no espera, pero WhatsApp debe
+  // recibir "hola" antes que el renglón siguiente. Sin esta cadena, dos POST
+  // simultáneos pueden llegar a Meta en desorden.
+  const sendQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   const refetchConversations = useCallback(async () => {
     const res = await fetch("/api/conversations").catch(() => null);
@@ -59,9 +96,7 @@ export function InboxClient({ owner }: { owner: boolean }) {
   const select = useCallback(
     (id: string) => {
       setSelectedId(id);
-      if (window.innerWidth < 1280) setPanelOpen(false);
       setMessages([]);
-      router.push(`/inbox?conversation=${id}`, { scroll: false });
       void refetchMessages(id);
       void fetch(`/api/conversations/${id}`, {
         method: "PATCH",
@@ -69,28 +104,17 @@ export function InboxClient({ owner }: { owner: boolean }) {
         body: JSON.stringify({ markRead: true }),
       });
     },
-    [refetchMessages, router]
+    [refetchMessages]
   );
 
   // Enlace directo desde Contactos/Pipeline: /inbox?contact=<id>
   const searchParams = useSearchParams();
   const contactParam = searchParams.get("contact");
-  const conversationParam = searchParams.get("conversation");
   useEffect(() => {
-    if (!conversationParam && !contactParam && selectedIdRef.current) {
-      setSelectedId(null);
-      setMessages([]);
-      setPanelOpen(false);
-      return;
-    }
-    if (conversationParam && conversations?.some((conversation) => conversation.id === conversationParam) && selectedIdRef.current !== conversationParam) {
-      select(conversationParam);
-      return;
-    }
     if (!contactParam || selectedIdRef.current) return;
     const match = conversations?.find((c) => c.contact.id === contactParam);
     if (match) select(match.id);
-  }, [contactParam, conversationParam, conversations, select]);
+  }, [contactParam, conversations, select]);
 
   useEvents({
     onMessageNew: ({ conversationId, message }) => {
@@ -138,27 +162,97 @@ export function InboxClient({ owner }: { owner: boolean }) {
 
   const selected = conversations?.find((c) => c.id === selectedId) ?? null;
 
+  /**
+   * Hilo visible = lo confirmado + lo que aún viaja. El mensaje real puede
+   * llegar por refetch o por SSE antes de que retiremos el provisional, así
+   * que cada pendiente se empareja con UN mensaje real (no por texto suelto:
+   * mandar "hola" dos veces seguidas no debe borrar la segunda burbuja).
+   */
+  const thread = useMemo(() => {
+    const propios = pending.filter((p) => p.conversationId === selectedId);
+    if (propios.length === 0) return messages;
+    const emparejados = new Set<string>();
+    const visibles = propios.filter((p) => {
+      const real = messages.find(
+        (m) =>
+          !emparejados.has(m.id) &&
+          m.direction === "out" &&
+          m.text === p.text &&
+          Date.parse(m.createdAt) >= Date.parse(p.createdAt) - 60_000
+      );
+      if (real) emparejados.add(real.id);
+      return !real;
+    });
+    if (visibles.length === 0) return messages;
+    return [
+      ...messages,
+      ...visibles.map<MessageDto>((p) => ({
+        id: p.id,
+        conversationId: p.conversationId,
+        direction: "out",
+        type: "text",
+        text: p.text,
+        status: "pending",
+        error: null,
+        aiGenerated: false,
+        origin: "operator",
+        media: null,
+        createdAt: p.createdAt,
+      })),
+    ];
+  }, [messages, pending, selectedId]);
+
+  /**
+   * El compositor NO espera a que esto termine: limpia su campo al instante y
+   * aquí se pinta la burbuja "enviando". Si el envío falla, la burbuja se
+   * retira y el error vuelve al compositor, que devuelve el texto — un mensaje
+   * jamás se pierde en silencio.
+   */
   const sendText = useCallback(
     async (text: string): Promise<string | null> => {
-      if (!selectedIdRef.current) return "Sin conversación seleccionada";
-      const res = await fetch(
-        `/api/conversations/${selectedIdRef.current}/messages`,
+      const conversationId = selectedIdRef.current;
+      if (!conversationId) return "Sin conversación seleccionada";
+
+      const tmpId = `tmp_${++tmpSeq.current}`;
+      setPending((prev) => [
+        ...prev,
         {
+          id: tmpId,
+          conversationId,
+          text,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      const drop = () => setPending((prev) => prev.filter((p) => p.id !== tmpId));
+
+      const run = async (): Promise<string | null> => {
+        const res = await fetch(`/api/conversations/${conversationId}/messages`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ text }),
+        }).catch(() => null);
+        if (!res) {
+          drop();
+          return "Sin conexión con el servidor";
         }
-      ).catch(() => null);
-      if (!res) return "Sin conexión con el servidor";
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as {
-          error?: { message?: string };
-        } | null;
-        return data?.error?.message ?? "No se pudo enviar el mensaje";
-      }
-      if (selectedIdRef.current) void refetchMessages(selectedIdRef.current);
-      void refetchConversations();
-      return null;
+        if (!res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            error?: { message?: string };
+          } | null;
+          drop();
+          return data?.error?.message ?? "No se pudo enviar el mensaje";
+        }
+        // Primero traer el mensaje real, después quitar el provisional: al
+        // revés, la burbuja parpadearía.
+        await refetchMessages(conversationId);
+        drop();
+        void refetchConversations();
+        return null;
+      };
+
+      const queued = sendQueue.current.then(run, run);
+      sendQueue.current = queued.catch(() => null);
+      return queued;
     },
     [refetchMessages, refetchConversations]
   );
@@ -177,48 +271,67 @@ export function InboxClient({ owner }: { owner: boolean }) {
   );
 
   return (
-    <div className="flex h-full bg-background">
-      <section className={cn("w-full shrink-0 overflow-hidden border-r md:w-[320px] xl:w-[360px]", selected && "hidden md:block")}>
+    <div className="flex h-full">
+      {/* Móvil: una columna a la vez. La lista cede la pantalla completa al
+          hilo en cuanto hay conversación elegida (patrón maestro-detalle). */}
+      <section
+        className={cn(
+          "w-full shrink-0 overflow-hidden border-r md:w-[300px] lg:w-[360px]",
+          selected && "max-md:hidden"
+        )}
+      >
         <ConversationList
           conversations={conversations}
+          channels={channels}
           selectedId={selectedId}
           onSelect={select}
           onSeeded={() => void refetchConversations()}
-          owner={owner}
         />
       </section>
 
-      <section className={cn("min-w-0 flex-1 flex-col", selected ? "flex" : "hidden md:flex")}>
+      <section
+        className={cn(
+          "flex min-w-0 flex-1 flex-col",
+          !selected && "max-md:hidden"
+        )}
+      >
         {selected ? (
           <>
-              <header className="flex items-center justify-between border-b bg-background px-4 py-2.5">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => { setSelectedId(null); router.push("/inbox", { scroll: false }); }}
-                    aria-label="Volver a conversaciones"
-                    className="rounded-md p-2 text-text-3 hover:bg-accent md:hidden"
-                  >
-                    <ArrowLeft className="h-5 w-5" />
-                  </button>
+            <header className="flex items-center justify-between gap-1 border-b bg-background px-2 py-2.5 md:px-4">
+              {/* Volver a la lista: en móvil el hilo ocupa toda la pantalla. */}
+              <button
+                onClick={() => setSelectedId(null)}
+                aria-label="Volver a las conversaciones"
+                className="shrink-0 rounded-md p-1.5 text-text-2 hover:bg-accent hover:text-foreground md:hidden"
+              >
+                <ChevronLeft className="h-5 w-5" strokeWidth={1.8} />
+              </button>
+              <div className="flex min-w-0 flex-1 items-center gap-3 p-1">
                 <ContactAvatar
                   name={selected.contact.name}
                   seed={selected.contact.id}
                   size="md"
                 />
-                <div>
-                  <p className="text-[15px] font-[650] leading-tight">
-                    {selected.contact.name}
+                <div className="min-w-0">
+                  <p className="flex min-w-0 items-center gap-1.5 text-[15px] font-bold leading-tight tracking-tight">
+                    {multiChannel && <ChannelBadge channel={selected.channel} />}
+                    <span className="truncate">{selected.contact.name}</span>
                   </p>
                   <p
-                    className={
+                    className={cn(
+                      "mt-0.5 font-mono text-[10.5px] tracking-[0.04em]",
                       selected.windowOpen
-                        ? "text-xs font-medium text-success"
-                        : "text-xs text-text-3"
-                    }
+                        ? "font-medium text-success-text"
+                        : "text-text-3"
+                    )}
                   >
                     {selected.windowOpen
                       ? "ventana abierta"
-                      : formatPhone(selected.contact.phone)}
+                      : selected.contact.phone
+                        ? formatPhone(selected.contact.phone)
+                        : // Instagram no tiene teléfono: decir "Sin teléfono"
+                          // sería contestar una pregunta que nadie hizo.
+                          CHANNEL_LABEL[selected.channel]}
                   </p>
                 </div>
               </div>
@@ -226,13 +339,13 @@ export function InboxClient({ owner }: { owner: boolean }) {
                 <button
                   onClick={() => togglePanel(true)}
                   aria-label="Mostrar detalles"
-                  className="rounded-sm border p-1.5 text-text-3 hover:bg-accent hover:text-foreground"
+                  className="shrink-0 rounded-full border border-border-strong p-1.5 text-text-3 transition-colors hover:border-text-3 hover:text-foreground"
                 >
                   <PanelRight className="h-4 w-4" strokeWidth={1.7} />
                 </button>
               )}
             </header>
-            <MessageThread messages={messages} />
+            <MessageThread messages={thread} />
             <Composer
               conversation={selected}
               onSend={sendText}
@@ -244,20 +357,38 @@ export function InboxClient({ owner }: { owner: boolean }) {
             />
           </>
         ) : (
-          <div className="flex flex-1 items-center justify-center bg-chat text-sm text-text-3">
-            Elige una conversación para ver el hilo
+          <div className="thread-bg flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+            <p className="font-serif text-[24px] italic leading-tight text-text-2">
+              Elige una conversación para ver el hilo
+            </p>
+            <p className="kicker">Bandeja · tiempo real</p>
           </div>
         )}
       </section>
 
+      {/* Velo del cajón de detalles (solo donde no caben tres columnas). */}
+      {panelOpen && selected && (
+        <button
+          aria-label="Cerrar los detalles"
+          tabIndex={-1}
+          onClick={() => togglePanel(false)}
+          className="fixed inset-0 z-30 bg-overlay xl:hidden"
+        />
+      )}
+
       <section
         className={cn(
-          "fixed inset-y-0 right-0 z-50 shrink-0 overflow-hidden border-l bg-background shadow-pop transition-transform duration-200 xl:static xl:z-auto xl:shadow-none xl:transition-[width]",
-          panelOpen && selected ? "w-full translate-x-0 sm:w-[360px] xl:w-[320px]" : "w-full translate-x-full border-l-0 sm:w-[360px] xl:w-0 xl:translate-x-0"
+          "shrink-0 overflow-hidden border-l transition-[width] duration-200",
+          // Debajo de xl no hay ancho para una tercera columna: el panel se
+          // vuelve un cajón que entra desde la derecha, encima del hilo.
+          "max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-40 max-xl:w-auto max-xl:bg-background max-xl:transition-transform",
+          panelOpen && selected
+            ? "w-[320px] max-xl:translate-x-0 max-xl:shadow-pop"
+            : "w-0 border-l-0 max-xl:translate-x-full"
         )}
       >
         {selected && (
-          <div className="h-full w-full xl:w-[320px]">
+          <div className="h-full w-[320px] max-xl:w-[min(320px,88vw)]">
             <ContactPanel
               conversation={selected}
               refreshKey={detailRev}

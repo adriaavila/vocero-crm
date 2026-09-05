@@ -11,6 +11,7 @@ const prefixes = {
   message: "msg",
   lead: "ld",
   stage: "stg",
+  leadStageEvent: "lse",
   credentials: "cred",
   agentProfile: "agp",
   kbEntry: "kb",
@@ -18,8 +19,16 @@ const prefixes = {
   testRun: "run",
   testCase: "case",
   mediaAsset: "ma",
-  booking: "bkg",
-  googleCalendarConnection: "gcal",
+  // 015 — motor de agenda
+  calendarSettings: "cal",
+  booking: "bk",
+  offeredSlot: "ofs",
+  zoomCredentials: "zcred",
+  googleCredentials: "gcred",
+  // 016 — atribución de anuncios
+  adAttribution: "att",
+  conversionEvent: "cve",
+  capiSettings: "capi",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -13,6 +13,8 @@ type Params = { params: Promise<{ id: string }> };
 
 const bodySchema = z.object({
   templateId: z.string().min(1),
+  /** Valores de {{1}}..{{n}} en orden. `variable` sigue vivo por compatibilidad. */
+  variables: z.array(z.string().trim().max(500)).max(10).optional(),
   variable: z.string().trim().max(500).optional(),
 });
 
@@ -26,7 +28,9 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       organizationId: session.organizationId,
       conversationId: id,
       templateId: body.data.templateId,
-      variable: body.data.variable,
+      variables:
+        body.data.variables ??
+        (body.data.variable === undefined ? undefined : [body.data.variable]),
     });
     return Response.json({ messageId: result.messageId });
   } catch (err) {

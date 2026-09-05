@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { TemplateDto } from "@/lib/types";
+import { countVariables } from "@/lib/templates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +20,7 @@ export function TemplateSender({
 }) {
   const [templates, setTemplates] = useState<TemplateDto[] | null>(null);
   const [selectedId, setSelectedId] = useState<string>("");
-  const [variable, setVariable] = useState("");
+  const [variables, setVariables] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +60,11 @@ export function TemplateSender({
   }
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
-  const needsVariable = selected ? /\{\{\s*1\s*\}\}/.test(selected.body) : false;
+  // El cuerpo puede llevar {{1}}..{{n}}: el número de parámetros es el índice
+  // más alto, y Meta los exige todos.
+  const variableCount = selected ? countVariables(selected.body) : 0;
+  const values = Array.from({ length: variableCount }, (_, i) => variables[i] ?? "");
+  const missingValue = values.some((v) => !v.trim());
 
   async function send() {
     if (!selected || sending) return;
@@ -72,7 +77,7 @@ export function TemplateSender({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           templateId: selected.id,
-          variable: needsVariable ? variable : undefined,
+          variables: variableCount > 0 ? values : undefined,
         }),
       }
     );
@@ -85,7 +90,7 @@ export function TemplateSender({
       return;
     }
     setSelectedId("");
-    setVariable("");
+    setVariables([]);
     onSent();
   }
 
@@ -96,7 +101,10 @@ export function TemplateSender({
         <select
           id="template-select"
           value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
+          onChange={(e) => {
+            setSelectedId(e.target.value);
+            setVariables([]);
+          }}
           className="flex h-9 w-full rounded-md border border-input bg-card px-3 py-1 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <option value="">Elige una plantilla…</option>
@@ -108,25 +116,36 @@ export function TemplateSender({
         </select>
       </div>
       {selected && (
-        <p className="rounded-md bg-secondary/60 p-2.5 text-xs text-muted-foreground">
+        <p className="rounded-md bg-subtle p-2.5 text-xs text-muted-foreground">
           {selected.body}
         </p>
       )}
-      {needsVariable && (
-        <div className="space-y-1.5">
-          <Label htmlFor="template-variable">Valor de la variable {"{{1}}"}</Label>
+      {values.map((value, i) => (
+        <div key={i} className="space-y-1.5">
+          <Label htmlFor={`template-variable-${i + 1}`}>
+            Valor de {`{{${i + 1}}}`}
+          </Label>
           <Input
-            id="template-variable"
-            value={variable}
-            onChange={(e) => setVariable(e.target.value)}
-            placeholder="p. ej. el nombre del cliente"
+            id={`template-variable-${i + 1}`}
+            value={value}
+            onChange={(e) =>
+              setVariables((prev) => {
+                const next = [...prev];
+                while (next.length < variableCount) next.push("");
+                next[i] = e.target.value;
+                return next;
+              })
+            }
+            placeholder={
+              i === 0 ? "p. ej. el nombre del cliente" : "p. ej. 12 de agosto"
+            }
           />
         </div>
-      )}
+      ))}
       {error && <p className="text-xs text-destructive">{error}</p>}
       <Button
         onClick={() => void send()}
-        disabled={!selected || sending || (needsVariable && !variable.trim())}
+        disabled={!selected || sending || missingValue}
       >
         {sending ? "Enviando…" : "Enviar plantilla"}
       </Button>

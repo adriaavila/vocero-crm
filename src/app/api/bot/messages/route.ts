@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
+import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
 
@@ -9,20 +9,36 @@ export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   conversationId: z.string().min(1),
-  text: z.string().trim().min(1).max(4096),
+  text: z.string().min(1).max(4096),
 });
 
+/**
+ * Envío del cerebro externo A TRAVÉS del CRM: el token de WhatsApp nunca sale
+ * de aquí. Usa el mismo camino que el composer de la bandeja (`sendText`), así
+ * que el mensaje queda en el hilo marcado como IA, respeta la ventana de 24 h
+ * y hereda el guard de sandbox del Laboratorio.
+ *
+ * 409 tipados: ai_paused (un humano tomó la conversación) · window_closed ·
+ * sandbox_violation.
+ */
 export async function POST(req: Request) {
   const denied = requireBotKey(req);
   if (denied) return denied;
+
   const organizationId = await resolveInstanceOrg();
-  if (!organizationId) return apiError(409, "no_org", "La instancia aún no tiene organización");
+  if (!organizationId) {
+    return apiError(409, "no_org", "La instancia aún no tiene organización");
+  }
+
   const body = await parseBody(req, bodySchema);
   if (!body.ok) return body.response;
 
-  const rows = await getDb()
+  // Gate de handoff: el bot JAMÁS habla sobre una conversación pausada. Se
+  // relee aquí porque entre que el bot pidió el contexto y armó su respuesta
+  // (segundos de un LLM) el dueño pudo haber tomado la conversación.
+  const db = getDb();
+  const convs = await db
     .select({
-      id: schema.conversation.id,
       aiEnabled: schema.conversation.aiEnabled,
       handoffAt: schema.conversation.handoffAt,
     })
@@ -34,31 +50,30 @@ export async function POST(req: Request) {
       )
     )
     .limit(1);
-  const conversation = rows[0];
-  if (!conversation) return apiError(404, "not_found", "Conversación no encontrada");
-  if (!conversation.aiEnabled || conversation.handoffAt) {
-    return Response.json({ code: "ai_paused" }, { status: 409 });
+  const conv = convs[0];
+  if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
+  if (!conv.aiEnabled || conv.handoffAt) {
+    return apiError(409, "ai_paused", "La IA está en pausa en esta conversación");
   }
 
   try {
-    const sent = await sendText({
+    const result = await sendText({
+      conversationId: body.data.conversationId,
       organizationId,
-      conversationId: conversation.id,
       text: body.data.text,
       aiGenerated: true,
     });
-    return Response.json({ messageId: sent.messageId });
-  } catch (error) {
-    if (
-      error instanceof SendError &&
-      (error.code === "window_closed" || error.code === "ai_disabled")
-    ) {
-      return Response.json({ code: error.code }, { status: 409 });
+    return Response.json({ messageId: result.messageId });
+  } catch (err) {
+    if (err instanceof SendError) {
+      if (err.code === "window_closed") {
+        return apiError(409, "window_closed", err.message);
+      }
+      if (err.code === "sandbox_violation") {
+        return apiError(409, "sandbox_violation", err.message);
+      }
+      return apiError(502, err.code, err.message);
     }
-    if (error instanceof SendError) {
-      const status = error.code === "meta_unavailable" ? 503 : 422;
-      return apiError(status, error.code, error.message);
-    }
-    throw error;
+    throw err;
   }
 }

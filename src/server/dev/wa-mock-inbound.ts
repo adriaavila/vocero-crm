@@ -63,6 +63,14 @@ function applyMockContent(
   }
 }
 
+/** 016 — Campos para simular que el mensaje vino de un anuncio CTWA. */
+type MockReferralInput = {
+  /** Identificador del clic. Sin él no hay nada que reportarle a Meta. */
+  ctwaClid?: string;
+  adHeadline?: string;
+  adSourceId?: string;
+};
+
 export function buildInboundPayload(input: {
   wabaId: string;
   phoneNumberId: string;
@@ -75,7 +83,8 @@ export function buildInboundPayload(input: {
   text?: string;
   waMessageId?: string;
   timestamp?: number;
-} & MockMediaInput) {
+} & MockMediaInput &
+  MockReferralInput) {
   const type = input.type ?? "text";
   const message: Record<string, unknown> = {
     id: input.waMessageId ?? `wamid.mock.in.${nextN()}`,
@@ -85,6 +94,21 @@ export function buildInboundPayload(input: {
   if (input.from) message.from = input.from;
   if (input.fromUserId) message.from_user_id = input.fromUserId;
   applyMockContent(message, type, input);
+
+  // 016 — El referral solo viaja cuando la conversación nació de un anuncio, y
+  // normalmente solo en el primer mensaje. Se arma igual que el real para que
+  // la ingesta no sepa que habla con un mock.
+  if (input.ctwaClid || input.adHeadline || input.adSourceId) {
+    message.referral = {
+      source_type: "ad",
+      source_id: input.adSourceId ?? "1200000000000",
+      source_url: "https://fb.me/anuncio-de-prueba",
+      headline: input.adHeadline ?? "Anuncio de prueba",
+      body: "Escríbenos por WhatsApp",
+      media_type: "image",
+      ...(input.ctwaClid ? { ctwa_clid: input.ctwaClid } : {}),
+    };
+  }
 
   const contactEntry: Record<string, unknown> = {
     profile: { name: input.name ?? "Cliente" },

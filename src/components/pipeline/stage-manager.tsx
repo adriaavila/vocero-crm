@@ -90,11 +90,11 @@ export function StageManager({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-overlay p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-lg border bg-card p-5 shadow-xl"
+        className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">Etapas del pipeline</h3>
@@ -143,8 +143,8 @@ export function StageManager({
         </ul>
 
         {deleting && (
-          <div className="mt-4 rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3">
-            <p className="text-sm text-[#8a6d3b]">
+          <div className="mt-4 rounded-md border border-warning-soft bg-warning-tint p-3">
+            <p className="text-sm text-warning-text">
               &quot;{deleting.name}&quot; tiene tarjetas. Elige a dónde moverlas:
             </p>
             <div className="mt-2 flex gap-2">

@@ -1,7 +1,11 @@
 /** DTOs que viajan por la API interna (lado cliente). */
 
+import type { Channel } from "@/lib/channels";
+
 export type ConversationDto = {
   id: string;
+  /** 014: canal de la conversacion, para el distintivo de la bandeja. */
+  channel: Channel;
   contact: { id: string; name: string; phone: string | null };
   stageName: string | null;
   aiEnabled: boolean;
@@ -68,14 +72,80 @@ export type StageDto = {
   kind: "open" | "won" | "lost";
 };
 
+/** Un dato de la ficha. Escalar a propósito: ver `server/bot/ficha`. */
+export type FichaValue = string | number | boolean;
+
+/**
+ * Ficha de calificación del lead. Claves libres: cada negocio califica
+ * distinto, así que las define quien pregunta —el agente o el dueño— y el CRM
+ * no las cablea.
+ */
+export type FichaDto = Record<string, FichaValue>;
+
 export type ContactDto = {
   id: string;
   name: string;
   /** null en contactos que llegaron solo con BSUID (003). */
   phone: string | null;
   notes: string | null;
-  ficha: Record<string, unknown>;
   /** Etapa del embudo del lead asociado; null si el contacto no tiene lead. */
   stageName: string | null;
   archivedAt: string | null;
+  /** De dónde salió el prospecto, capturada o deducida. */
+  source?: SourceDto;
+  /** Prioridad del lead asociado; null si nadie la fijó. */
+  priority?: PriorityValue | null;
+  /** Lo que se sabe del lead. `{}` mientras nadie haya calificado. */
+  ficha?: FichaDto;
 };
+
+/* ============================================================
+ * Bitácora de etapas
+ * ============================================================ */
+
+/** Por qué se perdió un trato. Lista corta a propósito: una taxonomía larga
+ *  se responde "otro" y deja de informar. */
+export type LossReason =
+  | "precio"
+  | "no_es_perfil"
+  | "sin_presupuesto"
+  | "eligio_otro"
+  | "nunca_contesto"
+  | "otro";
+
+export const LOSS_REASON_LABEL: Record<LossReason, string> = {
+  precio: "Le pareció caro",
+  no_es_perfil: "No era el perfil",
+  sin_presupuesto: "Sin presupuesto ahora",
+  eligio_otro: "Se fue con otro",
+  nunca_contesto: "Nunca contestó",
+  otro: "Otro",
+};
+
+/** Quién provocó un movimiento de etapa. */
+export type StageChangeSource = "dueno" | "bot" | "sistema" | "migracion";
+
+/* ============================================================
+ * Fuente del prospecto
+ * ============================================================ */
+
+export type SourceValue =
+  | "anuncio"
+  | "organico"
+  | "referido"
+  | "conocido"
+  | "otro";
+
+export type SourceDto = {
+  /** "desconocida" cuando nadie la capturó y no se pudo deducir. */
+  value: SourceValue | "desconocida";
+  /** `deducida` = la infirió el sistema; `capturada` = la puso el dueño. */
+  source: "capturada" | "deducida";
+};
+
+/* ============================================================
+ * Prioridad del lead
+ * ============================================================ */
+
+/** La fija el dueño; NULL = nadie la ha decidido (no es "media"). */
+export type PriorityValue = "alta" | "media" | "baja";

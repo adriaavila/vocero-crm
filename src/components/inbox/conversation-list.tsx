@@ -3,22 +3,25 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, Sparkles, UserRound, X } from "lucide-react";
 import type { ConversationDto } from "@/lib/types";
+import { CHANNEL_LABEL, type Channel } from "@/lib/channels";
+import { ChannelBadge } from "@/components/channel-badge";
 import { matchesQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 import { formatTime, previewText } from "./helpers";
 
+/* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
 const STAGE_DOT: Record<string, string> = {
-  Nuevo: "#9ca3af",
-  "En conversación": "#7b93b3",
-  Interesado: "#b08b5e",
-  Cliente: "#5f8f74",
-  Perdido: "#a2504c",
+  Nuevo: "#8391aa",
+  "En conversación": "#0d5bff",
+  Interesado: "#f2a71b",
+  Cliente: "#1fb35b",
+  Perdido: "#d94a4a",
 };
+const STAGE_DOT_FALLBACK = "#8391aa";
 
-function EmptyState({ onSeeded, owner }: { onSeeded: () => void; owner: boolean }) {
+function EmptyState({ onSeeded }: { onSeeded: () => void }) {
   const [seeding, setSeeding] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -34,23 +37,23 @@ function EmptyState({ onSeeded, owner }: { onSeeded: () => void; owner: boolean 
 
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-      <p className="text-sm font-medium">Sin conversaciones todavía</p>
+      <p className="font-serif text-[21px] italic leading-tight text-foreground">
+        Sin conversaciones todavía
+      </p>
       <p className="text-xs text-text-3">
         Cuando alguien escriba a tu número de WhatsApp, su conversación
         aparecerá aquí en tiempo real.
       </p>
-      {owner ? (
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Link href="/settings/whatsapp" className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90">Conectar WhatsApp</Link>
-          {!failed && (
-            <Button size="sm" variant="outline" disabled={seeding} onClick={() => void seed()}>
-              <Sparkles className="h-4 w-4" strokeWidth={1.7} />
-              {seeding ? "Cargando demo…" : "Cargar demostración"}
-            </Button>
-          )}
-        </div>
-      ) : (
-        <p className="text-xs text-text-3">No necesitas configurar nada. Las conversaciones aparecerán cuando lleguen mensajes.</p>
+      {!failed && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={seeding}
+          onClick={() => void seed()}
+        >
+          <Sparkles className="h-4 w-4" strokeWidth={1.7} />
+          {seeding ? "Cargando demo…" : "Cargar datos de demostración"}
+        </Button>
       )}
     </div>
   );
@@ -58,20 +61,22 @@ function EmptyState({ onSeeded, owner }: { onSeeded: () => void; owner: boolean 
 
 export function ConversationList({
   conversations: conversationsProp,
+  channels,
   selectedId,
   onSelect,
   onSeeded,
-  owner,
 }: {
   conversations: ConversationDto[] | null;
+  /** Canales encendidos en esta instancia (ADR-001). */
+  channels: readonly Channel[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onSeeded: () => void;
-  owner: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [stage, setStage] = useState<string>("all");
+  const [inbox, setInbox] = useState<Channel | "all">("all");
   const inputRef = useRef<HTMLInputElement>(null);
 
   /**
@@ -99,9 +104,18 @@ export function ConversationList({
         phone: c.contact.phone,
       }) && (stage === "all" || c.stageName === stage)
   );
-  const unreadCount = searched.filter((c) => c.unreadCount > 0).length;
+  // La bandeja elegida es el filtro de AFUERA: "Todas" y "No leídas" cuentan
+  // dentro de ella, no sobre la suma de los dos canales.
+  const inInbox =
+    inbox === "all" ? searched : searched.filter((c) => c.channel === inbox);
+  const inboxCount = (ch: Channel) =>
+    searched.filter((c) => c.channel === ch).length;
+  const unreadCount = inInbox.filter((c) => c.unreadCount > 0).length;
   const visible =
-    filter === "unread" ? searched.filter((c) => c.unreadCount > 0) : searched;
+    filter === "unread" ? inInbox.filter((c) => c.unreadCount > 0) : inInbox;
+  // Con un solo canal encendido no hay bandejas que distinguir: ni marca en
+  // los renglones ni filtro. La pantalla queda exactamente como antes de 014.
+  const multiChannel = channels.length > 1;
 
   // Etapas presentes en la bandeja, en el orden en que llegan del pipeline.
   const stages: string[] = [];
@@ -118,11 +132,43 @@ export function ConversationList({
   return (
     <div className="flex h-full flex-col">
       <header className="border-b px-4 pb-3 pt-4">
-        <div className="mb-3 flex items-baseline gap-2">
-          <h2 className="text-[17px] font-[650] tracking-tight">Bandeja</h2>
-          <span className="text-sm text-text-3">{conversations.length}</span>
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="text-[17px] font-bold tracking-tight">Bandeja</h2>
+          <span className="font-mono text-[12px] text-text-3">{conversations.length}</span>
+          {multiChannel && (
+            <div className="ml-auto flex items-center gap-1">
+              {channels.map((ch) => {
+                const on = inbox === ch;
+                return (
+                  <button
+                    key={ch}
+                    onClick={() => setInbox(on ? "all" : ch)}
+                    aria-pressed={on}
+                    title={
+                      on
+                        ? "Ver todas las bandejas"
+                        : `Ver solo ${CHANNEL_LABEL[ch]}`
+                    }
+                    className={cn(
+                      "flex items-center gap-1 rounded-full border py-[3px] pl-[5px] pr-2 text-[11.5px] font-medium transition-colors",
+                      on
+                        ? "border-brand bg-brand-veil text-foreground"
+                        : "text-text-3 hover:bg-accent",
+                      inbox !== "all" && !on && "opacity-45"
+                    )}
+                  >
+                    <ChannelBadge
+                      channel={ch}
+                      className="h-[13px] w-[13px] rounded-[4px]"
+                    />
+                    {inboxCount(ch)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-        <div className="flex items-center gap-2 rounded-md border bg-secondary px-3 py-[7px] transition-colors focus-within:border-brand focus-within:bg-background focus-within:ring-[3px] focus-within:ring-brand-soft">
+        <div className="flex items-center gap-2 rounded-full border border-border-strong bg-background px-3.5 py-[7px] shadow-sm transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-[3px] focus-within:ring-brand-soft">
           <Search className="h-4 w-4 shrink-0 text-text-3" strokeWidth={1.7} />
           <input
             ref={inputRef}
@@ -147,7 +193,7 @@ export function ConversationList({
       <div className="flex items-center gap-1.5 border-b px-4 py-2.5">
         {(
           [
-            { id: "all", label: "Todas", count: searched.length },
+            { id: "all", label: "Todas", count: inInbox.length },
             { id: "unread", label: "No leídas", count: unreadCount },
           ] as const
         ).map((f) => (
@@ -155,17 +201,17 @@ export function ConversationList({
             key={f.id}
             onClick={() => setFilter(f.id)}
             className={cn(
-              "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[12.5px] font-medium transition-colors",
+              "flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-[5px] text-[12.5px] font-semibold transition-colors",
               filter === f.id
-                ? "border-brand bg-brand text-white"
-                : "bg-background text-text-2 hover:bg-accent"
+                ? "border-brand bg-brand text-brand-fg"
+                : "border-border-strong bg-background text-text-2 hover:border-text-3"
             )}
           >
             {f.label}
             <span
               className={cn(
                 "rounded-full px-1.5 text-[11px]",
-                filter === f.id ? "bg-white/20" : "bg-secondary text-text-3"
+                filter === f.id ? "bg-brand-veil" : "bg-secondary text-text-3"
               )}
             >
               {f.count}
@@ -179,10 +225,10 @@ export function ConversationList({
             onChange={(e) => setStage(e.target.value)}
             aria-label="Filtrar por etapa del embudo"
             className={cn(
-              "ml-auto min-w-0 max-w-[42%] truncate rounded-full border px-2 py-[5px] text-[12.5px] font-medium transition-colors",
+              "ml-auto min-w-0 max-w-[42%] truncate rounded-full border px-2 py-[5px] text-[12.5px] font-semibold transition-colors",
               stage === "all"
-                ? "bg-background text-text-2 hover:bg-accent"
-                : "border-brand bg-brand text-white"
+                ? "border-border-strong bg-background text-text-2 hover:border-text-3"
+                : "border-brand bg-brand text-brand-fg"
             )}
           >
             <option value="all">Toda etapa</option>
@@ -199,7 +245,7 @@ export function ConversationList({
         {loading ? (
           <p className="p-6 text-center text-xs text-text-3">Cargando…</p>
         ) : conversations.length === 0 ? (
-          <EmptyState onSeeded={onSeeded} owner={owner} />
+          <EmptyState onSeeded={onSeeded} />
         ) : visible.length === 0 ? (
           <p className="p-6 text-center text-xs text-text-3">
             Sin resultados para este filtro.
@@ -210,7 +256,7 @@ export function ConversationList({
               const unread = c.unreadCount > 0;
               const active = selectedId === c.id;
               return (
-                <li key={c.id} className="relative border-b border-border/70">
+                <li key={c.id} className="relative border-b border-border">
                   {active && (
                     <span className="absolute inset-y-0 left-0 w-[3px] bg-brand" />
                   )}
@@ -229,17 +275,20 @@ export function ConversationList({
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center justify-between gap-2">
-                        <span
-                          className={cn(
-                            "truncate text-sm",
-                            unread ? "font-[680]" : "font-semibold"
-                          )}
-                        >
-                          {c.contact.name}
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {multiChannel && <ChannelBadge channel={c.channel} />}
+                          <span
+                            className={cn(
+                              "truncate text-sm",
+                              unread ? "font-[680]" : "font-semibold"
+                            )}
+                          >
+                            {c.contact.name}
+                          </span>
                         </span>
                         <span
                           className={cn(
-                            "shrink-0 text-[11.5px]",
+                            "shrink-0 font-mono text-[10.5px] tracking-[0.02em]",
                             unread ? "font-semibold text-brand" : "text-text-3"
                           )}
                         >
@@ -256,25 +305,25 @@ export function ConversationList({
                           {previewText(c.preview)}
                         </span>
                         {unread && (
-                          <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-semibold text-white">
+                          <span className="flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full bg-brand px-1.5 text-[10.5px] font-semibold text-brand-fg">
                             {c.unreadCount}
                           </span>
                         )}
                       </span>
                       <span className="mt-1.5 flex items-center gap-1.5">
                         {c.stageName && (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border bg-secondary px-2 py-0.5 text-[11px] text-text-2">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2">
                             <span
                               className="h-[7px] w-[7px] rounded-full"
                               style={{
-                                background: STAGE_DOT[c.stageName] ?? "#9ca3af",
+                                background: STAGE_DOT[c.stageName] ?? STAGE_DOT_FALLBACK,
                               }}
                             />
                             {c.stageName}
                           </span>
                         )}
                         {c.handoffAt && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-[#ece2cf] bg-[#faf7f0] px-2 py-0.5 text-[11px] text-[#8a6d3b]">
+                          <span className="inline-flex items-center gap-1 rounded-full border border-warning-soft bg-warning-tint px-2 py-0.5 text-[11px] text-warning-text">
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana
                           </span>
