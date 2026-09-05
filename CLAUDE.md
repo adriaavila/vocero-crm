@@ -5,6 +5,55 @@ Laboratorio de auto-evaluación. Una instancia = un negocio. Este archivo guía 
 Claude Code (u otro asistente) para operar y **modificar** este repositorio —
 el caso típico: una agencia adaptando Vocero para un cliente.
 
+## Este repo es un FORK
+
+`adriaavila/vocero-crm` sigue a `kevinrivm/vocero-crm` (remoto `upstream`) y le
+suma una **capa de agencia**: aquí una instancia no la configura su dueño, se
+le ENTREGA a un cliente ya montada.
+
+La regla que hace posible seguir fusionando con upstream para siempre:
+
+> **Todo lo del fork vive en su propio sitio. Los archivos de upstream reciben
+> una línea que lo monta, no la implementación.**
+
+| Lo del fork | Dónde |
+|---|---|
+| Lógica de servidor propia | `src/server/agencia/` |
+| Componentes propios | `src/components/agencia/` |
+| Migraciones propias | `drizzle/9xxx_*.sql` — el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` las nombra `00xx`: renómbrala y ajusta su `tag` en `drizzle/meta/_journal.json`. |
+| Pantallas propias | `/overview`, `/account`, `/api/readiness`, `/api/provision` |
+
+Antes de tocar un archivo de upstream, pregúntate si el cambio cabe en
+`agencia/`. Si no cabe, hazlo pequeño, coméntalo con el porqué, y considera
+mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
+
+### Qué hace distinto este fork
+
+- **`conversation.ai_enabled` nace según el negocio**, no siempre en true
+  (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
+  entregada calla; con agente interno o `BOT_API_KEY`, contesta.
+- **`META_APP_SECRET` es obligatorio**: el webhook rechaza lo que no puede
+  verificar y `/api/health` declara la instancia enferma sin él.
+- **Guard `ai_disabled` al enviar**: una respuesta cuya conversación se pausó
+  mientras el modelo redactaba se descarta.
+- **La agenda ve el Google Calendar del dueño**
+  (`server/agencia/agenda-externa.ts`): los eventos se espejan como bloqueos.
+- **La ficha mueve el embudo** (`server/agencia/ficha-pipeline.ts`).
+- **Controles de piloto**: mensajes de activación, allowlist de números,
+  proveedor de IA por organización, prueba real por WhatsApp (WAHA).
+
+### Traer lo nuevo de upstream
+
+```bash
+git remote add upstream https://github.com/kevinrivm/vocero-crm.git  # una vez
+git fetch upstream && git merge upstream/main
+```
+
+Al resolver: gana upstream en el núcleo, gana el fork en la capa de agencia.
+Las migraciones de upstream se toman TAL CUAL (nunca se renumeran: su `when`
+las ordena solo). Después, el gate completo — y `pnpm test:e2e` de verdad, que
+es donde aparecen los fallos silenciosos que el typecheck no ve.
+
 ## Stack
 
 **Next.js 15 (App Router) + React 19** en monolito · TypeScript estricto
@@ -42,6 +91,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | Cómo se entrega la reunión (Zoom, Meet…) | `src/server/agenda/connectors/` + catálogo en `src/lib/agenda-connectors.ts` · guía: [docs/agenda-conectores.md](docs/agenda-conectores.md) |
 | La atribución de anuncios y el reporte a Meta | `src/server/attribution/` — detrás de la bandera `ATRIBUCION` (`flag.ts`) + `src/lib/meta/capi.ts` · guía: [docs/atribucion-capi.md](docs/atribucion-capi.md) |
 | UI | `src/components/` + `src/app/(app)/` |
+| **Cualquier cosa propia del fork** | `src/server/agencia/` · `src/components/agencia/` (ver arriba) |
 
 Los mocks del entorno de pruebas viven en `src/app/api/dev/` (wa-mock +
 ai-mock) tras un gate único (`src/lib/dev-guard.ts`): 404 incondicional en
@@ -134,11 +184,21 @@ Gate técnico:
 pnpm typecheck && pnpm lint && pnpm build && pnpm test
 ```
 
-Guiones E2E por historia en `tests/e2e/*.md`. Parte de ellos ya están
-automatizados: con la app viva y los mocks encendidos, `pnpm test:e2e`
-(`scripts/e2e-selftest.mjs`) los conduce contra la app real y sale distinto de
-cero si algo falla. Al agregar una historia, extiende el arnés en vez de dejar
-solo el `.md`.
+Guiones E2E por historia en `tests/e2e/*.md`, automatizados en
+`scripts/e2e-*.mjs`. Con la app viva y los mocks encendidos, `pnpm test:e2e`
+corre **todos** (glob, no lista: un guion nuevo entra solo) y sale distinto de
+cero si alguno falla. Los guiones son RE-EJECUTABLES: nada de ids ni correos
+fijos que hagan que la segunda corrida falle sola. Al agregar una historia,
+extiende el arnés en vez de dejar solo el `.md`.
+
+Para correrlo hace falta el `.env` de pruebas completo: mocks de WhatsApp y de
+IA, y además `ZERNIO_BASE_URL`, `ZOOM_*` y `GOOGLE_*` apuntando a sus mocks
+(ver `.env.example`). El límite de intentos de login se levanta solo en ese
+entorno; en producción sigue puesto.
+
+Las migraciones tienen su propio arnés: `node scripts/verify-migraciones.mjs`
+las aplica contra un Postgres real por los dos caminos que existen —base nueva
+y base del piloto, la que ya traía las migraciones viejas del fork.
 
 ## Modo Objetivo — Loop SDD
 

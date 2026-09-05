@@ -1,7 +1,30 @@
-# Vocero CRM
+# Vocero CRM — fork de agencia
 
-[![CI](https://github.com/kevinrivm/vocero-crm/actions/workflows/ci.yml/badge.svg)](https://github.com/kevinrivm/vocero-crm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> **Este es un fork de [kevinrivm/vocero-crm](https://github.com/kevinrivm/vocero-crm).**
+> Todo lo que dice el README de arriba abajo sigue siendo cierto; lo de abajo es
+> lo que este fork añade. Sincronizado con **v1.3.0** de upstream.
+>
+> ### La diferencia: la instancia se ENTREGA, no se autoconfigura
+>
+> En upstream, una instancia es de su dueño y él la configura. Aquí una agencia
+> la monta, la prueba y se la entrega a un cliente. De ahí todo lo demás:
+>
+> | | |
+> |---|---|
+> | **Puesta en marcha** | `/overview` — el tablero de qué falta para poder encender el agente (`/api/readiness`). Encenderlo avisa de lo pendiente antes de dejarte. |
+> | **Piloto sin sustos** | El agente contesta solo a mensajes configurados, o solo a una allowlist de números, mientras se prueba la cuenta. |
+> | **Prueba real** | Un ida y vuelta de verdad por WhatsApp (vía WAHA) desde el Laboratorio: prueba la instalación, no el criterio del agente. |
+> | **Alta desde la agencia** | `POST /api/provision` recibe de allok las credenciales de un número recién conectado; nadie copia tokens a mano. |
+> | **Agenda contra el calendario real** | Los eventos del Google Calendar del dueño se espejan como bloqueos, así el agente no ofrece un hueco que ya está ocupado. |
+> | **La ficha mueve el embudo** | Lo que el agente califica avanza el lead en el Pipeline, con su registro en la bitácora. |
+> | **Seguridad más estricta** | `META_APP_SECRET` obligatorio: el webhook rechaza lo que no puede verificar y `/api/health` reprueba la instancia sin él. |
+> | **Cuenta propia** | `/account` — cada miembro cambia su nombre y contraseña; el propietario puede restablecer accesos (no hay correo saliente). |
+>
+> Cómo está organizado para poder seguir fusionando con upstream, y cómo se
+> trae su siguiente versión: [CLAUDE.md](CLAUDE.md#este-repo-es-un-fork).
+
 
 **El CRM de WhatsApp open source con un agente de IA que se pone a prueba solo.**
 
