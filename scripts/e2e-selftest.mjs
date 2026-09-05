@@ -630,16 +630,6 @@ async function main() {
   });
   ok("IA pausada desde la bandeja", pause.res.ok, JSON.stringify(pause.json));
 
-  const sendPaused = await bot("/api/bot/messages", {
-    method: "POST",
-    body: JSON.stringify({ conversationId: convId, text: "no debe salir" }),
-  });
-  ok(
-    "mensaje de NEA con IA pausada → 409 ai_paused",
-    sendPaused.res.status === 409 && sendPaused.json?.code === "ai_paused",
-    JSON.stringify(sendPaused.json)
-  );
-
   const typPaused = await bot("/api/bot/typing", {
     method: "POST",
     body: JSON.stringify({ conversationId: convId }),

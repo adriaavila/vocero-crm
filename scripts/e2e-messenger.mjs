@@ -17,6 +17,7 @@ import { createHmac } from "node:crypto";
 
 const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN;
+const APP_SECRET = process.env.META_APP_SECRET;
 const PAGE = "page-demo-001";
 const ACCOUNT = "zernio-account-001";
 const SECRET = "secreto-del-webhook-de-zernio";
@@ -67,9 +68,21 @@ async function webhook(payload, { token = VERIFY_TOKEN, signature } = {}) {
     headers: {
       "content-type": "application/json",
       ...(signature ? { "x-zernio-signature": signature } : {}),
+      // Los eventos de Meta van FIRMADOS, como los firma Meta. Antes este
+      // guion no los firmaba y pasaba igual, porque sin META_APP_SECRET la
+      // verificación se saltaba sola: probaba un camino que en producción no
+      // existe. En este fork el secreto es obligatorio y el webhook rechaza
+      // lo que no puede verificar, así que el guion tiene que firmar.
+      ...(APP_SECRET && payload?.object === "page"
+        ? { "x-hub-signature-256": `sha256=${firmaMeta(body)}` }
+        : {}),
     },
     body,
   });
+}
+
+function firmaMeta(rawBody) {
+  return createHmac("sha256", APP_SECRET).update(rawBody, "utf8").digest("hex");
 }
 
 const sign = (payload, secret = SECRET) =>

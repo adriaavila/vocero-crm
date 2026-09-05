@@ -4,6 +4,9 @@ import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { upsertFicha } from "@/server/bot/ficha";
+// Capa de agencia: la ficha también mueve el embudo (server/agencia/).
+import { moverEtapaPorFicha } from "@/server/agencia/ficha-pipeline";
+import { normalizeFicha } from "@/server/bot/ficha";
 
 export const dynamic = "force-dynamic";
 
@@ -51,5 +54,17 @@ export async function PUT(req: Request) {
     ficha: body.data.ficha,
   });
   if (!result) return apiError(404, "not_found", "Contacto no encontrado");
-  return Response.json(result);
+
+  // El movimiento de etapa es best-effort: la ficha ya se guardó, y un fallo
+  // moviendo el tablero jamás puede costar el dato de calificación.
+  const { movido } = await moverEtapaPorFicha({
+    organizationId,
+    contactId: rows[0].contactId,
+    patch: normalizeFicha(body.data.ficha),
+  }).catch((err) => {
+    console.warn(`[ficha] no pude mover la etapa: ${err}`);
+    return { movido: false };
+  });
+
+  return Response.json({ ...result, stageMoved: movido });
 }

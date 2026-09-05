@@ -149,6 +149,11 @@ export function shouldRunInternalAgent(): boolean {
   return isAiConfigured() && (process.env.BOT_API_KEY?.trim().length ?? 0) < 16;
 }
 
+/** true si esta instancia tiene un cerebro externo conectado por /api/bot/*. */
+export function isExternalBrainConfigured(): boolean {
+  return (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+}
+
 /** true si responde el agente interno o un cerebro externo autenticado. */
 export function isAgentConfigured(): boolean {
   return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;

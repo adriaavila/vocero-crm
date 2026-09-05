@@ -67,11 +67,17 @@ export function getWaMockState(): WaMockState {
 }
 
 export function resetWaMockState(): void {
+  // El CONTADOR no se reinicia. El sello de arranque protege de reiniciar el
+  // servidor, pero no de correr el self-test dos veces contra la misma base:
+  // el segundo `_reset` volvía a emitir `…out.<sello>.1`, que ya existía, y el
+  // envío moría con un 500 por el UNIQUE de `wa_message_id`. Se leía como un
+  // fallo del producto y no lo era.
+  const counter = globalForMock.__waMockState?.counter ?? 0;
   globalForMock.__waMockState = {
     outbox: [],
     templates: [],
     capiEvents: [],
-    counter: 0,
+    counter,
   };
 }
 

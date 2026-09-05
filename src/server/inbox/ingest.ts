@@ -22,6 +22,7 @@ import { atribucionEnabled } from "@/server/attribution/flag";
 import { recordAttribution } from "@/server/attribution/store";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { iaInicialPara } from "@/server/agencia/ia-inicial";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -178,6 +179,9 @@ export async function getOrCreateConversation(
       contactId,
       channel: opts?.channel ?? "whatsapp",
       channelThreadRef: opts?.threadRef ?? null,
+      // Capa de agencia (fork): la IA nace según el estado del agente del
+      // negocio, no con un sí ni un no fijos. Ver server/agencia/ia-inicial.
+      aiEnabled: await iaInicialPara(organizationId),
     })
     .onConflictDoNothing()
     .returning();

@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { serializeFicha } from "@/server/bot/ficha";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
+import { normalizeMx } from "@/lib/meta/client";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,16 @@ export async function GET(req: Request) {
   }
 
   const url = new URL(req.url);
-  const waIdentity =
+  const rawIdentity =
     url.searchParams.get("identity") ?? url.searchParams.get("waIdentity");
+  /**
+   * Se normaliza igual que en la ingesta. Meta entrega los números mexicanos
+   * con el 1 del troncal (`521…`) y el CRM los guarda sin él, así que un
+   * cerebro externo que reenvíe el `from` tal cual recibía 404 en TODAS las
+   * conversaciones de México — y el agente se quedaba mudo sin decir por qué.
+   * Una identidad que no es de teléfono (`bsuid:…`, `ig:…`) pasa intacta.
+   */
+  const waIdentity = rawIdentity ? normalizeMx(rawIdentity) : null;
   const conversationId = url.searchParams.get("conversationId");
   if (!waIdentity && !conversationId) {
     return apiError(422, "invalid", "Falta identity (o waIdentity) o conversationId");
@@ -127,6 +136,8 @@ export async function GET(req: Request) {
       // aunque el flag siga en true.
       aiEnabled: conversation.aiEnabled && !conversation.handoffAt,
       handoffAt: conversation.handoffAt?.toISOString() ?? null,
+      /** Por qué se pausó. El cerebro externo lo usa para no reabrir solo. */
+      handoffReason: conversation.handoffReason,
       windowOpen: isWindowOpen(conversation.lastInboundAt),
       windowRemainingMs: windowRemainingMs(conversation.lastInboundAt),
     },

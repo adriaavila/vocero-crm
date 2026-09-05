@@ -3,6 +3,7 @@ import { agentProfilePutSchema, compatibleActivation } from "@/lib/agent-profile
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAgentConfigured } from "@/lib/env";
+import { encenderConversacionesEnEspera } from "@/server/agencia/ia-inicial";
 
 export const dynamic = "force-dynamic";
 
@@ -48,5 +49,20 @@ export const PUT = withOwner(async (session, req: Request) => {
     .where(scoped(schema.agentProfile.organizationId, session.organizationId))
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Perfil no encontrado");
-  return Response.json({ ok: true });
+
+  // Capa de agencia: encender el agente también despierta las conversaciones
+  // que nacieron mientras estaba apagado. Sin esto, el dueño enciende el
+  // interruptor, ve "Encendido", y sus leads de esta mañana siguen sin
+  // respuesta — con todo aparentando estar bien.
+  let despertadas = 0;
+  if (
+    body.data.enabled === true &&
+    updated[0].enabled &&
+    !updated[0].activationEnabled
+  ) {
+    despertadas = await encenderConversacionesEnEspera(
+      session.organizationId
+    ).catch(() => 0);
+  }
+  return Response.json({ ok: true, conversacionesDespertadas: despertadas });
 });

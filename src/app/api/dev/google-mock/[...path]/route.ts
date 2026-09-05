@@ -91,6 +91,31 @@ export async function GET(req: Request, ctx: Ctx) {
     return Response.json({ id: path[1], summary: "Calendario de prueba" });
   }
 
+  // GET /calendars/{id}/events — el listado. Lo usa la capa de agencia para
+  // espejar el calendario del dueño como bloqueos (server/agencia/). Se filtra
+  // por la ventana pedida, igual que Google.
+  if (path[0] === "calendars" && path[2] === "events" && path.length === 3) {
+    const url = new URL(req.url);
+    const min = Date.parse(url.searchParams.get("timeMin") ?? "");
+    const max = Date.parse(url.searchParams.get("timeMax") ?? "");
+    const items = [...googleMockState().events.values()]
+      .filter((e) => {
+        const inicio = Date.parse(e.start);
+        if (Number.isNaN(inicio)) return false;
+        if (!Number.isNaN(min) && Date.parse(e.end) <= min) return false;
+        if (!Number.isNaN(max) && inicio >= max) return false;
+        return true;
+      })
+      .map((e) => ({
+        id: e.id,
+        summary: e.summary,
+        status: "confirmed",
+        start: { dateTime: e.start },
+        end: { dateTime: e.end },
+      }));
+    return Response.json({ items });
+  }
+
   // GET /calendars/{id}/events/{eventId}
   const event = eventFrom(path);
   if (!event) return new Response(null, { status: 404 });

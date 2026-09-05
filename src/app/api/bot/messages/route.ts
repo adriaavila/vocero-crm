@@ -66,6 +66,13 @@ export async function POST(req: Request) {
     return Response.json({ messageId: result.messageId });
   } catch (err) {
     if (err instanceof SendError) {
+      // La IA se pausó ENTRE el gate de arriba y la entrega (segundos de un
+      // LLM). Es el mismo hecho que `ai_paused`, así que sale con el mismo
+      // código: quien integra no debería tener que distinguir dos nombres
+      // para "un humano tomó la conversación".
+      if (err.code === "ai_disabled") {
+        return apiError(409, "ai_paused", err.message);
+      }
       if (err.code === "window_closed") {
         return apiError(409, "window_closed", err.message);
       }
