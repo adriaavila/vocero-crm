@@ -343,14 +343,22 @@ async function main() {
 
   console.log("\n== Zernio: defensa entre fuentes ==");
   const metaMientrasZernio = await webhook(
-    metaEvent([{ sender: { id: "psid-intruso" }, message: { mid: "m_intruso", text: "payload de meta" } }])
+    metaEvent([
+      {
+        sender: { id: `psid-intruso-${RUN}` },
+        message: { mid: `m_intruso_${RUN}`, text: `payload de meta ${MARCA}` },
+      },
+    ])
   );
   await sleep(1000);
   const trasIntruso = await api("/api/conversations");
   ok(
     "un payload de Meta con la instancia en modo Zernio se descarta",
     metaMientrasZernio.status === 200 &&
-      !(trasIntruso.json?.conversations ?? []).some((c) => c.preview?.includes("payload de meta"))
+      !(trasIntruso.json?.conversations ?? []).some((c) =>
+        c.preview?.includes(`payload de meta ${MARCA}`)
+      ),
+    `status=${metaMientrasZernio.status}`
   );
 
   console.log("\n== Salida por Zernio ==");

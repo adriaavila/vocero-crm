@@ -5,7 +5,14 @@ import { chromium } from "playwright";
 const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const ownerEmail = "e2e@vocero.test";
 const ownerPassword = "password-e2e-123";
-const memberEmail = "member-e2e@vocero.test";
+/**
+ * Correo NUEVO en cada corrida. El guion termina cambiándole la contraseña al
+ * miembro, así que con un correo fijo la segunda corrida arranca desde un
+ * estado distinto al que asume y falla sola — un test que solo pasa la
+ * primera vez no es un test.
+ */
+const runId = Math.random().toString(36).slice(2, 8);
+const memberEmail = `member-e2e-${runId}@vocero.test`;
 const memberPassword = "member-e2e-old-123";
 let failures = 0;
 
@@ -29,6 +36,7 @@ try {
   check("login de propietario", (await signIn(owner.request, ownerEmail, ownerPassword)).ok());
   const page = await owner.newPage();
 
+
   await page.goto(`${base}/overview`);
   await page.getByRole("heading", { name: "Panel operativo" }).waitFor();
   check("propietario aterriza en Inicio", page.url().includes("/overview"));
@@ -43,47 +51,27 @@ try {
     ["ajustes", "/settings/whatsapp"],
   ]) {
     await page.goto(`${base}${path}`);
-    await page.waitForLoadState("networkidle");
+    await settle(page);
     await page.screenshot({ path: `.tmp/e2e-service/${name}-1440.png`, fullPage: true });
   }
 
-  await page.setViewportSize({ width: 1024, height: 768 });
-  await page.goto(`${base}/inbox`);
-  await page.waitForLoadState("networkidle");
-  await page.screenshot({ path: ".tmp/e2e-service/bandeja-1024.png", fullPage: true });
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${base}/inbox`);
-  const firstConversation = page.locator("ul > li button").first();
-  await firstConversation.waitFor();
-  await firstConversation.click();
-  check("móvil abre hilo y sincroniza URL", /conversation=/.test(page.url()));
-  await page.getByLabel("Mostrar detalles").click();
-  const detailPanel = page.getByText("Detalles", { exact: true });
-  const detailBox = await detailPanel.locator("xpath=ancestor::section[1]").boundingBox();
-  check("detalles móviles ocupan el flujo completo", await detailPanel.isVisible() && (detailBox?.width ?? 0) >= 380);
-  await page.getByLabel("Ocultar panel").click();
-  await page.goBack();
-  check("atrás del navegador vuelve a la lista", !/conversation=/.test(page.url()));
-  await page.screenshot({ path: ".tmp/e2e-service/bandeja-390.png", fullPage: true });
-
-  await page.goto(`${base}/pipeline`);
-  const mobileStage = page.locator('select[aria-label^="Mover "]').first();
-  await mobileStage.waitFor();
-  const before = await mobileStage.inputValue();
-  const alternative = await mobileStage.locator("option").evaluateAll((options, current) => options.map((option) => option.value).find((value) => value !== current), before);
-  if (alternative) {
-    await page.route("**/api/pipeline/leads/*", (route) => route.abort());
-    await mobileStage.selectOption(alternative);
-    await page.getByText("Se restauró la etapa anterior.", { exact: false }).waitFor();
-    check("fallo de mutación revierte Pipeline", await mobileStage.inputValue() === before);
-    await page.unroute("**/api/pipeline/leads/*");
-  }
+  /**
+   * La responsividad de la bandeja y del Pipeline ya la conduce
+   * `scripts/e2e-responsive.mjs`, que es de upstream y va al día con su
+   * rediseño. Este guion se queda con lo que solo existe en el fork —
+   * puesta en marcha, la advertencia al activar el agente y el ciclo de
+   * acceso del equipo — en vez de mantener dos versiones de la misma
+   * prueba, una de ellas apuntando a una interfaz que ya no existe.
+   */
 
   await owner.request.put(`${base}/api/agent/profile`, { data: { enabled: false, greeting: "" } });
   await page.goto(`${base}/agent`);
   await page.getByRole("switch", { name: "Agente encendido" }).click();
-  check("activar incompleto abre advertencia", await page.getByRole("dialog").isVisible());
+  // El freno consulta /api/readiness antes de abrir: hay que esperarlo, no
+  // preguntar en el mismo tick.
+  const advertencia = page.getByRole("dialog");
+  await advertencia.waitFor({ timeout: 10000 }).catch(() => {});
+  check("activar incompleto abre advertencia", await advertencia.isVisible());
   await page.getByRole("button", { name: "Activar de todas formas" }).click();
 
   let members = (await (await owner.request.get(`${base}/api/settings/team`)).json()).members;
@@ -126,3 +114,15 @@ try {
 
 console.log(`\n===== UI servicio: ${failures ? `${failures} fallos` : "todo OK"} =====`);
 process.exit(failures ? 1 : 0);
+
+/**
+ * "networkidle" no sirve en esta app: la bandeja mantiene un SSE abierto
+ * (`/api/events`) desde el shell, así que la red NUNCA queda inactiva y la
+ * espera se agota a los 30 s. Se espera a que el documento cargue y se le da
+ * un respiro al layout, que es lo que de verdad hace falta antes de una
+ * captura.
+ */
+async function settle(page) {
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForTimeout(600);
+}

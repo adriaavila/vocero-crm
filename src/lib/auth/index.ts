@@ -4,7 +4,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 import { getDb, schema } from "@/lib/db";
-import { getEnv } from "@/lib/env";
+import { getEnv, isMockEnabled } from "@/lib/env";
 import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
 import {
   onUserCreated,
@@ -66,7 +66,14 @@ function createAuth() {
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         // Rate limit por IP en login/registro (FR-062): 10 / 10 min → 429.
-        if (RATE_LIMITED_PATHS.has(ctx.path)) {
+        //
+        // Se levanta SOLO en el entorno de pruebas internas (`isMockEnabled`:
+        // WA_MOCK_ENABLED=true y fuera de producción, el mismo gate de los
+        // mocks). El arnés E2E son ~15 guiones que inician sesión cada uno, y
+        // desde una sola IP eso pasa de 10 en el primer minuto: la suite
+        // fallaba con 429 y parecía un fallo del producto. En producción el
+        // límite no se toca — y ahí el gate es imposible de encender.
+        if (RATE_LIMITED_PATHS.has(ctx.path) && !isMockEnabled()) {
           const ip =
             ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
             ctx.headers?.get("x-real-ip") ||

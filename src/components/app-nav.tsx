@@ -30,6 +30,13 @@ type NavItem = {
   label: string;
   icon: typeof Inbox;
   badge?: boolean;
+  /**
+   * Capa de agencia: solo el propietario. Un miembro del equipo del cliente
+   * que entra a /agent o /lab rebota a Inicio, así que enseñarle el enlace es
+   * ofrecerle una puerta cerrada — y de paso le sugiere que hay algo que
+   * debería poder tocar.
+   */
+  owner?: boolean;
 };
 
 const NAV: NavItem[] = [
@@ -40,8 +47,8 @@ const NAV: NavItem[] = [
   { href: "/inbox", label: "Bandeja", icon: Inbox, badge: true },
   { href: "/pipeline", label: "Pipeline", icon: Kanban },
   { href: "/contacts", label: "Contactos", icon: Users },
-  { href: "/agent", label: "Agente", icon: Sparkles },
-  { href: "/lab", label: "Laboratorio", icon: FlaskConical },
+  { href: "/agent", label: "Agente", icon: Sparkles, owner: true },
+  { href: "/lab", label: "Laboratorio", icon: FlaskConical, owner: true },
 ];
 
 /** 015 — "Citas" solo existe si esta instancia encendió la agenda. */
@@ -119,9 +126,11 @@ export function AppNav({
   const settingsActive = pathname.startsWith("/settings");
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
-  const items = agenda
+  const esPropietario = role === "owner";
+  const items = (agenda
     ? [...NAV.slice(0, 2), AGENDA_ITEM, ...NAV.slice(2)]
-    : NAV;
+    : NAV
+  ).filter((item) => !item.owner || esPropietario);
 
   return (
     <aside
@@ -189,6 +198,7 @@ export function AppNav({
         Mi cuenta
       </Link>
 
+      {esPropietario && (
       <Link href="/settings" className={navItemClass(settingsActive)}>
         <Settings
           className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
@@ -196,6 +206,7 @@ export function AppNav({
         />
         Ajustes
       </Link>
+      )}
 
       <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text">
@@ -204,7 +215,7 @@ export function AppNav({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">{userName}</span>
           <span className="block truncate text-[11px] text-text-3">
-            {role === "owner" ? "Propietario" : "Equipo"} · En línea
+            {esPropietario ? "Propietario" : "Equipo"} · En línea
           </span>
         </span>
         <ThemeToggle initial={theme} />

@@ -5,6 +5,8 @@ import { getSessionOrNull } from "@/lib/auth/session";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
 import { AppShell } from "@/components/app-shell";
+// Capa de agencia: los avisos de las pantallas propias (Mi cuenta, Inicio).
+import { ToastProvider } from "@/components/ui/toast-provider";
 import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
 
@@ -34,7 +36,7 @@ export default async function AppLayout({
       // cliente: no puede —ni debe— leer variables de entorno.
       agenda={agendaEnabled()}
     >
-      {children}
+      <ToastProvider>{children}</ToastProvider>
     </AppShell>
   );
 }
