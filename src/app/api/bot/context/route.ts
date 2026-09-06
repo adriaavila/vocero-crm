@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { serializeFicha } from "@/server/bot/ficha";
+// Capa de agencia: allowlist del piloto y la cita que el lead ya tiene.
+import { accesoDeAgencia, proximaCita } from "@/server/agencia/bot-perfil";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import { normalizeMx } from "@/lib/meta/client";
 
@@ -118,6 +120,11 @@ export async function GET(req: Request) {
     )
     .limit(1);
 
+  const [agentAccess, booking] = await Promise.all([
+    accesoDeAgencia(organizationId),
+    proximaCita(organizationId, contact.id),
+  ]);
+
   return Response.json({
     contact: {
       id: contact.id,
@@ -144,5 +151,7 @@ export async function GET(req: Request) {
     lead: leadRows[0]
       ? { id: leadRows[0].lead.id, stageName: leadRows[0].stage.name }
       : null,
+    agentAccess,
+    booking: { next: booking },
   });
 }

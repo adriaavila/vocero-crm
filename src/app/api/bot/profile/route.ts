@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { serializeBotProfile } from "@/server/bot/profile";
+// Capa de agencia: los frenos del piloto viajan con el perfil (server/agencia/).
+import { perfilDeAgencia } from "@/server/agencia/bot-perfil";
 
 export const dynamic = "force-dynamic";
 
@@ -39,5 +41,10 @@ export async function GET(req: Request) {
     .where(eq(schema.kbEntry.organizationId, organizationId))
     .orderBy(asc(schema.kbEntry.createdAt));
 
-  return Response.json(serializeBotProfile(profile, kb));
+  const base = serializeBotProfile(profile, kb);
+  const agencia = await perfilDeAgencia(organizationId);
+  return Response.json({
+    ...base,
+    profile: { ...base.profile, ...agencia },
+  });
 }
