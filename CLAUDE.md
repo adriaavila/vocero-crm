@@ -191,6 +191,17 @@ cero si alguno falla. Los guiones son RE-EJECUTABLES: nada de ids ni correos
 fijos que hagan que la segunda corrida falle sola. Al agregar una historia,
 extiende el arnés en vez de dejar solo el `.md`.
 
+El primero que corre es `e2e-selftest.mjs`: es el que registra la organización
+y conecta WhatsApp, así que el resto depende de él y si falla, el arnés para
+ahí. Los demás van en orden alfabético.
+
+Arranca el servidor con memoria de sobra —
+`NODE_OPTIONS="--max-old-space-size=8192" pnpm dev` — o `next dev` se
+reinicia solo a mitad de la suite ("approaching the used memory threshold") y
+tira las peticiones en vuelo: se lee como fallos del producto repartidos al
+azar. Y no corras `pnpm build` con el `dev` levantado: comparten `.next` y el
+servidor se queda sin archivos.
+
 Para correrlo hace falta el `.env` de pruebas completo: mocks de WhatsApp y de
 IA, y además `ZERNIO_BASE_URL`, `ZOOM_*` y `GOOGLE_*` apuntando a sus mocks
 (ver `.env.example`). El límite de intentos de login se levanta solo en ese

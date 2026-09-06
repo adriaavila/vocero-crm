@@ -85,7 +85,15 @@ jobs:
       # vacío: las variables reales vienen del entorno del job.
       - run: touch .env
 
+      # `next dev` y no `next start`: los mocks del self-test están detrás de un
+      # gate que exige NODE_ENV != production, así que en un build de
+      # producción no existirían y no habría nada que probar.
+      #
+      # Con memoria de sobra: por debajo, Next se reinicia solo a mitad de la
+      # suite y tira las peticiones en vuelo.
       - name: arrancar la app
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
         run: |
           pnpm dev > /tmp/vocero-next.log 2>&1 &
           for attempt in $(seq 1 90); do

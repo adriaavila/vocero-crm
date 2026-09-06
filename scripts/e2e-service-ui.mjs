@@ -37,7 +37,7 @@ try {
   const page = await owner.newPage();
 
 
-  await page.goto(`${base}/overview`);
+  await page.goto(`${base}/overview`, { waitUntil: "load", timeout: 90000 });
   await page.getByRole("heading", { name: "Panel operativo" }).waitFor();
   check("propietario aterriza en Inicio", page.url().includes("/overview"));
   check("checklist de puesta en marcha visible", await page.getByText("Puesta en marcha", { exact: true }).isVisible());
@@ -65,14 +65,27 @@ try {
    */
 
   await owner.request.put(`${base}/api/agent/profile`, { data: { enabled: false, greeting: "" } });
-  await page.goto(`${base}/agent`);
+  // El freno solo debe aparecer si de verdad falta algo. Se le pregunta a la
+  // misma fuente que consulta él, en vez de asumir el estado de la instancia:
+  // corriendo después de los demás guiones, la puesta en marcha puede estar
+  // ya completa y entonces NO advertir es lo correcto.
+  const readiness = await (await owner.request.get(`${base}/api/readiness`)).json();
+  const faltaAlgo = readiness.overall === "needs_attention";
+  await page.goto(`${base}/agent`, { waitUntil: "load", timeout: 90000 });
   await page.getByRole("switch", { name: "Agente encendido" }).click();
   // El freno consulta /api/readiness antes de abrir: hay que esperarlo, no
   // preguntar en el mismo tick.
   const advertencia = page.getByRole("dialog");
   await advertencia.waitFor({ timeout: 10000 }).catch(() => {});
-  check("activar incompleto abre advertencia", await advertencia.isVisible());
-  await page.getByRole("button", { name: "Activar de todas formas" }).click();
+  check(
+    faltaAlgo
+      ? "activar incompleto abre advertencia"
+      : "puesta en marcha completa: activar NO molesta",
+    (await advertencia.isVisible()) === faltaAlgo
+  );
+  if (faltaAlgo) {
+    await page.getByRole("button", { name: "Activar de todas formas" }).click();
+  }
 
   let members = (await (await owner.request.get(`${base}/api/settings/team`)).json()).members;
   let member = members.find((item) => item.email === memberEmail);
@@ -91,14 +104,14 @@ try {
   check("contraseña anterior deja de funcionar", !(await signIn(memberContext.request, memberEmail, memberPassword)).ok());
   check("contraseña temporal funciona", (await signIn(memberContext.request, memberEmail, temporaryPassword)).ok());
   const memberPage = await memberContext.newPage();
-  await memberPage.goto(`${base}/agent`);
+  await memberPage.goto(`${base}/agent`, { waitUntil: "load", timeout: 90000 });
   await memberPage.waitForURL("**/overview");
   check("miembro no abre superficies administrativas", memberPage.url().endsWith("/overview"));
   check("miembro no ve navegación administrativa", await memberPage.getByText("Laboratorio", { exact: true }).count() === 0);
   check("API administrativa devuelve 403 al miembro", (await memberContext.request.get(`${base}/api/agent/profile`)).status() === 403);
   check("miembro conserva lectura operativa", (await memberContext.request.get(`${base}/api/pipeline/stages`)).ok());
 
-  await memberPage.goto(`${base}/account`);
+  await memberPage.goto(`${base}/account`, { waitUntil: "load", timeout: 90000 });
   await memberPage.getByLabel("Contraseña actual").fill(temporaryPassword);
   await memberPage.getByLabel("Nueva contraseña").fill("member-e2e-final-123");
   await memberPage.getByLabel("Confirmar contraseña").fill("member-e2e-final-123");
