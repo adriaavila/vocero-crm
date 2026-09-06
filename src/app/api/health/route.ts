@@ -6,12 +6,11 @@ import { APP_VERSION, resolveBuildCommit } from "@/lib/version";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  // Una instancia de producción sin META_APP_SECRET acepta webhooks que no
-  // puede verificar. En el modelo de agencia eso se despliega y se entrega sin
-  // que nadie lo note, así que la instancia se declara NO saludable: el
-  // healthcheck de la plataforma frena el despliegue en vez de dejar corriendo
-  // una recepción abierta.
   const env = getEnv();
+  // Capa de agencia: una instancia se ENTREGA a un cliente, y una que acepta
+  // webhooks sin firma es una que cualquiera puede inyectar. Sin App Secret en
+  // producción el healthcheck falla a propósito, para que el despliegue se
+  // caiga a la vista en vez de quedar corriendo e inseguro.
   if (env.NODE_ENV === "production" && !env.META_APP_SECRET) {
     return Response.json(
       {
@@ -24,7 +23,6 @@ export async function GET() {
       { status: 503 }
     );
   }
-
   try {
     await getDb().execute(sql`select 1`);
     // La versión viaja aquí a propósito: confirmar un despliegue tiene que
