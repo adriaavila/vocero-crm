@@ -62,22 +62,33 @@ async function executeRun(
   runId: string,
   organizationId: string
 ): Promise<void> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error("timeout de 10 minutos superado")),
+    (timer = setTimeout(
+      () => {
+        controller.abort();
+        reject(new Error("timeout de 10 minutos superado"));
+      },
       RUN_TIMEOUT_MS
-    )
+    ))
   );
   try {
-    await Promise.race([runAllCases(runId, organizationId), timeout]);
+    await Promise.race([
+      runAllCases(runId, organizationId, controller.signal),
+      timeout,
+    ]);
   } catch (err) {
     await failRun(runId, organizationId, String(err));
+  } finally {
+    clearTimeout(timer!);
   }
 }
 
 async function runAllCases(
   runId: string,
-  organizationId: string
+  organizationId: string,
+  signal: AbortSignal
 ): Promise<void> {
   const db = getDb();
   const cases = await db
@@ -114,6 +125,7 @@ async function runAllCases(
   publishProgress(organizationId, runId, "running", done, total);
 
   for (const testCase of cases) {
+    if (signal.aborted) return;
     const persona = PERSONAS.find((p) => p.key === testCase.persona);
     if (!persona) continue;
 
@@ -126,6 +138,7 @@ async function runAllCases(
       organizationId,
       persona
     );
+    if (signal.aborted) return;
 
     const outcome = await judgeCase({
       personaKey: persona.key,
@@ -133,6 +146,7 @@ async function runAllCases(
       kbText,
       behaviorText,
     });
+    if (signal.aborted) return;
 
     await db
       .update(schema.agentTestCase)
@@ -157,11 +171,19 @@ async function runAllCases(
     .from(schema.agentTestCase)
     .where(eq(schema.agentTestCase.runId, runId));
   const score = computeScore(finalCases);
+  if (signal.aborted) return;
 
-  await getDb()
+  const completed = await getDb()
     .update(schema.agentTestRun)
     .set({ status: "done", score, finishedAt: new Date() })
-    .where(eq(schema.agentTestRun.id, runId));
+    .where(
+      and(
+        eq(schema.agentTestRun.id, runId),
+        eq(schema.agentTestRun.status, "running")
+      )
+    )
+    .returning({ id: schema.agentTestRun.id });
+  if (!completed[0]) return;
   publishProgress(organizationId, runId, "done", done, total, score);
 }
 
@@ -247,8 +269,15 @@ async function upsertTestContact(
       name: persona.contactName,
       archivedAt: new Date(),
     })
+    // Ídem que en el alta manual: desde 014 el índice único incluye `channel`,
+    // y un ON CONFLICT que no lo nombra no corresponde a ningún índice. Sin
+    // esto, TODA corrida del Laboratorio muere antes de la primera persona.
     .onConflictDoNothing({
-      target: [schema.contact.organizationId, schema.contact.waIdentity],
+      target: [
+        schema.contact.organizationId,
+        schema.contact.channel,
+        schema.contact.waIdentity,
+      ],
     })
     .returning();
   if (inserted[0]) return inserted[0].id;

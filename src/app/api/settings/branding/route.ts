@@ -2,6 +2,7 @@ import { z } from "zod";
 import { parseBody, withOwner } from "@/lib/api";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { isValidHex, resolveAccentSet } from "@/lib/branding";
+import { CURRENCIES } from "@/lib/money";
 import { getBranding, saveBranding } from "@/server/branding";
 
 export const dynamic = "force-dynamic";
@@ -16,11 +17,20 @@ export async function GET() {
 const putSchema = z.object({
   name: z.string().trim().min(1).max(30),
   accent: z.string().refine(isValidHex, "Color hex inválido (#rrggbb)"),
+  /** La moneda del negocio: la única que el tablero suma. */
+  currency: z.enum(CURRENCIES),
 });
 
 export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
-  await saveBranding(session.organizationId, body.data);
+  // El icono se conserva: este formulario es de nombre, color y moneda, y se
+  // sube y se quita por su propia ruta. Sin esto, guardar el nombre borraría
+  // el logo sin que nadie lo pidiera.
+  const actual = await getBranding(session.organizationId);
+  await saveBranding(session.organizationId, {
+    ...body.data,
+    favicon: actual.favicon,
+  });
   return Response.json({ ok: true });
 });

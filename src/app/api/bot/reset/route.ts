@@ -4,6 +4,8 @@ import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
+import { moveLeadToStage } from "@/server/leads/stage-history";
+import { serializeFicha, upsertFicha } from "@/server/bot/ficha";
 
 export const dynamic = "force-dynamic";
 
@@ -56,10 +58,30 @@ export async function POST(req: Request) {
     })
     .where(eq(schema.conversation.id, conv.id));
 
-  await db
-    .update(schema.contact)
-    .set({ ficha: {}, updatedAt: new Date() })
-    .where(eq(schema.contact.id, conv.contactId));
+  // La ficha se vacía POR LA PUERTA (`upsertFicha`), no con un update suelto:
+  // esa puerta es la que filtra por organización, y el guardarraíl de
+  // tests/unit/ficha-guard.test.ts existe justo para que nadie la esquive.
+  // Borrar = mandar `null` en cada clave que había.
+  const previas = await db
+    .select()
+    .from(schema.contact)
+    .where(
+      and(
+        eq(schema.contact.organizationId, organizationId),
+        eq(schema.contact.id, conv.contactId)
+      )
+    )
+    .limit(1);
+  if (previas[0]) {
+    const claves = Object.keys(serializeFicha(previas[0]));
+    if (claves.length > 0) {
+      await upsertFicha({
+        organizationId,
+        contactId: conv.contactId,
+        ficha: Object.fromEntries(claves.map((k) => [k, null])),
+      });
+    }
+  }
 
   // Etapa al inicio del funnel (best-effort: sin etapas no revienta el reset).
   try {
@@ -79,10 +101,15 @@ export async function POST(req: Request) {
       )
       .limit(1);
     if (first && leadRows[0]) {
-      await db
-        .update(schema.lead)
-        .set({ stageId: first.id, updatedAt: new Date() })
-        .where(eq(schema.lead.id, leadRows[0].id));
+      // Por la puerta única: devolver la conversación de pruebas al inicio
+      // también es un movimiento, y la bitácora tiene que poder explicar por
+      // qué un lead retrocedió de etapa.
+      await moveLeadToStage({
+        organizationId,
+        leadId: leadRows[0].id,
+        toStageId: first.id,
+        source: "sistema",
+      });
     }
   } catch (err) {
     console.warn(`[bot/reset] reinicio de etapa falló: ${err}`);

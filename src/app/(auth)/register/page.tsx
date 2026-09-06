@@ -40,7 +40,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <Card>
+    <Card className="shadow-md">
       <CardHeader>
         <CardTitle>Crear cuenta</CardTitle>
         <CardDescription>

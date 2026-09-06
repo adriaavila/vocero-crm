@@ -18,6 +18,8 @@ export type EventHandlers = {
     progress: { done: number; total: number };
     score?: number | null;
   }) => void;
+  /** 015 — Algo cambió en la agenda (también cuando agenda la IA). */
+  onBookingUpdated?: (data: { bookingId: string }) => void;
   /** Se llama tras RECONECTAR (no en la conexión inicial): catch-up con refetch. */
   onReconnect?: () => void;
   onConnectionChange?: (status: "connected" | "reconnecting") => void;
@@ -54,6 +56,9 @@ export function useEvents(handlers: EventHandlers): void {
       handlersRef.current.onConversationUpdated?.(d as never)
     );
     listen("lab.run", (d) => handlersRef.current.onLabRun?.(d as never));
+    listen("booking.updated", (d) =>
+      handlersRef.current.onBookingUpdated?.(d as never)
+    );
 
     source.onerror = () => {
       hadError = true;

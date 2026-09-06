@@ -1,15 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   FlaskConical,
-  MessageCircle,
   Play,
   Sparkles,
   TrendingDown,
@@ -18,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEvents } from "@/components/use-events";
 import { Badge } from "@/components/ui/badge";
+import { LiveWhatsappTest } from "@/components/agencia/live-whatsapp-test";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -50,13 +48,6 @@ type Case = {
   transcript: { role: "cliente" | "agente"; text: string }[];
 };
 
-type LiveTest = {
-  configured: boolean;
-  status?: string;
-  phone?: string | null;
-  name?: string | null;
-};
-
 const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
   alucinacion: "Alucinación",
   fuera_de_kb: "Fuera del conocimiento",
@@ -65,8 +56,6 @@ const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
 };
 
 export function LabClient() {
-  const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState<"simulation" | "live">(searchParams.get("mode") === "live" ? "live" : "simulation");
   const [runs, setRuns] = useState<Run[]>([]);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -74,10 +63,6 @@ export function LabClient() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [live, setLive] = useState<LiveTest | null>(null);
-  const [liveBusy, setLiveBusy] = useState(false);
-  const [liveResult, setLiveResult] = useState<string | null>(null);
-  const [knowledgeChanged, setKnowledgeChanged] = useState(false);
 
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
@@ -94,11 +79,6 @@ export function LabClient() {
     setDetail((await res.json()) as { run: Run; cases: Case[] });
   }, []);
 
-  const refetchLive = useCallback(async () => {
-    const res = await fetch("/api/lab/live", { cache: "no-store" }).catch(() => null);
-    if (res?.ok) setLive((await res.json()) as LiveTest);
-  }, []);
-
   useEffect(() => {
     void refetchRuns();
   }, [refetchRuns]);
@@ -106,13 +86,6 @@ export function LabClient() {
   useEffect(() => {
     if (selectedRunId) void refetchDetail(selectedRunId);
   }, [selectedRunId, refetchDetail]);
-
-  useEffect(() => {
-    if (activeTab !== "live") return;
-    void refetchLive();
-    const timer = window.setInterval(() => void refetchLive(), 5_000);
-    return () => window.clearInterval(timer);
-  }, [activeTab, refetchLive]);
 
   useEvents({
     onLabRun: (data) => {
@@ -139,32 +112,28 @@ export function LabClient() {
       return;
     }
     const data = (await res.json()) as { runId: string };
-    setKnowledgeChanged(false);
     setSelectedRunId(data.runId);
     setProgress({ done: 0, total: 6 });
     void refetchRuns();
   }
 
-  async function runLiveTest() {
-    setLiveBusy(true);
-    setLiveResult(null);
-    setError(null);
-    const res = await fetch("/api/lab/live", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "run" }),
-    }).catch(() => null);
-    setLiveBusy(false);
-    if (!res?.ok) {
-      const data = (await res?.json().catch(() => null)) as {
-        error?: { message?: string };
-      } | null;
-      setError(data?.error?.message ?? "No se pudo ejecutar la prueba real");
-      return;
-    }
-    const data = (await res.json()) as { reply?: string };
-    if (data.reply) setLiveResult(data.reply);
-    await refetchLive();
+  if (!aiConfigured) {
+    return (
+      <div className="flex h-full flex-col">
+        <Header running={false} launching={false} onLaunch={() => {}} disabled />
+        <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
+          <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
+          <p className="font-medium">
+            Configura tu proveedor de IA para usar el Laboratorio
+          </p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+            El Laboratorio necesita el agente activo: agrega{" "}
+            <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la
+            instancia y vuelve aquí.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const running = runs.some((r) => r.status === "running");
@@ -172,171 +141,82 @@ export function LabClient() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <Header
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
         running={running}
         launching={launching}
         onLaunch={() => void launch()}
-        disabled={!aiConfigured}
+        disabled={false}
       />
       {error && <p className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
 
-      {activeTab === "simulation" ? (
-        <div role="tabpanel" id="simulation-panel" aria-labelledby="simulation-tab">
-          {!aiConfigured ? (
-            <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
-              <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-              <p className="font-medium">La conexión de IA aún no está disponible</p>
-              <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-                Contacta a quien administra tu instancia y vuelve aquí cuando el servicio esté habilitado.
-              </p>
-            </div>
-          ) : (
-            <>
-              {running && progress && (
-                <div className="mx-4 mt-4 rounded-lg border bg-card p-4 sm:mx-6">
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="font-medium">Evaluando personas…</span>
-                    <span className="text-muted-foreground">{progress.done} / {progress.total}</span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${(progress.done / progress.total) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[280px_1fr] lg:gap-6">
-                <HistoryList runs={runs} selectedRunId={selectedRunId} onSelect={setSelectedRunId} />
-                {detail ? (
-                  <Report
-                    detail={detail}
-                    stale={knowledgeChanged}
-                    onRetest={() => void launch()}
-                    onApplied={() => { setKnowledgeChanged(true); void refetchDetail(detail.run.id); }}
-                  />
-                ) : (
-                  <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-                    {runs.length === 0
-                      ? "Corre tu primera evaluación: 6 clientes simulados conversarán con tu agente y un juez calificará cada conversación."
-                      : "Elige una corrida del historial."}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      ) : (
-        <div role="tabpanel" id="live-panel" aria-labelledby="live-tab" className="max-w-3xl space-y-4 p-4 sm:p-6">
-          <div className="flex items-start gap-3 rounded-lg border border-[#ece2cf] bg-[#faf7f0] p-4 text-sm text-[#8a6d3b]">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <p>Esta prueba sí envía un mensaje real desde tu teléfono de prueba al WhatsApp empresarial.</p>
+      {running && progress && (
+        <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
+          <div className="mb-2 flex items-center justify-between text-sm">
+            <span className="font-medium">Evaluando personas…</span>
+            <span className="text-muted-foreground">
+              {progress.done} / {progress.total}
+            </span>
           </div>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageCircle className="h-4 w-4 text-primary" /> Prueba real con WhatsApp
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {!live ? (
-                <p className="text-sm text-muted-foreground">Comprobando el teléfono de prueba…</p>
-              ) : !live.configured ? (
-                <p className="text-sm text-muted-foreground">La prueba real no está habilitada en esta instancia.</p>
-              ) : live.status !== "WORKING" ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Vincula primero un teléfono de prueba</p>
-                  <p className="text-sm text-muted-foreground">
-                    El emparejamiento se administra junto a las demás conexiones de WhatsApp.
-                  </p>
-                  <Link className="inline-block text-sm font-medium text-primary underline-offset-4 hover:underline" href="/settings/whatsapp">
-                    Ir a Configuración → WhatsApp
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="success">Conectado</Badge>
-                    <p className="text-sm text-muted-foreground">
-                      {live.name || "WhatsApp personal"}{live.phone ? ` · +${live.phone}` : ""}
-                    </p>
-                  </div>
-                  <Button onClick={() => void runLiveTest()} disabled={liveBusy}>
-                    <Play className="h-4 w-4" />
-                    {liveBusy ? "Esperando respuesta…" : "Ejecutar prueba real"}
-                  </Button>
-                  {liveResult && (
-                    <p className="rounded-md border bg-muted/40 p-3 text-sm">
-                      <span className="font-medium">Respuesta del agente:</span> {liveResult}
-                    </p>
-                  )}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full bg-primary transition-all"
+              style={{ width: `${(progress.done / progress.total) * 100}%` }}
+            />
+          </div>
         </div>
       )}
+
+      {/* Capa de agencia: el round-trip real por WhatsApp. Vive en
+          components/agencia/ para que la próxima fusión con upstream no toque
+          este archivo más que en esta línea. */}
+      <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+        <LiveWhatsappTest />
+      </div>
+
+      <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-[280px_1fr]">
+        <HistoryList
+          runs={runs}
+          selectedRunId={selectedRunId}
+          onSelect={setSelectedRunId}
+        />
+        {detail ? (
+          <Report detail={detail} onApplied={() => void refetchDetail(detail.run.id)} />
+        ) : (
+          <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+            {runs.length === 0
+              ? "Corre tu primera evaluación: 6 clientes simulados conversarán con tu agente y un juez calificará cada conversación."
+              : "Elige una corrida del historial."}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function Header({
-  activeTab,
-  onTabChange,
   running,
   launching,
   onLaunch,
   disabled,
 }: {
-  activeTab: "simulation" | "live";
-  onTabChange: (tab: "simulation" | "live") => void;
   running: boolean;
   launching: boolean;
   onLaunch: () => void;
   disabled: boolean;
 }) {
   return (
-    <header className="border-b px-4 pt-3 sm:px-6 sm:pt-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="flex items-center gap-2 font-semibold">
-            <FlaskConical className="h-4 w-4 text-primary" /> Laboratorio
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {activeTab === "simulation"
-              ? "Sandbox interno — no envía mensajes reales"
-              : "Validación de extremo a extremo — envía un mensaje real"}
-          </p>
-        </div>
-        {activeTab === "simulation" && (
-          <Button className="min-h-11 w-full sm:min-h-0 sm:w-auto" onClick={onLaunch} disabled={disabled || running || launching}>
-            <Play className="h-4 w-4" />
-            {running ? "Prueba en curso…" : "Probar mi agente"}
-          </Button>
-        )}
+    <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
+      <div>
+        <h2 className="flex items-center gap-2 text-[17px] font-bold tracking-tight">
+          <FlaskConical className="h-4 w-4 text-primary" /> Laboratorio
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Sandbox interno — no envía mensajes reales
+        </p>
       </div>
-      <div className="mt-4 flex gap-5" role="tablist" aria-label="Modos del Laboratorio">
-        {([ ["simulation", "Simulación"], ["live", "Prueba real"] ] as const).map(([id, label]) => (
-          <button
-            key={id}
-            id={`${id}-tab`}
-            role="tab"
-            aria-selected={activeTab === id}
-            aria-controls={`${id}-panel`}
-            onClick={() => onTabChange(id)}
-            className={`border-b-2 pb-3 text-sm font-medium transition-colors ${
-              activeTab === id
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Button onClick={onLaunch} disabled={disabled || running || launching}>
+        <Play className="h-4 w-4" />
+        {running ? "Corrida en curso…" : "Correr evaluación"}
+      </Button>
     </header>
   );
 }
@@ -351,20 +231,19 @@ function HistoryList({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="min-w-0 space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="space-y-2">
+      <p className="kicker">
         Historial
       </p>
       {runs.length === 0 && (
         <p className="text-xs text-muted-foreground">Sin corridas todavía.</p>
       )}
-      <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-2 lg:block lg:space-y-2 lg:overflow-visible lg:pb-0">
       {runs.map((run) => (
         <button
           key={run.id}
           onClick={() => onSelect(run.id)}
-          className={`w-[72vw] max-w-72 shrink-0 snap-start rounded-lg border p-3 text-left transition-colors hover:bg-accent/50 lg:w-full lg:max-w-none ${
-            selectedRunId === run.id ? "border-primary/50 bg-accent/60" : "bg-card"
+          className={`w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent ${
+            selectedRunId === run.id ? "border-brand bg-brand-tint" : "border-border-strong bg-card"
           }`}
         >
           <div className="flex items-center justify-between">
@@ -395,7 +274,6 @@ function HistoryList({
           </p>
         </button>
       ))}
-      </div>
     </div>
   );
 }
@@ -405,29 +283,19 @@ function ScoreBadge({ run }: { run: Run }) {
   if (run.status === "failed") return <Badge variant="destructive">Fallida</Badge>;
   const score = run.score ?? 0;
   const variant = score >= 80 ? "success" : score >= 50 ? "warning" : "destructive";
-  return <Badge variant={variant}>{score}/100 · {score >= 80 ? "Listo" : "Necesita atención"}</Badge>;
+  return <Badge variant={variant}>Score {score}</Badge>;
 }
 
 function Report({
   detail,
   onApplied,
-  stale,
-  onRetest,
 }: {
   detail: { run: Run; cases: Case[] };
   onApplied: () => void;
-  stale: boolean;
-  onRetest: () => void;
 }) {
   const { run, cases } = detail;
   return (
     <div className="space-y-4">
-      {stale && (
-        <div className="flex flex-col gap-3 rounded-lg border border-[#ece2cf] bg-[#faf7f0] p-4 text-sm text-[#8a6d3b] sm:flex-row sm:items-center sm:justify-between">
-          <span>La evaluación quedó desactualizada porque enseñaste una respuesta nueva.</span>
-          <Button variant="outline" size="sm" onClick={onRetest}>Volver a probar</Button>
-        </div>
-      )}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -454,7 +322,7 @@ function Report({
               ))}
             </div>
             {cases.some((c) => c.status === "judge_failed") && (
-              <p className="mt-3 text-xs text-[#8a6d3b]">
+              <p className="mt-3 text-xs text-warning-text">
                 {cases.filter((c) => c.status === "judge_failed").length} caso(s) sin
                 veredicto (el juez no respondió válido); excluidos del score.
               </p>
@@ -477,7 +345,7 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
     c.veredicto === "verde" ? (
       <CheckCircle2 className="h-4 w-4 text-success" />
     ) : c.veredicto === "amarillo" ? (
-      <AlertTriangle className="h-4 w-4 text-[#8a6d3b]" />
+      <AlertTriangle className="h-4 w-4 text-warning-text" />
     ) : c.veredicto === "rojo" ? (
       <XCircle className="h-4 w-4 text-destructive" />
     ) : (
@@ -509,8 +377,8 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
           {c.hallazgos.map((h, i) => (
             <HallazgoCard key={i} hallazgo={h} caseId={c.id} index={i} onApplied={onApplied} />
           ))}
-          <div className="rounded-md border bg-background/40 p-3">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="rounded-md border bg-background p-3">
+            <p className="mb-2 kicker">
               Transcript
             </p>
             <div className="space-y-1.5 text-sm">
@@ -518,7 +386,7 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
                 <p key={i}>
                   <span
                     className={
-                      t.role === "cliente" ? "text-[#5b7291]" : "text-primary"
+                      t.role === "cliente" ? "text-info" : "text-primary"
                     }
                   >
                     {t.role === "cliente" ? "Cliente" : "Agente"}:
@@ -550,11 +418,9 @@ function HallazgoCard({
   const [respuesta, setRespuesta] = useState(hallazgo.sugerencia?.respuesta ?? "");
   const [applied, setApplied] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [applyError, setApplyError] = useState<string | null>(null);
 
   async function apply() {
     setSaving(true);
-    setApplyError(null);
     const res = await fetch("/api/lab/suggestions/apply", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -565,22 +431,20 @@ function HallazgoCard({
       setApplied(true);
       setEditing(false);
       onApplied();
-    } else {
-      setApplyError("No se pudo enseñar esta respuesta. Inténtalo otra vez.");
     }
   }
 
   return (
-    <div className="rounded-md border border-[#ece2cf] bg-[#faf7f0] p-3">
+    <div className="rounded-md border border-warning-soft bg-warning-tint p-3">
       <div className="flex items-center justify-between">
         <Badge variant="warning">{TIPO_LABELS[hallazgo.tipo]}</Badge>
         {hallazgo.sugerencia && !applied && !editing && (
           <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
-            Enseñar esta respuesta
+            Agregar al conocimiento
           </Button>
         )}
         {applied && (
-          <span className="text-xs text-success">Añadido a Información del negocio ✓</span>
+          <span className="text-xs text-success">Agregado al conocimiento ✓</span>
         )}
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
@@ -612,7 +476,7 @@ function HallazgoCard({
               onClick={() => void apply()}
               disabled={saving || !pregunta.trim() || !respuesta.trim()}
             >
-              {saving ? "Guardando…" : "Guardar en Información del negocio"}
+              {saving ? "Guardando…" : "Guardar en el KB"}
             </Button>
             <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
               Cancelar
@@ -620,7 +484,6 @@ function HallazgoCard({
           </div>
         </div>
       )}
-      {applyError && <p className="mt-2 text-xs text-destructive">{applyError}</p>}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
-  "id": "4eccfae2-66b2-4c15-b79b-54b52f129e9a",
-  "prevId": "741bac30-ea35-4c2d-8afc-fa9995240a52",
+  "id": "a0eeb00d-456e-43de-8fa9-471f3676d054",
+  "prevId": "e3ece8e8-09fd-474a-a25c-254150b3e735",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -164,59 +164,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "preset_only": {
-          "name": "preset_only",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "preset_replies": {
-          "name": "preset_replies",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "allowlist_enabled": {
-          "name": "allowlist_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "allowed_wa_ids": {
-          "name": "allowed_wa_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'[]'::jsonb"
-        },
-        "last_live_test_at": {
-          "name": "last_live_test_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_live_test_passed": {
-          "name": "last_live_test_passed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_live_test_elapsed_ms": {
-          "name": "last_live_test_elapsed_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ai_provider": {
-          "name": "ai_provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'openai'"
         },
         "created_at": {
           "name": "created_at",
@@ -511,183 +458,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.booking": {
-      "name": "booking",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "contact_id": {
-          "name": "contact_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "start_at": {
-          "name": "start_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "end_at": {
-          "name": "end_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "google_event_id": {
-          "name": "google_event_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "meet_url": {
-          "name": "meet_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "booking_org_start_uq": {
-          "name": "booking_org_start_uq",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "start_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "booking_org_contact_start_idx": {
-          "name": "booking_org_contact_start_idx",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "contact_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "start_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "booking_organization_id_organization_id_fk": {
-          "name": "booking_organization_id_organization_id_fk",
-          "tableFrom": "booking",
-          "tableTo": "organization",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "booking_conversation_id_conversation_id_fk": {
-          "name": "booking_conversation_id_conversation_id_fk",
-          "tableFrom": "booking",
-          "tableTo": "conversation",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "booking_contact_id_contact_id_fk": {
-          "name": "booking_contact_id_contact_id_fk",
-          "tableFrom": "booking",
-          "tableTo": "contact",
-          "columnsFrom": [
-            "contact_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.contact": {
       "name": "contact",
       "schema": "",
@@ -703,6 +473,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'whatsapp'"
         },
         "wa_identity": {
           "name": "wa_identity",
@@ -738,8 +515,13 @@
           "name": "ficha",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "archived_at": {
           "name": "archived_at",
@@ -763,11 +545,17 @@
         }
       },
       "indexes": {
-        "contact_org_wa_identity_uq": {
-          "name": "contact_org_wa_identity_uq",
+        "contact_org_channel_identity_uq": {
+          "name": "contact_org_channel_identity_uq",
           "columns": [
             {
               "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "channel",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -877,12 +665,25 @@
           "notNull": true,
           "default": false
         },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'whatsapp'"
+        },
+        "channel_thread_ref": {
+          "name": "channel_thread_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "ai_enabled": {
           "name": "ai_enabled",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": false
+          "default": true
         },
         "handoff_at": {
           "name": "handoff_at",
@@ -1009,8 +810,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.google_calendar_connection": {
-      "name": "google_calendar_connection",
+    "public.instagram_credentials": {
+      "name": "instagram_credentials",
       "schema": "",
       "columns": {
         "id": {
@@ -1025,36 +826,60 @@
           "primaryKey": false,
           "notNull": true
         },
-        "account_email": {
-          "name": "account_email",
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ig_user_id": {
+          "name": "ig_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_ref": {
+          "name": "account_ref",
           "type": "text",
           "primaryKey": false,
           "notNull": false
         },
-        "calendar_id": {
-          "name": "calendar_id",
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "token_cipher": {
+          "name": "token_cipher",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_iv": {
+          "name": "token_iv",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_tag": {
+          "name": "token_tag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "webhook_secret": {
+          "name": "webhook_secret",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "default": "'primary'"
-        },
-        "refresh_token_cipher": {
-          "name": "refresh_token_cipher",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "refresh_token_iv": {
-          "name": "refresh_token_iv",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "refresh_token_tag": {
-          "name": "refresh_token_tag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
+          "default": "'connected'"
         },
         "created_at": {
           "name": "created_at",
@@ -1072,8 +897,8 @@
         }
       },
       "indexes": {
-        "google_calendar_connection_org_uq": {
-          "name": "google_calendar_connection_org_uq",
+        "instagram_credentials_org_uq": {
+          "name": "instagram_credentials_org_uq",
           "columns": [
             {
               "expression": "organization_id",
@@ -1086,12 +911,42 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "instagram_credentials_ig_user_uq": {
+          "name": "instagram_credentials_ig_user_uq",
+          "columns": [
+            {
+              "expression": "ig_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "instagram_credentials_account_ref_idx": {
+          "name": "instagram_credentials_account_ref_idx",
+          "columns": [
+            {
+              "expression": "account_ref",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
-        "google_calendar_connection_organization_id_organization_id_fk": {
-          "name": "google_calendar_connection_organization_id_organization_id_fk",
-          "tableFrom": "google_calendar_connection",
+        "instagram_credentials_organization_id_organization_id_fk": {
+          "name": "instagram_credentials_organization_id_organization_id_fk",
+          "tableFrom": "instagram_credentials",
           "tableTo": "organization",
           "columnsFrom": [
             "organization_id"
@@ -1320,6 +1175,30 @@
           "notNull": true,
           "default": 0
         },
+        "amount_cents": {
+          "name": "amount_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "priority_updated_at": {
+          "name": "priority_updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_activity_at": {
           "name": "last_activity_at",
           "type": "timestamp",
@@ -1430,6 +1309,274 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.lead_stage_event": {
+      "name": "lead_stage_event",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contact_id": {
+          "name": "contact_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "from_stage_id": {
+          "name": "from_stage_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "from_stage_name": {
+          "name": "from_stage_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_stage_id": {
+          "name": "to_stage_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "to_stage_name": {
+          "name": "to_stage_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_stage_kind": {
+          "name": "to_stage_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'dueno'"
+        },
+        "approximate": {
+          "name": "approximate",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "loss_reason": {
+          "name": "loss_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "loss_note": {
+          "name": "loss_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "lse_org_occurred_idx": {
+          "name": "lse_org_occurred_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "lse_lead_occurred_idx": {
+          "name": "lse_lead_occurred_idx",
+          "columns": [
+            {
+              "expression": "lead_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "lse_org_kind_occurred_idx": {
+          "name": "lse_org_kind_occurred_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "to_stage_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "occurred_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lead_stage_event_organization_id_organization_id_fk": {
+          "name": "lead_stage_event_organization_id_organization_id_fk",
+          "tableFrom": "lead_stage_event",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lead_stage_event_lead_id_lead_id_fk": {
+          "name": "lead_stage_event_lead_id_lead_id_fk",
+          "tableFrom": "lead_stage_event",
+          "tableTo": "lead",
+          "columnsFrom": [
+            "lead_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lead_stage_event_contact_id_contact_id_fk": {
+          "name": "lead_stage_event_contact_id_contact_id_fk",
+          "tableFrom": "lead_stage_event",
+          "tableTo": "contact",
+          "columnsFrom": [
+            "contact_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lead_stage_event_from_stage_id_pipeline_stage_id_fk": {
+          "name": "lead_stage_event_from_stage_id_pipeline_stage_id_fk",
+          "tableFrom": "lead_stage_event",
+          "tableTo": "pipeline_stage",
+          "columnsFrom": [
+            "from_stage_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "lead_stage_event_to_stage_id_pipeline_stage_id_fk": {
+          "name": "lead_stage_event_to_stage_id_pipeline_stage_id_fk",
+          "tableFrom": "lead_stage_event",
+          "tableTo": "pipeline_stage",
+          "columnsFrom": [
+            "to_stage_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "lead_stage_event_actor_user_id_user_id_fk": {
+          "name": "lead_stage_event_actor_user_id_user_id_fk",
+          "tableFrom": "lead_stage_event",
+          "tableTo": "user",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "lse_loss_reason_ck": {
+          "name": "lse_loss_reason_ck",
+          "value": "\"lead_stage_event\".\"to_stage_kind\" <> 'lost' OR \"lead_stage_event\".\"approximate\" = true OR \"lead_stage_event\".\"loss_reason\" IS NOT NULL"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.media_asset": {

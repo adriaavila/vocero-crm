@@ -1,4 +1,4 @@
-# Guion E2E — US6: Plantillas acotadas
+# Guion E2E — US6: Plantillas
 
 > Conducido con Playwright (MCP) contra `pnpm dev` con wa-mock.
 
@@ -45,3 +45,24 @@ modo agencia no es el de esta instancia: sin pull, la plantilla se queda
    ✅ El outbox del wa-mock registra `type: "template"` con `components`
    (`parameters[0].text` = valor de la variable).
 7. Validaciones: enviar plantilla no aprobada → 422; variable faltante → 422.
+
+## Varias variables por cuerpo (2026-08-09)
+
+> Automatizado en `scripts/e2e-templates-multivar.mjs` (21 checks) + UI con
+> Playwright. Antes el CRM rechazaba en su propia pantalla lo que Meta sí
+> acepta: "v1 admite una sola variable {{1}} en el cuerpo".
+
+11. En `/settings/templates`, cuerpo con `{{1}}`, `{{2}}` y `{{3}}`.
+    ✅ Sin aviso rojo, el botón habilitado y la pantalla anuncia "3 variables".
+    ✅ A Meta va **un `example.body_text` por variable** (sin eso responde 100).
+12. Cuerpo con salto (`{{1}}` y `{{3}}`).
+    ✅ Aviso "…sin saltos (falta {{2}})", botón deshabilitado y, si se fuerza
+    por API, 422 — la numeración posicional contigua es requisito de Meta.
+13. Con la plantilla aprobada y la ventana cerrada, el envío pide **un campo por
+    variable** (`Valor de {{1}}`…`{{3}}`).
+    ✅ El outbox del wa-mock trae los 3 `parameters` en orden y el hilo muestra
+    el texto ya sustituido.
+    ✅ Faltando un valor → 422 diciendo cuál falta; el wa-mock además replica el
+    132000 de Meta si el número de parámetros no cuadra.
+14. Compatibilidad: el payload viejo `{ templateId, variable }` (una variable)
+    sigue enviando — lo usa el cron de recordatorios de sesión.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MetaApiError, normalizeRecipient } from "@/lib/meta/client";
+import { MetaApiError, normalizeMx, normalizeRecipient } from "@/lib/meta/client";
 
 describe("normalizeRecipient", () => {
   it("México móvil legado: 521 + 10 dígitos → 52 + 10 dígitos", () => {
@@ -10,13 +10,33 @@ describe("normalizeRecipient", () => {
     expect(normalizeRecipient("525512345678")).toBe("525512345678");
   });
 
-  it("otros países quedan intactos", () => {
-    expect(normalizeRecipient("14155552671")).toBe("14155552671");
-    expect(normalizeRecipient("5491122334455")).toBe("5491122334455");
+  it("Argentina móvil: 549 + 10 dígitos → 54 + 10 dígitos (issue #35)", () => {
+    // Meta reporta `549…` pero la lista de destinatarios de prueba solo
+    // acepta el número sin el 9: con el 9 responde 131030 y el panel muestra
+    // el número como habilitado, así que el error manda a revisar donde no es.
+    expect(normalizeRecipient("5491122334455")).toBe("541122334455");
   });
 
-  it("no confunde números que empiezan en 521 pero con otra longitud", () => {
+  it("Argentina ya normalizada queda intacta", () => {
+    expect(normalizeRecipient("541122334455")).toBe("541122334455");
+  });
+
+  it("otros países quedan intactos", () => {
+    expect(normalizeRecipient("14155552671")).toBe("14155552671");
+    expect(normalizeRecipient("50761234567")).toBe("50761234567");
+  });
+
+  it("no confunde números que empiezan en el troncal pero con otra longitud", () => {
     expect(normalizeRecipient("521123")).toBe("521123");
+    expect(normalizeRecipient("549123")).toBe("549123");
+    // 549 + 11 dígitos no es un móvil argentino: no se toca.
+    expect(normalizeRecipient("54911223344556")).toBe("54911223344556");
+  });
+
+  it("la identidad NO se toca: normalizar al enviar es asimétrico a propósito", () => {
+    // Si la ingesta reescribiera `549…`, la identidad guardada dejaría de
+    // coincidir con el `wa_id` de cada webhook y el contacto se partiría.
+    expect(normalizeMx("5491122334455")).toBe("5491122334455");
   });
 });
 

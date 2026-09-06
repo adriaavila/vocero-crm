@@ -1,33 +1,53 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Versión: 1.1.0 (plantilla starter) → 1.2.0
+Versión: 1.3.0 → 1.4.0
 
 Cambios:
-  - Título y descripción del producto: Vocero CRM (CRM de WhatsApp con agente de
-    IA, open source MIT, self-hosted, gratuito; una instancia = un negocio).
-  - Principio II "Soberanía / Self-Hosted" → ENDURECIDO: se elimina la excepción
-    de almacenamiento de objetos S3-compatible; lista cerrada de dependencias
-    externas en runtime (WhatsApp Cloud API + proveedor LLM opcional vía
-    adaptador OpenRouter-compatible); prohibición explícita v1 de S3/R2, email,
-    Stripe y Google; requisitos mínimos del instalador fijados.
-  - Principio VIII "Foco Vertical" → definido: CRM de conversaciones y leads de
-    WhatsApp que las agencias despliegan para negocios.
-  - Principios I, III, IV, V, VI, VII y IX: íntegros (sin cambio semántico).
-  - Governance: Ratified / Last Amended = 2026-07-09.
+  - Principio II "Soberanía / Self-Hosted" → EXPANDIDO: la lista cerrada de
+    dependencias de runtime gana una tercera categoría, **conectores
+    opcionales**, admisible SOLO bajo cinco condiciones (apagados por defecto
+    tras una bandera de despliegue, aislados tras adaptador dedicado con
+    contrato público, instancia completa sin ellos con degradación definida,
+    credenciales cifradas del propio negocio, y verificables en CI apagados y
+    encendidos). La frase de prohibición se acota: de "PROHIBIDO en v1 … y
+    servicios de Google" a "PROHIBIDO como dependencia del núcleo", con la vía
+    única del conector opcional para servicios de terceros.
+  - Principios I, III, IV, V, VI, VII, VIII y IX: íntegros (sin cambio).
+  - "Restricciones de Plataforma y Seguridad": sin cambio — su regla de
+    aislamiento tras adaptadores dedicados ya cubre a los conectores.
+  - Governance: sin cambio.
 
-Bump: MINOR (1.1.0 → 1.2.0) — expansión material del Principio II y definición
-del Principio VIII; sin eliminaciones ni redefiniciones incompatibles.
+Bump: MINOR (1.3.0 → 1.4.0) — expansión material de un principio; no elimina ni
+redefine nada de forma incompatible: una instancia default sigue cumpliendo
+exactamente la promesa vigente ("un VPS, un dominio, credenciales de Meta y un
+token de OpenRouter. Nada más").
+
+Motivación:
+  El canal de Instagram (014 / ADR-001) entró como integración opcional detrás
+  de CHANNELS sin tocar este principio, porque es la misma Meta Graph API del
+  canal permitido. El motor de agendamiento (feature 015) necesita Zoom y
+  Google — proveedores nuevos — y el principio no daba ninguna vía, ni siquiera
+  apagados por defecto; la única salida habría sido "cada quien su fork", que
+  ADR-001 ya demostró insostenible (la rama 004-motor-agenda quedó irrescatable
+  en 26 días: 76 commits atrás y migración colisionada). La soberanía que el
+  principio protege no se toca: el costo lo paga únicamente la instancia que
+  enciende la bandera y pega SUS credenciales, y la condición 5 lo vuelve
+  verificable en vez de prometido.
+  Propuesta por escrito y ratificación del responsable (2026-08-26):
+  specs/015-motor-agenda-universal/enmienda-constitucional.md.
 
 Plantillas dependientes:
-  - .specify/templates/plan-template.md — ✅ compatible (Constitution Check
-    genérico; los gates se evalúan contra esta versión).
-  - .specify/templates/spec-template.md — ✅ compatible (sin secciones nuevas).
+  - .specify/templates/spec-template.md — ✅ compatible (sin cambios).
+  - .specify/templates/plan-template.md — ✅ compatible; su Constitution Check
+    se evalúa contra esta versión (un conector externo pasa el gate si y solo
+    si cumple las cinco condiciones).
   - .specify/templates/tasks-template.md — ✅ compatible.
-  - CLAUDE.md — ⚠ se personaliza para el usuario final del repo en la fase de
-    implementación (tarea planificada de la feature 001).
+  - CLAUDE.md — ✅ actualizado en este mismo cambio (regla de Soberanía).
 
-TODOs diferidos: ninguno.
+TODOs diferidos:
+  - Deuda documental heredada de la 1.3.0 (features entre `003` y la app 1.2.0
+    sin spec): sigue igual; esta enmienda no la toca.
 -->
 
 # Vocero CRM Constitution
@@ -68,9 +88,28 @@ dependencias externas en runtime es CERRADA:
   2. **El proveedor LLM**, opcional, accedido EXCLUSIVAMENTE a través del adaptador
      OpenRouter-compatible (`OPENROUTER_BASE_URL` / `OPENROUTER_MODEL`). Sin token
      configurado, el producto funciona como CRM sin agente de IA.
-- **PROHIBIDO en v1**: almacenamiento de objetos externo (S3/R2), servicios de
-  email, Stripe u otro billing, y servicios de Google. Cualquier feature que los
-  requiera queda fuera del alcance de v1.
+  3. **Conectores opcionales**, únicamente bajo TODAS estas condiciones:
+     1. **Apagados por defecto**: se encienden con una bandera de despliegue
+        explícita (patrón ADR-001); una instancia default no los carga, no los
+        menciona y no pide sus credenciales.
+     2. **Aislados tras un adaptador dedicado** con contrato público estable,
+        como el cliente Graph API y el adaptador LLM; el dominio no conoce al
+        proveedor.
+     3. **La instancia funciona completa sin ellos**: existe un camino sin
+        dependencia externa para la misma capacidad (p. ej. el conector
+        `enlace-fijo` de la agenda), y el fallo del proveedor degrada de forma
+        definida — NUNCA bloquea ni pierde la operación core (la cita se crea
+        con link pendiente; el mensaje se responde; el dato se guarda).
+     4. **Credenciales del propio negocio, cifradas en reposo** (Principio I):
+        cada instancia habla con SU cuenta del proveedor; jamás credenciales de
+        una plataforma central.
+     5. **Verificables apagados y encendidos**: la CI ejercita ambas
+        configuraciones y cada conector externo tiene mock con camino infeliz.
+- **PROHIBIDO como dependencia del núcleo** (todo lo que el producto necesite
+  para operar sin banderas): almacenamiento de objetos externo (S3/R2),
+  servicios de email, billing (Stripe u otro) y cualquier servicio de terceros.
+  Un servicio de terceros solo puede entrar como conector opcional bajo las
+  cinco condiciones anteriores.
 - El instalador solo necesita: un VPS con Coolify o Docker, un dominio, credenciales
   de Meta y (opcional) un token de OpenRouter. Nada más.
 - Las funciones core —autenticación y base de datos— corren self-hosted (Better
@@ -126,17 +165,44 @@ depende de optimismo.
 
 ### VI. Specs Antes de Código
 
-Ninguna feature se implementa sin una especificación previa.
+Ninguna feature se implementa sin una especificación previa. La especificación
+describe el comportamiento observable por el usuario, no la implementación.
 
-- La especificación describe el comportamiento observable por el usuario, no la
-  implementación.
-- El orden del flujo es specify → plan → tasks → implement; el código de una feature
-  no comienza antes de existir su spec.
-- Correcciones triviales y cambios sin comportamiento observable nuevo (typos,
-  formato, refactors internos sin cambio de contrato) están exentos.
+El **carril** se elige y se declara ANTES de escribir código, y en los tres casos
+la decisión queda por escrito:
+
+- **Ciclo completo** (`specify → plan → tasks → implement`) — obligatorio cuando la
+  feature toca el **modelo de datos** (cualquier migración) o un **contrato
+  publicado** (`/api/bot/*`, el webhook, SSE, o un DTO que consuma algo fuera de
+  este repo). Ahí el coste de equivocarse no lo paga quien programa: lo paga quien
+  ya tiene datos guardados o un cliente conectado.
+
+- **Carril ligero** (`spec.md` únicamente) — para features con comportamiento
+  observable nuevo que NO tocan el modelo de datos ni un contrato. El `spec.md`
+  MUST contener, y le basta con: qué problema resuelve, el comportamiento
+  observable con criterios de aceptación verificables, y qué se decidió NO hacer y
+  por qué.
+
+- **Exento** — correcciones triviales y cambios sin comportamiento observable nuevo
+  (typos, formato, refactors internos sin cambio de contrato, dependencias,
+  herramientas de desarrollo).
+
+Reglas que sostienen lo anterior:
+
+- Si una feature del carril ligero descubre a mitad de camino que necesita una
+  migración o cambiar un contrato, **sube de carril**: se escribe el plan antes de
+  continuar, no después de terminar.
+- Un spec escrito DESPUÉS de la implementación se marca visiblemente como tal en su
+  encabezado. Es documentación, no diseño, y confundirlos hace creer a quien lo lea
+  dentro de un año que esas decisiones se tomaron antes de programar.
 
 **Rationale**: Especificar el comportamiento observable antes de codificar previene
-retrabajo y mantiene alineadas todas las fases del flujo.
+retrabajo y mantiene alineadas todas las fases del flujo. Los tres carriles existen
+porque un único ciclo, calibrado para una feature que define el producto entero, es
+más ceremonia que trabajo en un cambio de doscientas líneas — y una regla que cuesta
+más de lo que rinde no se discute: se erosiona en silencio, hasta que "specs antes de
+código" significa "sin specs". Nombrar el escalón intermedio es lo que evita que el
+siguiente paso hacia abajo sea ninguno.
 
 ### VII. Trazabilidad de Decisiones
 
@@ -227,12 +293,20 @@ Estas restricciones derivan de los Principios I y II y son verificables en revis
 
 ## Flujo de Desarrollo y Puertas de Calidad
 
-- **Orden del flujo**: specify → plan → tasks → implement. Cada fase consume el
-  artefacto de la anterior.
-- **Puerta constitucional (Constitution Check)**: el plan de cada feature evalúa el
-  cumplimiento de estos principios antes de la Fase 0 y se re-evalúa tras el diseño de
-  la Fase 1. Las violaciones se registran y justifican en Complexity Tracking o se
-  eliminan.
+- **Orden del flujo**: depende del carril declarado (Principio VI). En el ciclo
+  completo, `specify → plan → tasks → implement`, y cada fase consume el artefacto
+  de la anterior. En el carril ligero, `specify → implement`.
+- **Puerta constitucional (Constitution Check)**: se evalúa SIEMPRE, en los dos
+  carriles — cambia dónde vive, no si ocurre. En el ciclo completo, en el plan:
+  antes de la Fase 0 y de nuevo tras el diseño de la Fase 1. En el carril ligero,
+  en el propio `spec.md`, antes de escribir código. Las violaciones se registran y
+  justifican (Complexity Tracking en el ciclo completo, o una nota explícita en el
+  spec) o se eliminan.
+
+  El carril ligero ahorra ceremonia de planificación, NUNCA la revisión
+  constitucional: los principios que más caro cuesta romper —aislamiento entre
+  inquilinos, soberanía, idempotencia— se violan igual de fácil en doscientas
+  líneas que en dos mil.
 - **Puerta de calidad (Definición de "Hecho")**: tipos + lint + build en verde, y
   tests donde apliquen; lo no verificable automáticamente se marca como pendiente de
   verificación humana (Principio V). Para features con comportamiento observable de cara
@@ -260,4 +334,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.2.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-07-09
+**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-08-26

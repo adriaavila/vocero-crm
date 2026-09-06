@@ -1,5 +1,4 @@
-import { after } from "next/server";
-import { getEnv } from "@/lib/env";
+import { getEnv, isMockEnabled } from "@/lib/env";
 import {
   isValidSignature,
   isValidWebhookToken,
@@ -11,8 +10,8 @@ import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
 /**
  * Webhook público de WhatsApp (contrato webhook.md).
  * Capa 1: el segmento [webhookToken] debe coincidir (si no → 404 sin efectos).
- * Capa 2: firma x-hub-signature-256 solo si META_APP_SECRET está configurado.
- * El POST siempre responde 200 tras validar; el procesamiento va en after().
+ * Capa 2: firma x-hub-signature-256 obligatoria, salvo mocks locales.
+ * El POST confirma solo después de persistir; un 503 hace que Meta reintente.
  */
 export const dynamic = "force-dynamic";
 
@@ -45,7 +44,10 @@ export async function POST(req: Request, { params }: Params) {
 
   const rawBody = await req.text();
   const signature = req.headers.get("x-hub-signature-256");
-  if (!isValidSignature(rawBody, signature, env.META_APP_SECRET)) {
+  const validSignature =
+    (isMockEnabled() && !env.META_APP_SECRET) ||
+    isValidSignature(rawBody, signature, env.META_APP_SECRET);
+  if (!validSignature) {
     return new Response(null, { status: 401 });
   }
 
@@ -57,13 +59,12 @@ export async function POST(req: Request, { params }: Params) {
     return Response.json({ received: true });
   }
 
-  after(async () => {
-    try {
-      await processPayload(payload);
-    } catch (err) {
-      console.error("[webhook] error procesando payload:", err);
-    }
-  });
+  try {
+    await processPayload(payload);
+  } catch (err) {
+    console.error("[webhook] error procesando payload:", err);
+    return Response.json({ received: false }, { status: 503 });
+  }
 
   return Response.json({ received: true });
 }

@@ -21,15 +21,14 @@ export function isValidWebhookToken(
 }
 
 /**
- * Capa 2 (opcional): firma HMAC-SHA256 de Meta sobre el body CRUDO.
- * Devuelve true si no hay secreto configurado (capa desactivada).
+ * Capa 2: firma HMAC-SHA256 de Meta sobre el body CRUDO.
  */
 export function isValidSignature(
   rawBody: string,
   signatureHeader: string | null,
   appSecret: string | undefined
 ): boolean {
-  if (!appSecret) return true;
+  if (!appSecret) return false;
   if (!signatureHeader?.startsWith("sha256=")) return false;
   const expected = createHmac("sha256", appSecret)
     .update(rawBody, "utf8")
@@ -58,6 +57,25 @@ export type WebhookLocation = {
   address?: string;
 };
 
+/**
+ * 016 — Objeto `referral`: SOLO llega cuando el mensaje viene de un anuncio
+ * Click-to-WhatsApp, y normalmente solo en el PRIMER mensaje de la
+ * conversación. Su `ctwa_clid` es lo que permite devolverle a Meta el
+ * desenlace de ese lead; el resto son datos del creativo.
+ */
+export type WebhookReferral = {
+  source_url?: string;
+  source_id?: string;
+  source_type?: string;
+  headline?: string;
+  body?: string;
+  media_type?: string;
+  image_url?: string;
+  video_url?: string;
+  thumbnail_url?: string;
+  ctwa_clid?: string;
+};
+
 export type WebhookMessage = {
   /** Teléfono del remitente. OPCIONAL desde la migración de Meta a BSUID (003). */
   from?: string;
@@ -76,6 +94,8 @@ export type WebhookMessage = {
   sticker?: WebhookMediaPayload;
   location?: WebhookLocation;
   contacts?: unknown[];
+  /** 016: origen del anuncio, cuando la conversación nació de uno. */
+  referral?: WebhookReferral;
 };
 
 export type WebhookStatus = {

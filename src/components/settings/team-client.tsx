@@ -25,6 +25,8 @@ export function TeamClient() {
   const [created, setCreated] = useState<{ email: string; password: string; reset?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Capa de agencia: sin correo saliente (Constitución II), restablecer un
+  // acceso es generar una contraseña temporal y que el dueño la entregue.
   const [resetting, setResetting] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
@@ -76,10 +78,14 @@ export function TeamClient() {
     setResetting(memberId);
     setError(null);
     setCreated(null);
-    const res = await fetch(`/api/settings/team/${memberId}/password-reset`, { method: "POST" }).catch(() => null);
+    const res = await fetch(`/api/settings/team/${memberId}/password-reset`, {
+      method: "POST",
+    }).catch(() => null);
     setResetting(null);
     if (!res?.ok) {
-      const data = (await res?.json().catch(() => null)) as { error?: { message?: string } } | null;
+      const data = (await res?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
       setError(data?.error?.message ?? "No se pudo restablecer la contraseña");
       return;
     }
@@ -133,9 +139,9 @@ export function TeamClient() {
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
           {created && (
-            <div className="rounded-md border border-[#d8e8dd] bg-[#eff7f1] p-3 text-sm">
-              <p className="font-medium text-[#3f6b52]">{created.reset ? "Acceso restablecido ✓" : "Cuenta creada ✓"}</p>
-              <p className="mt-1 text-[#3f6b52]/90">
+            <div className="rounded-md border border-success-soft bg-success-tint p-3 text-sm">
+              <p className="font-medium text-success-text">{created.reset ? "Acceso restablecido ✓" : "Cuenta creada ✓"}</p>
+              <p className="mt-1 text-success-text opacity-90">
                 Comparte estos datos ahora (no se volverán a mostrar):
                 <br />
                 <code>{created.email}</code> · contraseña{" "}
@@ -173,7 +179,12 @@ export function TeamClient() {
               {m.role === "owner" ? "Propietario" : "Miembro"}
             </Badge>
             {m.role !== "owner" && (
-              <Button variant="ghost" size="sm" disabled={resetting === m.id} onClick={() => void resetPassword(m.id)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={resetting === m.id}
+                onClick={() => void resetPassword(m.id)}
+              >
                 {resetting === m.id ? "Restableciendo…" : "Restablecer acceso"}
               </Button>
             )}

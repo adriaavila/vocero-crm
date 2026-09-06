@@ -25,11 +25,30 @@ export type MockTemplate = {
   category: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   body: string;
+  /** Componentes tal cual los mandó el CRM: Meta valida aquí los `example`. */
+  components?: unknown[];
+};
+
+/**
+ * 016 — Un evento de Conversions API que el CRM le mandó al mock. El self-test
+ * lo inspecciona para verificar la FORMA del payload: el modo de fallar de ese
+ * endpoint es un 200 con `events_received: 0`, donde un campo mal puesto se ve
+ * idéntico a uno bien puesto.
+ */
+export type CapiMockEvent = {
+  n: number;
+  datasetId: string;
+  eventName: string;
+  ctwaClid: string | null;
+  customData: Record<string, unknown> | null;
+  body: unknown;
+  at: string;
 };
 
 type WaMockState = {
   outbox: OutboxEntry[];
   templates: MockTemplate[];
+  capiEvents: CapiMockEvent[];
   counter: number;
 };
 
@@ -37,13 +56,29 @@ const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
 
 export function getWaMockState(): WaMockState {
   if (!globalForMock.__waMockState) {
-    globalForMock.__waMockState = { outbox: [], templates: [], counter: 0 };
+    globalForMock.__waMockState = {
+      outbox: [],
+      templates: [],
+      capiEvents: [],
+      counter: 0,
+    };
   }
   return globalForMock.__waMockState;
 }
 
 export function resetWaMockState(): void {
-  globalForMock.__waMockState = { outbox: [], templates: [], counter: 0 };
+  // El CONTADOR no se reinicia. El sello de arranque protege de reiniciar el
+  // servidor, pero no de correr el self-test dos veces contra la misma base:
+  // el segundo `_reset` volvía a emitir `…out.<sello>.1`, que ya existía, y el
+  // envío moría con un 500 por el UNIQUE de `wa_message_id`. Se leía como un
+  // fallo del producto y no lo era.
+  const counter = globalForMock.__waMockState?.counter ?? 0;
+  globalForMock.__waMockState = {
+    outbox: [],
+    templates: [],
+    capiEvents: [],
+    counter,
+  };
 }
 
 export function nextN(): number {

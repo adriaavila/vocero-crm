@@ -1,19 +1,26 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { effectiveSource } from "@/server/contact-source";
+import type { FichaDto, PriorityValue } from "@/lib/types";
 
 export function serializeContact(
   c: typeof schema.contact.$inferSelect,
-  stageName: string | null = null
+  stageName: string | null = null,
+  priority: PriorityValue | null = null
 ) {
   return {
     id: c.id,
     name: c.name,
     phone: c.phone,
     notes: c.notes,
-    ficha: c.ficha,
     stageName,
     archivedAt: c.archivedAt?.toISOString() ?? null,
+    source: effectiveSource(c.source),
+    priority,
+    // Viaja siempre, aunque esté vacía: la pantalla necesita distinguir "aún
+    // no la han llenado" de "este contacto no la trae".
+    ficha: (c.ficha as FichaDto | null) ?? {},
   };
 }
 

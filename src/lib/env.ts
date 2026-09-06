@@ -33,12 +33,37 @@ const envSchema = z.object({
   OPENROUTER_API_TOKEN: z.string().optional(),
   OPENROUTER_BASE_URL: z.string().url().default("https://openrouter.ai/api"),
   OPENROUTER_MODEL: z.string().optional(),
+  OPENROUTER_JUDGE_MODEL: z.string().optional(),
+  // 014/017: canales encendidos, separados por coma. WhatsApp siempre esta on.
+  // Ej.: CHANNELS=whatsapp,instagram,messenger. Sin ella, la instancia es solo
+  // WhatsApp y las superficies de los demas canales responden 404.
+  CHANNELS: z.string().optional(),
+  // 015: motor de agenda. Apagado por defecto — sin el, toda la superficie de
+  // agenda responde 404 y la UI no la menciona. Ej.: AGENDA=on
+  AGENDA: z.string().optional(),
+  // 016: atribucion de anuncios y reporte a la Conversions API de Meta.
+  // Apagada por defecto: sin ella no se captura de que anuncio vino una
+  // conversacion, no se le reporta nada a Meta y la superficie da 404.
+  // Ej.: ATRIBUCION=on
+  ATRIBUCION: z.string().optional(),
+  // 015: bases de los conectores. Solo se sobreescriben para apuntar a los
+  // mocks en el self-test; en producción se usan las reales.
+  ZOOM_BASE_URL: z.string().url().default("https://api.zoom.us/v2"),
+  ZOOM_OAUTH_BASE_URL: z.string().url().default("https://zoom.us"),
+  GOOGLE_CAL_BASE_URL: z
+    .string()
+    .url()
+    .default("https://www.googleapis.com/calendar/v3"),
+  GOOGLE_OAUTH_BASE_URL: z.string().url().default("https://oauth2.googleapis.com"),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
   // Sin ella, toda esa superficie responde 401.
   BOT_API_KEY: z.string().optional(),
+  // Secreto compartido con allok para `POST /api/provision`: allok entrega ahí
+  // las credenciales de un número recién conectado. Sin ella, la ruta responde 401.
+  PROVISION_API_KEY: z.string().min(16).optional(),
   WAHA_API_URL: z.string().url().optional(),
   WAHA_API_KEY: z.string().min(16).optional(),
   WAHA_SESSION: z.string().min(1).default("vocero-test"),
@@ -46,6 +71,13 @@ const envSchema = z.object({
   GOOGLE_SERVICE_ACCOUNT_JSON_B64: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
   GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  CALENDAR_TIME_ZONE: z.string().min(1).default("UTC"),
+  CALENDAR_UTC_OFFSET_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(-14 * 60)
+    .max(14 * 60)
+    .default(0),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
   NODE_ENV: z.string().default("development"),
@@ -117,6 +149,11 @@ export function shouldRunInternalAgent(): boolean {
   return isAiConfigured() && (process.env.BOT_API_KEY?.trim().length ?? 0) < 16;
 }
 
+/** true si esta instancia tiene un cerebro externo conectado por /api/bot/*. */
+export function isExternalBrainConfigured(): boolean {
+  return (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+}
+
 /** true si responde el agente interno o un cerebro externo autenticado. */
 export function isAgentConfigured(): boolean {
   return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
@@ -124,4 +161,8 @@ export function isAgentConfigured(): boolean {
 
 export function isWahaConfigured(): boolean {
   return Boolean(process.env.WAHA_API_URL?.trim() && process.env.WAHA_API_KEY?.trim());
+}
+
+export function calendarTimeZone(): string {
+  return process.env.CALENDAR_TIME_ZONE?.trim() || "UTC";
 }

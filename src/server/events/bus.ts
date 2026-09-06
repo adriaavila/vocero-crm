@@ -19,6 +19,8 @@ export type SseEvent =
       };
     }
   | { type: "conversation.updated"; data: { conversation: unknown } }
+  /** 015 — algo cambió en la agenda: la pantalla de Citas se refresca sola. */
+  | { type: "booking.updated"; data: { bookingId: string } }
   | {
       type: "lab.run";
       data: {

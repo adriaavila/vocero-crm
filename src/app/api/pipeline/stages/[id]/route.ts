@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, parseBody, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { relocateLeadsFromStage } from "@/server/leads/stage-history";
 
 export const dynamic = "force-dynamic";
 
@@ -100,16 +101,14 @@ export const DELETE = withOwner(async (session, req: Request, ctx: Params) => {
     if (!dest[0] || moveTo === id) {
       return apiError(422, "invalid_move_to", "Etapa destino inválida");
     }
-    await db
-      .update(schema.lead)
-      .set({ stageId: moveTo, updatedAt: new Date() })
-      .where(
-        scoped(
-          schema.lead.organizationId,
-          session.organizationId,
-          eq(schema.lead.stageId, id)
-        )
-      );
+    // Por la puerta única, un evento por lead: el embudo debe poder explicar
+    // por qué treinta tarjetas cambiaron de columna el mismo minuto.
+    await relocateLeadsFromStage({
+      organizationId: session.organizationId,
+      fromStageId: id,
+      toStageId: moveTo,
+      actorUserId: session.userId,
+    });
   }
 
   await db

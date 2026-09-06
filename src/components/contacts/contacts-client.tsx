@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Archive, ArchiveRestore, MessageSquareText, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  Archive,
+  ArchiveRestore,
+  MessageSquareText,
+  Search,
+  Send,
+  UserPlus,
+} from "lucide-react";
 import type { ContactDto } from "@/lib/types";
 import { formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
@@ -10,17 +18,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/toast-provider";
+import { SOURCE_LABELS } from "@/server/contact-source";
+import { priorityRank } from "@/server/leads/priority";
+import { PriorityBadge } from "@/components/pipeline/priority-picker";
+import { NewContactDialog } from "./new-contact-dialog";
+import { StartConversation } from "./start-conversation";
 
 export function ContactsClient() {
+  const router = useRouter();
   const [contacts, setContacts] = useState<ContactDto[]>([]);
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("all");
   const [stages, setStages] = useState<string[]>([]);
   const [showArchived, setShowArchived] = useState(false);
   const [editing, setEditing] = useState<ContactDto | null>(null);
+  const [creando, setCreando] = useState(false);
+  const [escribiendo, setEscribiendo] = useState<ContactDto | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const notify = useToast();
 
   // Mismo rescate que en la Bandeja: lo tecleado antes de que hidrate el JS
   // se perdía en silencio. Ver conversation-list.tsx.
@@ -46,7 +60,14 @@ export function ContactsClient() {
     const res = await fetch(`/api/contacts?${params}`).catch(() => null);
     if (!res?.ok) return;
     const data = (await res.json()) as { contacts: ContactDto[] };
-    setContacts(data.contacts);
+    // A quién llamar primero: alta arriba, sin prioridad al final. El orden lo
+    // decide esta lista, no el servidor, porque es una preferencia de trabajo y
+    // no un dato del contacto.
+    setContacts(
+      [...data.contacts].sort(
+        (a, b) => priorityRank(a.priority ?? null) - priorityRank(b.priority ?? null)
+      )
+    );
   }, [query, stage, showArchived]);
 
   useEffect(() => {
@@ -55,25 +76,25 @@ export function ContactsClient() {
   }, [refetch]);
 
   async function patch(id: string, body: Record<string, unknown>) {
-    const response = await fetch(`/api/contacts/${id}`, {
+    await fetch(`/api/contacts/${id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }).catch(() => null);
-    if (!response?.ok) {
-      notify("No se pudo actualizar el contacto. Inténtalo otra vez.", "error");
-      return false;
-    }
-    notify("Contacto actualizado.");
-    await refetch();
-    return true;
+    void refetch();
   }
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-col gap-3 border-b px-4 py-3 sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
-        <h2 className="font-semibold">Contactos</h2>
-        <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:flex-nowrap lg:gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-[17px] font-bold tracking-tight">Contactos</h2>
+          <Button size="sm" onClick={() => setCreando(true)}>
+            <UserPlus className="mr-1.5 h-4 w-4" strokeWidth={1.8} />
+            Nuevo contacto
+          </Button>
+        </div>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -88,7 +109,7 @@ export function ContactsClient() {
               value={stage}
               onChange={(e) => setStage(e.target.value)}
               aria-label="Filtrar por etapa del embudo"
-              className="h-11 rounded-md border border-input bg-card px-2 text-sm sm:h-9"
+              className="h-9 rounded-md border border-input bg-card px-2 text-sm"
             >
               <option value="all">Toda etapa</option>
               {stages.map((s) => (
@@ -106,13 +127,13 @@ export function ContactsClient() {
               aria-label="Buscar contacto"
               defaultValue=""
               onChange={(e) => setQuery(e.target.value)}
-              className="h-11 w-full pl-8 sm:h-9 sm:w-72"
+              className="w-full pl-8 sm:w-72"
             />
           </div>
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6">
         {contacts.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-center">
             {query.trim() || stage !== "all" ? (
@@ -140,19 +161,30 @@ export function ContactsClient() {
             {contacts.map((c) => (
               <li
                 key={c.id}
-                className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-3 py-3 sm:flex-nowrap sm:gap-4 sm:px-4"
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-3 py-3 sm:flex-nowrap sm:gap-x-4 sm:px-4"
               >
                 <ContactAvatar name={c.name} seed={c.id} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                {/* El 60% mínimo es lo que empuja los botones a su propio
+                    renglón en el teléfono en vez de exprimir el nombre. */}
+                <div className="min-w-[60%] flex-1 sm:min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="truncate text-sm font-medium">
                       {c.name}
                     </span>
+                    {c.priority && <PriorityBadge value={c.priority} />}
                     {c.stageName && (
                       <Badge variant="outline">{c.stageName}</Badge>
                     )}
                     {c.archivedAt && (
                       <Badge variant="secondary">Archivado</Badge>
+                    )}
+                    {/* Solo la fuente que alguien capturó: presentar una
+                        deducción como dato la volvería un número inventado en
+                        cuanto se cuente por fuente. */}
+                    {c.source?.source === "capturada" && (
+                      <Badge variant="secondary">
+                        {SOURCE_LABELS[c.source.value]}
+                      </Badge>
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -160,13 +192,24 @@ export function ContactsClient() {
                     {c.notes ? ` · ${c.notes.slice(0, 60)}` : ""}
                   </p>
                 </div>
-                <div className="ml-11 flex w-full shrink-0 items-center gap-1.5 sm:ml-0 sm:w-auto">
+                <div className="ml-auto flex shrink-0 items-center gap-1.5">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setEditing(c)}
                   >
                     Editar
+                  </Button>
+                  {/* A quien nunca escribió hay que abrirle la conversación con
+                      una plantilla: es regla de Meta, no del CRM. */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Escribir primero"
+                    title="Escribir primero (con plantilla)"
+                    onClick={() => setEscribiendo(c)}
+                  >
+                    <Send className="h-4 w-4" />
                   </Button>
                   <Link href={`/inbox?contact=${c.id}`}>
                     <Button variant="ghost" size="icon" aria-label="Abrir conversación">
@@ -177,11 +220,7 @@ export function ContactsClient() {
                     variant="ghost"
                     size="icon"
                     aria-label={c.archivedAt ? "Desarchivar" : "Archivar"}
-                    onClick={() => {
-                      const previous = contacts;
-                      setContacts((current) => current.map((item) => item.id === c.id ? { ...item, archivedAt: c.archivedAt ? null : new Date().toISOString() } : item));
-                      void patch(c.id, { archived: !c.archivedAt }).then((ok) => { if (!ok) setContacts(previous); });
-                    }}
+                    onClick={() => void patch(c.id, { archived: !c.archivedAt })}
                   >
                     {c.archivedAt ? (
                       <ArchiveRestore className="h-4 w-4" />
@@ -201,7 +240,52 @@ export function ContactsClient() {
           contact={editing}
           onClose={() => setEditing(null)}
           onSave={async (patchBody) => {
-            if (await patch(editing.id, patchBody)) setEditing(null);
+            await patch(editing.id, patchBody);
+            setEditing(null);
+          }}
+        />
+      )}
+
+      {escribiendo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Escribir primero"
+        >
+          <div className="w-full max-w-md rounded-lg border bg-card p-4 shadow-pop">
+            <div className="mb-3 flex items-baseline justify-between gap-2">
+              <h3 className="font-semibold">
+                Escribir a {escribiendo.name}
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setEscribiendo(null)}>
+                Cerrar
+              </Button>
+            </div>
+            <StartConversation
+              contactId={escribiendo.id}
+              onStarted={() => {
+                const contactId = escribiendo.id;
+                setEscribiendo(null);
+                // La Bandeja resuelve por CONTACTO (`?contact=`), no por
+                // conversación: con `?conversation=` no seleccionaría nada.
+                router.push(`/inbox?contact=${contactId}`);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {creando && (
+        <NewContactDialog
+          onClose={() => setCreando(false)}
+          onCreated={() => {
+            setCreando(false);
+            void refetch();
+          }}
+          onOpenExisting={(contactId) => {
+            setCreando(false);
+            router.push(`/inbox?contact=${contactId}`);
           }}
         />
       )}
@@ -220,24 +304,14 @@ function EditDialog({
 }) {
   const [name, setName] = useState(contact.name);
   const [notes, setNotes] = useState(contact.notes ?? "");
-  const [saving, setSaving] = useState(false);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    dialog?.showModal();
-    return () => dialog?.close();
-  }, []);
 
   return (
-    <dialog
-      ref={dialogRef}
-      onClose={onClose}
-      onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}
-      className="w-[calc(100%-2rem)] max-w-md rounded-lg border bg-card p-0 text-foreground shadow-xl backdrop:bg-black/60"
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-overlay p-4"
+      onClick={onClose}
     >
       <div
-        className="p-5"
+        className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 font-semibold">Editar contacto</h3>
@@ -269,13 +343,13 @@ function EditDialog({
             Cancelar
           </Button>
           <Button
-            disabled={!name.trim() || saving}
-            onClick={() => { setSaving(true); void onSave({ name: name.trim(), notes }).finally(() => setSaving(false)); }}
+            disabled={!name.trim()}
+            onClick={() => void onSave({ name: name.trim(), notes })}
           >
-            {saving ? "Guardando…" : "Guardar"}
+            Guardar
           </Button>
         </div>
       </div>
-    </dialog>
+    </div>
   );
 }

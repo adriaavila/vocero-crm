@@ -4,7 +4,23 @@ import { createContext, useCallback, useContext, useState } from "react";
 import { CheckCircle2, XCircle } from "lucide-react";
 
 type Toast = { id: number; message: string; tone: "success" | "error" };
-const ToastContext = createContext<(message: string, tone?: Toast["tone"]) => void>(() => {});
+/**
+ * El default NO es un no-op silencioso.
+ *
+ * Lo era, y al fusionar el rediseño de upstream el layout dejó de montar el
+ * proveedor: cada aviso de la app se perdía sin un solo error, en pantallas
+ * que "funcionaban". Una fachada que se traga los avisos es peor que una que
+ * revienta, así que al menos lo dice en la consola de desarrollo.
+ */
+const ToastContext = createContext<(message: string, tone?: Toast["tone"]) => void>(
+  (message) => {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        `[toast] aviso perdido ("${message}"): falta <ToastProvider> encima de este árbol`
+      );
+    }
+  }
+);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);

@@ -1,4 +1,9 @@
 import { and, eq } from "drizzle-orm";
+import {
+  countVariables,
+  renderBody,
+  validateBodyVariables,
+} from "@/lib/templates";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -43,28 +48,7 @@ export function templateErrorStatus(err: TemplateError): number {
   return TEMPLATE_ERROR_STATUS[err.code];
 }
 
-const VARIABLE_REGEX = /\{\{\s*(\d+)\s*\}\}/g;
-
-/** Cuenta variables {{n}} y valida el acotamiento v1: máximo UNA y debe ser {{1}}. */
-export function countVariables(body: string): number {
-  const matches = [...body.matchAll(VARIABLE_REGEX)];
-  return matches.length;
-}
-
-export function validateBodyVariables(body: string): string | null {
-  const matches = [...body.matchAll(VARIABLE_REGEX)];
-  if (matches.length > 1) {
-    return "v1 admite una sola variable {{1}} en el cuerpo";
-  }
-  if (matches.length === 1 && matches[0]![1] !== "1") {
-    return "La variable debe ser {{1}}";
-  }
-  return null;
-}
-
-export function renderBody(body: string, variable?: string): string {
-  return body.replace(VARIABLE_REGEX, variable ?? "");
-}
+export { countVariables, renderBody, validateBodyVariables };
 
 type TemplateRow = typeof schema.template.$inferSelect;
 
@@ -102,7 +86,12 @@ export async function createTemplate(
     .replace(/[^a-z0-9_]/g, "");
   if (!name) throw new TemplateError("invalid", "Nombre de plantilla inválido");
 
-  const hasVariable = countVariables(input.body) === 1;
+  // Meta pide un ejemplo por variable: si faltan, rechaza la plantilla.
+  const variableCount = countVariables(input.body);
+  const examples = Array.from(
+    { length: variableCount },
+    (_, i) => `ejemplo ${i + 1}`
+  );
   let waTemplateId: string | null = null;
   try {
     const res = await graphRequest<{ id?: string; status?: string }>(
@@ -118,8 +107,8 @@ export async function createTemplate(
             {
               type: "BODY",
               text: input.body,
-              ...(hasVariable
-                ? { example: { body_text: [["ejemplo"]] } }
+              ...(variableCount > 0
+                ? { example: { body_text: [examples] } }
                 : {}),
             },
           ],
@@ -285,7 +274,7 @@ export async function sendTemplate(input: {
   organizationId: string;
   conversationId: string;
   templateId: string;
-  variable?: string;
+  variables?: string[];
 }): Promise<{ messageId: string }> {
   const db = getDb();
 
@@ -305,9 +294,21 @@ export async function sendTemplate(input: {
   if (template.status !== "approved") {
     throw new TemplateError("invalid", "Solo se pueden enviar plantillas aprobadas");
   }
-  const needsVariable = countVariables(template.body) === 1;
-  if (needsVariable && !input.variable?.trim()) {
-    throw new TemplateError("invalid", "La plantilla requiere el valor de {{1}}");
+  // Meta exige EXACTAMENTE un parámetro por variable del cuerpo: si sobran o
+  // falta alguno responde 132000 (plantilla y parámetros no coinciden).
+  const variableCount = countVariables(template.body);
+  const values = (input.variables ?? [])
+    .slice(0, variableCount)
+    .map((v) => v.trim());
+  if (values.length < variableCount || values.some((v) => !v)) {
+    const missing = values.findIndex((v) => !v);
+    const n = missing === -1 ? values.length + 1 : missing + 1;
+    throw new TemplateError(
+      "invalid",
+      variableCount === 1
+        ? "La plantilla requiere el valor de {{1}}"
+        : `La plantilla requiere ${variableCount} valores: falta {{${n}}}`
+    );
   }
 
   const rows = await db
@@ -359,12 +360,12 @@ export async function sendTemplate(input: {
     template: {
       name: template.name,
       language: { code: template.language },
-      ...(needsVariable
+      ...(variableCount > 0
         ? {
             components: [
               {
                 type: "body",
-                parameters: [{ type: "text", text: input.variable!.trim() }],
+                parameters: values.map((text) => ({ type: "text", text })),
               },
             ],
           }
@@ -381,7 +382,7 @@ export async function sendTemplate(input: {
       waMessageId,
       direction: "out",
       type: "template",
-      text: renderBody(template.body, input.variable?.trim()),
+      text: renderBody(template.body, values),
       status: "pending",
       origin: "template",
     })

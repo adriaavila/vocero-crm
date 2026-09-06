@@ -1,4 +1,30 @@
-# Vocero CRM
+# Vocero CRM — fork de agencia
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> **Este es un fork de [kevinrivm/vocero-crm](https://github.com/kevinrivm/vocero-crm).**
+> Todo lo que dice el README de arriba abajo sigue siendo cierto; lo de abajo es
+> lo que este fork añade. Sincronizado con **v1.3.0** de upstream.
+>
+> ### La diferencia: la instancia se ENTREGA, no se autoconfigura
+>
+> En upstream, una instancia es de su dueño y él la configura. Aquí una agencia
+> la monta, la prueba y se la entrega a un cliente. De ahí todo lo demás:
+>
+> | | |
+> |---|---|
+> | **Puesta en marcha** | `/overview` — el tablero de qué falta para poder encender el agente (`/api/readiness`). Encenderlo avisa de lo pendiente antes de dejarte. |
+> | **Piloto sin sustos** | El agente contesta solo a mensajes configurados, o solo a una allowlist de números, mientras se prueba la cuenta. |
+> | **Prueba real** | Un ida y vuelta de verdad por WhatsApp (vía WAHA) desde el Laboratorio: prueba la instalación, no el criterio del agente. |
+> | **Alta desde la agencia** | `POST /api/provision` recibe de allok las credenciales de un número recién conectado; nadie copia tokens a mano. |
+> | **Agenda contra el calendario real** | Los eventos del Google Calendar del dueño se espejan como bloqueos, así el agente no ofrece un hueco que ya está ocupado. |
+> | **La ficha mueve el embudo** | Lo que el agente califica avanza el lead en el Pipeline, con su registro en la bitácora. |
+> | **Seguridad más estricta** | `META_APP_SECRET` obligatorio: el webhook rechaza lo que no puede verificar y `/api/health` reprueba la instancia sin él. |
+> | **Cuenta propia** | `/account` — cada miembro cambia su nombre y contraseña; el propietario puede restablecer accesos (no hay correo saliente). |
+>
+> Cómo está organizado para poder seguir fusionando con upstream, y cómo se
+> trae su siguiente versión: [CLAUDE.md](CLAUDE.md#este-repo-es-un-fork).
+
 
 **El CRM de WhatsApp open source con un agente de IA que se pone a prueba solo.**
 
@@ -7,6 +33,10 @@ bandeja en tiempo real, pipeline de ventas, un agente de IA con el conocimiento
 de tu negocio y un **Laboratorio** donde clientes simulados lo evalúan antes de
 que hable con clientes reales. Una instancia = un negocio, en tu propio
 servidor, con tus datos.
+
+¿Ya tienes tu propio agente? Puedes apagar el de Vocero y conectar el tuyo por
+la [API de servicio `/api/bot/*`](#-trae-tu-propio-agente): el token de WhatsApp
+nunca sale del CRM.
 
 ![Bandeja de Vocero CRM](docs/screenshots/bandeja.png)
 
@@ -67,11 +97,80 @@ agrupa ráfagas de mensajes en una respuesta, escala a humano cuando el cliente
 lo pide (con detección de respaldo), cuando él lo decide o cuando algo falla.
 Proveedor LLM por adaptador OpenRouter-compatible: usa el modelo que quieras.
 
+### 🔌 Trae tu propio agente
+
+Si prefieres conducir la conversación con tu propio cerebro —un microservicio
+tuyo, en tu mismo servidor— apaga el agente de Vocero y habilita la API de
+servicio con una `BOT_API_KEY`. Tu bot conversa a través del CRM, así que **el
+token de WhatsApp nunca sale de aquí** y todo queda en la bandeja como
+cualquier otra conversación.
+
+| Endpoint | Para qué |
+|---|---|
+| `GET /api/bot/context` | Quién es la persona, su etapa, si un humano tomó la conversación y si la ventana de 24 h sigue abierta |
+| `POST /api/bot/messages` | Responder. Sale por el mismo camino que el composer y queda marcado como IA |
+| `GET /api/bot/profile` | El perfil del agente y el knowledge base que editaste en la app |
+| `PUT /api/bot/ficha` | Guardar lo que tu bot descubre del lead (claves libres: cada negocio califica distinto) |
+| `POST /api/bot/handoff` | Devolver la conversación a un humano |
+| `POST /api/bot/typing` | Marcar leído y mostrar "escribiendo…" |
+| `GET /api/bot/media/{id}` | Descargar un adjunto entrante sin tocar Meta |
+| `POST /api/bot/reset` | Reiniciar una conversación de pruebas |
+
+Los 409 vienen tipados (`ai_paused`, `window_closed`, `sandbox_violation`) para
+que tu bot sepa si callarse, mandar plantilla o rendirse. El guion de pruebas
+está en [`tests/e2e/us-bot-api.md`](tests/e2e/us-bot-api.md).
+
+Agente de referencia: [nea-agent](https://github.com/kevinrivm/nea-agent), MIT.
+
+### 📅 Agenda con huecos reales (opcional, apagada por defecto)
+
+Enciéndela con `AGENDA=on` y el CRM sabe cuándo estás libre: defines tu horario
+en Ajustes → Agenda y tu agente ofrece huecos concretos, reserva el que el
+cliente elige y lo deja registrado junto a su conversación. Dos garantías que
+no se negocian: **solo se reserva un horario que se ofreció** (nada de que el
+modelo invente un martes a las 10) y **nunca se confirma una cita que no se
+creó** — si el hueco se ocupó a media conversación, la respuesta trae
+alternativas frescas en vez de una promesa falsa.
+
+Cómo se entrega la reunión lo eliges tú, con un **conector**:
+
+| Conector | Qué hace | Necesita |
+|---|---|---|
+| **Enlace fijo** (default) | Reparte tu sala de siempre | Nada |
+| **Zoom** | Una reunión por cita; mover la mueve, cancelar la borra | Tu app Server-to-Server |
+| **Google Calendar + Meet** | Un evento en tu calendario con su enlace de Meet | Tu app de Google Cloud |
+
+¿Usas otra cosa? El contrato son cuatro operaciones y está publicado: escribe
+tu conector en tu fork siguiendo
+[`docs/agenda-conectores.md`](docs/agenda-conectores.md). Y si tu proveedor se
+cae, la cita **se agenda igual** con el enlace pendiente de reintentar: un
+tercero caído no te cuesta la conversión.
+
+### 📈 Conversiones de anuncios (opcional, apagada por defecto)
+
+Si anuncias con **Click-to-WhatsApp**, Meta sabe qué conversaciones empezaron
+desde un anuncio, pero no cuáles sirvieron: sin nadie que se lo diga, optimiza
+hacia el público más barato de hacer escribir, que rara vez es el que compra.
+
+Enciéndela con `ATRIBUCION=on`, pega tu dataset en Ajustes → Anuncios (el token
+lo reusa de tu conexión de WhatsApp) y di qué etapa de TU pipeline significa
+"lead calificado". A partir de ahí el CRM le reporta a Meta el lead calificado y
+la venta cerrada —con su importe— por la **Conversions API**, y una tabla de
+actividad te dice qué se envió, con qué acuse y, cuando no salió, por qué.
+
+No se le pide nada al usuario que el CRM ya sepa: la venta cuelga de la etapa
+ganada que ya tienes, y todo se dispara desde la misma puerta que mueve leads,
+así que reporta igual si arrastras la tarjeta tú, el agente incluido o tu propio
+bot. Si Meta se cae, el lead se mueve igual: una conversión jamás vale un
+movimiento bloqueado. Los gotchas de Meta que cuesta descubrir solo están en
+[`docs/atribucion-capi.md`](docs/atribucion-capi.md).
+
 ### 📄 Plantillas · 👥 Multi-usuario · 🔐 Self-hosted
 
-Plantillas con una variable y aprobación de Meta sincronizada; cuentas de
-equipo creadas por el propietario (el registro público se cierra tras la
-primera organización); token de WhatsApp cifrado en reposo (AES-256-GCM),
+Plantillas con varias variables `{{1}}…{{n}}` y aprobación de Meta
+sincronizada; cuentas de equipo creadas por el propietario (el registro público
+se cierra tras la primera organización); token de WhatsApp cifrado en reposo
+(AES-256-GCM),
 webhook autenticado en dos capas y cero dependencias de runtime más allá de
 Meta y tu proveedor LLM opcional.
 
@@ -200,27 +299,83 @@ del cliente se conecta con el **override de callback por WABA**:
 > Graph** (botón "Sincronizar" en Configuración → Plantillas), así el modo
 > agencia ve las aprobaciones igual.
 
+## Canales opcionales: Instagram y Messenger
+
+WhatsApp es el canal por el que existe Vocero y siempre está encendido. Los
+demás viajan en el mismo código, **apagados por defecto** ([ADR-001](docs/adr-001-canales-opcionales.md)):
+una instancia que no los usa no ve pantallas, webhooks ni variables suyas.
+Se encienden con una variable de despliegue:
+
+```bash
+CHANNELS=whatsapp,instagram,messenger   # los que quieras; whatsapp siempre va
+```
+
+Con más de un canal encendido, la Bandeja enseña el distintivo de cada
+conversación y permite filtrar por canal. El contacto, el pipeline, la ficha
+y el agente son los mismos: un lead es un lead, escriba por donde escriba.
+
+### Messenger (página de Facebook)
+
+Dos formas de traer los mensajes; se elige en **Configuración → Messenger**.
+
+**Con Zernio** (API unificada, la misma que puede servir Instagram):
+
+1. Vincula la página de Facebook en el panel de [Zernio](https://zernio.com) y
+   copia el `accountId` de esa cuenta. Crea una API key (Settings → API Keys;
+   se muestra una sola vez).
+2. En Vocero, **Configuración → Messenger**: elige *Zernio*, pega el
+   `accountId`, la API key y —recomendado— un secreto de webhook. Pulsa
+   *Probar y guardar*: la llave se valida contra Zernio antes de guardarse
+   cifrada, y la pantalla te enseña la URL de callback.
+3. En Zernio, da de alta ese endpoint con el evento `message.received` y el
+   mismo secreto. El webhook de Zernio entrega todas tus plataformas por la
+   misma URL; Vocero solo ingiere aquí lo de Facebook.
+
+**Con una app propia de Meta**:
+
+1. En [developers.facebook.com](https://developers.facebook.com) crea (o usa)
+   una app con el producto **Messenger** y genera el **token de acceso de la
+   página** con el permiso `pages_messaging`. Anota el **ID de la página**.
+2. En Vocero, **Configuración → Messenger**: elige *App propia de Meta*, pega
+   el ID y el token y pulsa *Probar y guardar*.
+3. En la app de Meta, **Messenger → Webhooks**: objeto `page`, campo
+   `messages`, esa URL de callback y el token de verificación que enseña la
+   pantalla. Suscribe la página a la app.
+
+Desde ese momento, lo que la gente le escribe a la página entra a la bandeja
+como `Messenger`, con el nombre de su perfil, y lo que respondas desde Vocero
+(tú o el agente) llega a su chat. Fuera de la ventana de 24 h la respuesta sale
+con la etiqueta `HUMAN_AGENT` de Meta (hasta 7 días); no hay plantillas.
+Hoy el canal es de texto: los adjuntos que te manden se ven como
+«📎 Imagen» para que sepas que llegaron, y los adjuntos salientes no están.
+
+Con app propia y sin App Review, la página solo recibe mensajes de cuentas con
+un rol en la app; para atender al público hay que aprobar `pages_messaging`.
+Por Zernio ese trámite ya está resuelto del lado de ellos.
+
+### Instagram (DMs del perfil profesional)
+
+Mismo modelo, con dos fuentes posibles: una app propia de Meta (perfil del
+negocio como tester) o [Zernio](https://zernio.com) como API unificada. La
+conexión se guarda por la API de ajustes (`PUT /api/settings/instagram`) y el
+webhook vive en `/api/webhooks/ig/<token>`. El detalle está en
+[`specs/014-canal-instagram`](specs/014-canal-instagram/spec.md).
+
 ## Configuración de la IA
 
 En las variables de la instancia:
 
 ```bash
-OPENAI_API_KEY=sk-proj-...            # tu key
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_JUDGE_MODEL=                   # opcional: modelo distinto (más barato) para el juez del Laboratorio
-OPENAI_BASE_URL=https://api.openai.com   # o tu proveedor OpenAI-compatible
-
-# Proveedor alterno (modelo gratuito): fallback automático si el preferido
-# falla, y elegible por org en Configuración → Agente.
-OPENROUTER_API_TOKEN=sk-or-...
-OPENROUTER_MODEL=meta-llama/llama-3.1-8b-instruct:free
-OPENROUTER_BASE_URL=https://openrouter.ai/api
+OPENROUTER_API_TOKEN=sk-or-...        # tu key
+OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
+OPENROUTER_JUDGE_MODEL=               # opcional: modelo distinto para el juez del Laboratorio
+OPENROUTER_BASE_URL=https://openrouter.ai/api   # o tu proveedor OpenAI-compatible
 ```
 
-Sin ninguno de los dos, todo lo demás funciona; Agente y Laboratorio muestran
-cómo activarlos. Después configura el comportamiento y el conocimiento en la
-pestaña **Agente** (ahí también se elige el proveedor preferido) y corre el
-**Laboratorio** antes de encender el agente con clientes reales.
+Sin token, todo lo demás funciona; Agente y Laboratorio muestran cómo
+activarlos. Después configura el comportamiento y el conocimiento en la
+pestaña **Agente** y corre el **Laboratorio** antes de encender el agente con
+clientes reales.
 
 ## Cumplimiento con las políticas de Meta
 
@@ -267,14 +422,84 @@ base64 (44 caracteres): `openssl rand -base64 32`.
 **La app arranca pero /api/health falla** — La base de datos no está lista o
 `DATABASE_URL` apunta mal; revisa los logs (`docker compose logs app`).
 
+**Olvidé mi contraseña y no puedo entrar** — Vocero no manda correos (sería una
+dependencia externa) y el registro público se cierra con la primera
+organización, así que no hay flujo de "olvidé mi contraseña". La salida es
+reescribir el hash en la base:
+
+```bash
+NEW_PASSWORD='tu-contraseña-nueva' node scripts/reset-password.mjs tu@correo.com
+```
+
+El script **no toca la base**: te imprime el `UPDATE` para que lo pegues tú en
+la consola de Postgres. Corre desde tu máquina, con el repo clonado y
+`pnpm install` hecho — la contraseña nueva nunca sale de ahí. Va por variable de
+entorno y no por argumento porque un argumento queda en el historial del shell
+y se ve en `ps`.
+
+Debe responder `UPDATE 1`. Si responde `UPDATE 0`, el correo no coincide;
+míralos con `SELECT email FROM "user";`.
+
+## Versiones
+
+La versión que está corriendo se ve **abajo en la barra lateral** (`v1.1.0 ·
+8e62d0b`) y en el healthcheck, para poder confirmar un despliegue con un
+`curl` sin abrir la app:
+
+```bash
+curl -s https://crm.tudominio.com/api/health
+# {"ok":true,"version":"1.1.0","commit":"8e62d0b"}
+```
+
+Los dos valores se congelan al **construir**, así que no pueden mentir en
+tiempo de ejecución. El commit lo inyecta Coolify solo; con docker compose se
+pasa con `--build-arg SOURCE_COMMIT=$(git rev-parse HEAD)`, y si falta se ve
+solo la versión.
+
+SemVer sobre lo que le importa a quien opera una instancia:
+
+| | Cuándo sube |
+|---|---|
+| **Mayor** (`2.0.0`) | Hay que hacer algo a mano para actualizar: cambiar una variable de entorno, migrar datos, reconectar algo. |
+| **Menor** (`1.2.0`) | Funciones nuevas. Actualizar es redesplegar. |
+| **Parche** (`1.1.1`) | Arreglos y ajustes. Actualizar es redesplegar. |
+
+La versión vive en `package.json` y se sube en el PR que publica el cambio.
+
 ## Roadmap
 
 - Multimedia completa en la bandeja (hoy: indicador de tipo).
 - RAG para knowledge bases grandes (hoy: se inyecta completo con aviso de tamaño).
 - Personas configurables del Laboratorio y comparativas entre corridas.
-- Variables múltiples y borrado de plantillas.
+- Borrado de plantillas desde la app.
 - Analytics de conversación y plantillas.
 - Broadcast con opt-in verificado.
+
+### Antes fuera de alcance, ahora detrás de una bandera
+
+**El motor de agendamiento ya está en el core**, apagado por defecto. Aquí
+decía que quedaba fuera a propósito, con dos razones. Las dos eran buenas y
+las dos cambiaron; se dejan escritas porque el porqué importa más que la
+conclusión:
+
+- *"Son mil líneas y una dependencia de fechas en un proyecto cuyo argumento es
+  ser ligero."* — Cierto, y por eso vive detrás de `AGENDA`: una instancia que
+  no agenda no ve pantallas, ni rutas, ni una instrucción de agendar en el
+  prompt de su agente, ni se le pide una sola credencial. El peso lo paga quien
+  la enciende. Lo de la dependencia de fechas ya no aplica: el motor no agregó
+  ninguna (la aritmética de zonas usa `Intl` de la plataforma).
+- *"El estado de qué huecos se ofrecieron pertenece a la conversación, o sea al
+  agente, no al CRM."* — Pertenecía al agente mientras el CRM no ofreciera la
+  garantía. Al ofrecerla, es el CRM quien tiene que poder probarla: con la
+  memoria del lado del cliente, cualquier cerebro conectado por `/api/bot/*`
+  podría reservar un horario que jamás se ofreció y el CRM lo aceptaría. Ahora
+  la regla es inviolable por construcción y vale igual para el agente incluido,
+  para tu bot y para el que venga.
+
+Lo que sigue fuera, y a propósito: **leer calendarios externos** para descontar
+disponibilidad. El motor calcula con lo suyo y los compromisos de fuera se
+reflejan con bloqueos manuales; meter al proveedor en ese camino acoplaría su
+latencia y sus caídas a la pantalla que más se usa.
 
 ## Stack
 

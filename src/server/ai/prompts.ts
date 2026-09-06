@@ -26,18 +26,50 @@ export function buildAgentSystemPrompt(input: {
   profile: AgentProfile;
   kb: KbEntry[];
   stages: { name: string }[];
+  /**
+   * 015 — ¿esta instancia tiene agenda? Apagada, el prompt no gasta ni un
+   * token en hablar de horarios: la agenda no existe aquí.
+   */
+  agenda?: boolean;
+  /**
+   * Zona horaria del negocio (`calendar_settings.timezone`). Es la misma en la
+   * que el motor etiqueta los huecos, así que el modelo y el sistema hablan
+   * del mismo "jueves".
+   */
+  timezone?: string;
+  /** Inyectable para que el test no dependa del reloj. */
+  now?: Date;
 }): string {
   const { profile } = input;
   const stageNames = input.stages.map((s) => s.name).join(" | ");
-  const now = new Date();
-  const dateStr = new Intl.DateTimeFormat("es-ES", {
+  const timezone = input.timezone ?? "UTC";
+  const now = input.now ?? new Date();
+  /**
+   * Fecha Y hora, no solo fecha. Sin la hora, un modelo al que le piden "hoy a
+   * las 4" no sabe si ya pasó, y ofrece un horario imposible que el motor
+   * después rechaza — el cliente ve al agente corregirse solo.
+   */
+  const ahora = new Intl.DateTimeFormat("es-ES", {
     dateStyle: "full",
-    timeZone: "America/Caracas",
+    timeStyle: "short",
+    timeZone: timezone,
   }).format(now);
-
+  const agendaLines = input.agenda
+    ? [
+        '- {"action":"offer_slots","reply":"..."} — ofrecer horarios para agendar (reply es solo la frase de entrada; los horarios los pone el sistema).',
+        '- {"action":"book_slot","startUtc":"<uno de los horarios que el sistema ofreció, en ISO UTC>","reply":"..."} — agendar el horario que el cliente eligió.',
+      ]
+    : [];
+  const agendaRules = input.agenda
+    ? [
+        "- NUNCA escribas tú los horarios ni los inventes: usa offer_slots y el sistema pega los reales.",
+        "- book_slot solo acepta un horario que el sistema ofreció antes en ESTA conversación. Si el cliente pide otro, vuelve a ofrecer con offer_slots.",
+        "- Si el cliente quiere CANCELAR una cita → handoff: esa decisión no es tuya.",
+      ]
+    : [];
   return [
     `Eres "${profile.name}", el asistente de WhatsApp de este negocio. Respondes SIEMPRE en español neutro, con mensajes breves y naturales para chat.`,
-    `Fecha actual de referencia: ${dateStr}.`,
+    `Ahora mismo son las ${ahora} (zona del negocio: ${timezone}). Todas las horas que digas son de esa zona; nunca menciones UTC ni conviertas por tu cuenta.`,
     profile.tone ? `Tono: ${profile.tone}` : null,
     profile.instructions ? `Instrucciones del negocio:\n${profile.instructions}` : null,
     profile.escalationRules
@@ -53,11 +85,16 @@ export function buildAgentSystemPrompt(input: {
       '- {"action":"update_lead","note":"...","reply":"..."} — guardar una nota del lead (reply opcional).',
       '- {"action":"move_stage","stage":"<nombre exacto de etapa>","reply":"..."} — mover el lead (reply opcional).',
       '- {"action":"handoff","reason":"...","farewell":"..."} — escalar a un humano (farewell opcional para despedirte).',
+      ...agendaLines,
       "Reglas duras:",
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
       "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
+      // El agente que "ayuda" mandando un calendly inventado es el que más
+      // caro sale: el cliente hace clic, no llega a ningún lado, y culpa al
+      // negocio. La agenda de verdad se ofrece con offer_slots.
       "- NUNCA inventes enlaces web, URLs de agendamiento (como cal.com o calendly) ni datos de contacto que no estén explícitamente en el CONOCIMIENTO DEL NEGOCIO.",
+      ...agendaRules,
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]

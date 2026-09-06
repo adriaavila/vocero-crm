@@ -20,26 +20,42 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
   }
 }
 
-export async function getBranding(
+/**
+ * Marca + a qué organización pertenece.
+ *
+ * El icono se guarda como archivo en `MEDIA_DIR/{organizationId}/favicon`, así
+ * que servirlo necesita el id — y la ruta que lo sirve es pública (el login
+ * también tiene pestaña), donde no hay sesión de la que sacarlo.
+ */
+export async function getBrandingContext(
   organizationId?: string | null
-): Promise<Branding> {
+): Promise<{ organizationId: string | null; branding: Branding }> {
   const db = getDb();
   const rows = organizationId
     ? await db
-        .select({ metadata: schema.organization.metadata })
+        .select({ id: schema.organization.id, metadata: schema.organization.metadata })
         .from(schema.organization)
         .where(eq(schema.organization.id, organizationId))
         .limit(1)
     : // Sin sesión (login, layout raíz): la única organización de la instancia.
       await db
-        .select({ metadata: schema.organization.metadata })
+        .select({ id: schema.organization.id, metadata: schema.organization.metadata })
         .from(schema.organization)
         .limit(1);
-  if (!rows[0]) return DEFAULT_BRANDING;
+  if (!rows[0]) return { organizationId: null, branding: DEFAULT_BRANDING };
   const meta = parseMetadata(rows[0].metadata);
-  return normalizeBranding(
-    (meta.branding as Partial<Branding> | undefined) ?? null
-  );
+  return {
+    organizationId: rows[0].id,
+    branding: normalizeBranding(
+      (meta.branding as Partial<Branding> | undefined) ?? null
+    ),
+  };
+}
+
+export async function getBranding(
+  organizationId?: string | null
+): Promise<Branding> {
+  return (await getBrandingContext(organizationId)).branding;
 }
 
 export async function saveBranding(

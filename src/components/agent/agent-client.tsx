@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+// Capa de agencia (fork). Todo lo propio vive en components/agencia/ para que
+// la próxima fusión con upstream no toque este archivo más que en esta línea.
+import {
+  AgencyAgentCards,
+  type AgencyProfile,
+} from "@/components/agencia/agent-agency-cards";
+import { useActivationGate } from "@/components/agencia/activation-gate";
 
 type Profile = {
   enabled: boolean;
@@ -16,12 +23,7 @@ type Profile = {
   instructions: string | null;
   escalationRules: string | null;
   greeting: string | null;
-  activationEnabled: boolean;
-  activationMessages: string[];
-  allowlistEnabled: boolean;
-  allowedWaIds: string[];
-  aiProvider: "openai" | "openrouter";
-};
+} & AgencyProfile;
 
 type KbEntry = {
   id: string;
@@ -37,9 +39,10 @@ export function AgentClient() {
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const activationDialog = useRef<HTMLDialogElement>(null);
-  const [pendingSteps, setPendingSteps] = useState<{ label: string; detail: string }[]>([]);
+  const { toggle, gate } = useActivationGate({
+    enabled: profile?.enabled ?? false,
+    onConfirm: (enabled) => void saveProfile({ enabled }),
+  });
 
   const refetch = useCallback(async () => {
     const [p, kb, size] = await Promise.all([
@@ -68,41 +71,24 @@ export function AgentClient() {
   }
 
   async function saveProfile(patch: Partial<Profile>): Promise<boolean> {
-    setSaveError(null);
     const response = await fetch("/api/agent/profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(patch),
     }).catch(() => null);
-    if (!response?.ok) {
-      setSaveError("No se pudo guardar. Revisa los campos e inténtalo otra vez.");
-      return false;
-    }
+    if (!response?.ok) return false;
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     await refetch();
     return true;
   }
 
-  async function toggleAgent() {
-    if (!profile) return;
-    if (profile.enabled) return void saveProfile({ enabled: false });
-    const readiness = await fetch("/api/readiness").then((response) => response.ok ? response.json() : null).catch(() => null) as { overall?: string; steps?: { status: string; label: string; detail: string }[] } | null;
-    if (readiness?.overall === "needs_attention") {
-      setPendingSteps(readiness.steps?.filter((step) => step.status !== "complete") ?? []);
-      activationDialog.current?.showModal();
-      return;
-    }
-    void saveProfile({ enabled: true });
-  }
-
   return (
     <div className="h-full overflow-y-auto">
-      <header className="flex items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
-        <h2 className="font-semibold">Agente de IA</h2>
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
+        <h2 className="text-[17px] font-bold tracking-tight">Agente de IA</h2>
         <div className="flex items-center gap-3">
           {saved && <span className="text-xs text-primary">Guardado ✓</span>}
-          {saveError && <span className="text-xs text-destructive">{saveError}</span>}
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
@@ -111,13 +97,13 @@ export function AgentClient() {
             aria-checked={profile.enabled}
             aria-label="Agente encendido"
             disabled={!aiConfigured}
-            onClick={() => void toggleAgent()}
+            onClick={() => void toggle()}
             className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
               profile.enabled ? "bg-primary" : "bg-secondary"
             }`}
           >
             <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-knob transition-transform ${
                 profile.enabled ? "translate-x-5" : "translate-x-0.5"
               }`}
             />
@@ -128,204 +114,25 @@ export function AgentClient() {
       {!aiConfigured && (
         <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-5 text-center sm:mx-6 sm:mt-6 sm:p-6">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">La conexión de IA aún no está disponible</p>
+          <p className="font-medium">Configura tu proveedor de IA para activar el agente</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Contacta a quien administra tu instancia. Mientras tanto puedes dejar listo el
-            comportamiento y la información del negocio.
+            Agrega <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> y{" "}
+            <code className="rounded bg-secondary px-1">OPENROUTER_MODEL</code> a las variables
+            de entorno de la instancia y reiníciala. Mientras tanto puedes dejar listo el
+            comportamiento y el conocimiento aquí abajo.
           </p>
         </div>
       )}
 
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           <ProfileSection profile={profile} onSave={saveProfile} />
-          <ActivationMessagesSection profile={profile} onSave={saveProfile} />
-          <AllowedNumbersSection profile={profile} onSave={saveProfile} />
+          <AgencyAgentCards profile={profile} onSave={saveProfile} />
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
-      <dialog ref={activationDialog} className="w-[min(32rem,calc(100vw-2rem))] rounded-lg border bg-card p-0 text-foreground shadow-pop backdrop:bg-black/35">
-        <div className="module-cap border-b p-5"><h3 className="font-semibold">Aún hay pasos pendientes</h3><p className="mt-1 text-sm text-text-3">Puedes activar el agente, pero recomendamos revisar esto primero.</p></div>
-        <div className="space-y-2 p-5">{pendingSteps.map((step) => <div key={step.label} className="rounded-md border p-3"><p className="text-sm font-semibold">{step.label}</p><p className="mt-0.5 text-xs text-text-3">{step.detail}</p></div>)}</div>
-        <div className="flex justify-end gap-2 border-t p-4"><Button variant="ghost" onClick={() => activationDialog.current?.close()}>Volver y corregir</Button><Button onClick={() => { activationDialog.current?.close(); void saveProfile({ enabled: true }); }}>Activar de todas formas</Button></div>
-      </dialog>
+      {gate}
     </div>
-  );
-}
-
-function AllowedNumbersSection({
-  profile,
-  onSave,
-}: {
-  profile: Profile;
-  onSave: (patch: Partial<Profile>) => Promise<boolean>;
-}) {
-  const [enabled, setEnabled] = useState(profile.allowlistEnabled);
-  const [numbers, setNumbers] = useState(profile.allowedWaIds.join("\n"));
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setEnabled(profile.allowlistEnabled);
-    setNumbers(profile.allowedWaIds.join("\n"));
-  }, [profile]);
-
-  const allowedWaIds = numbers
-    .split(/[\s,;]+/)
-    .map((number) => number.trim())
-    .filter(Boolean);
-
-  async function save() {
-    setSaving(true);
-    await onSave({ allowlistEnabled: enabled, allowedWaIds });
-    setSaving(false);
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle>Números autorizados</CardTitle>
-            <CardDescription>
-              Limita las respuestas de la IA a números de prueba específicos.
-              Desactívalo para responder a cualquier cliente.
-            </CardDescription>
-          </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
-            aria-label="Limitar a números autorizados"
-            onClick={() => setEnabled(!enabled)}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <Textarea
-          aria-label="Números autorizados"
-          rows={4}
-          placeholder={"12057071653\n5215512345678"}
-          value={numbers}
-          onChange={(event) => setNumbers(event.target.value)}
-          disabled={!enabled}
-        />
-        <p className="text-xs text-muted-foreground">
-          Uno por línea, en formato internacional y sin espacios.
-        </p>
-        <Button
-          onClick={() => void save()}
-          disabled={saving || (enabled && allowedWaIds.length === 0)}
-        >
-          {saving ? "Guardando…" : "Guardar números"}
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ActivationMessagesSection({
-  profile,
-  onSave,
-}: {
-  profile: Profile;
-  onSave: (patch: Partial<Profile>) => Promise<boolean>;
-}) {
-  const [enabled, setEnabled] = useState(profile.activationEnabled);
-  const [messages, setMessages] = useState(profile.activationMessages);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setEnabled(profile.activationEnabled);
-    setMessages(profile.activationMessages);
-  }, [profile]);
-
-  const validMessages = messages.map((message) => message.trim()).filter(Boolean);
-
-  async function save() {
-    setSaving(true);
-    await onSave({ activationEnabled: enabled, activationMessages: validMessages });
-    setSaving(false);
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle>Activación automática</CardTitle>
-            <CardDescription>
-              Si un chat está pausado, uno de estos mensajes activa la IA y comienza
-              una conversación normal.
-            </CardDescription>
-          </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
-            aria-label="Activar IA mediante mensajes"
-            onClick={() => setEnabled(!enabled)}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {messages.map((message, index) => (
-          <div key={index} className="flex items-center gap-2">
-            <Input
-              aria-label={`Mensaje activador ${index + 1}`}
-              placeholder="p. ej. Quiero agendar una cita"
-              value={message}
-              onChange={(event) =>
-                setMessages(messages.map((item, i) => (i === index ? event.target.value : item)))
-              }
-            />
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={`Eliminar mensaje ${index + 1}`}
-              onClick={() => setMessages(messages.filter((_, i) => i !== index))}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => setMessages([...messages, ""])}
-            disabled={messages.length >= 50}
-          >
-            <Plus className="h-4 w-4" /> Agregar mensaje
-          </Button>
-          <Button
-            onClick={() => void save()}
-            disabled={saving || (enabled && validMessages.length === 0)}
-          >
-            {saving ? "Guardando…" : "Guardar activadores"}
-          </Button>
-        </div>
-        {enabled && validMessages.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            Agrega al menos un mensaje antes de activar este modo.
-          </p>
-        )}
-      </CardContent>
-    </Card>
   );
 }
 
@@ -337,30 +144,7 @@ function ProfileSection({
   onSave: (patch: Partial<Profile>) => Promise<boolean>;
 }) {
   const [form, setForm] = useState(profile);
-  const [freeText, setFreeText] = useState("");
-  const [parsing, setParsing] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
   useEffect(() => setForm(profile), [profile]);
-
-  async function parseFreeText() {
-    setParsing(true);
-    setParseError(null);
-    const response = await fetch("/api/agent/profile/parse", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text: freeText }),
-    }).catch(() => null);
-    const data = response ? await response.json().catch(() => null) : null;
-    if (!response?.ok || !data?.draft) {
-      setParseError(data?.error?.message ?? "No se pudo procesar el texto.");
-    } else {
-      const draft = Object.fromEntries(
-        Object.entries(data.draft).filter(([, value]) => value !== null)
-      ) as Partial<Profile>;
-      setForm((current) => ({ ...current, ...draft }));
-    }
-    setParsing(false);
-  }
 
   return (
     <Card>
@@ -371,29 +155,6 @@ function ProfileSection({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="space-y-2 rounded-md border border-brand-soft bg-brand-tint p-3">
-          <Label htmlFor="agent-free-text">Completar desde texto libre</Label>
-          <Textarea
-            id="agent-free-text"
-            rows={5}
-            placeholder="Pega aquí información del negocio, tono, políticas, horarios y cuándo debe intervenir una persona…"
-            value={freeText}
-            onChange={(e) => setFreeText(e.target.value)}
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => void parseFreeText()}
-            disabled={parsing || freeText.trim().length < 20}
-          >
-            <Sparkles className="h-4 w-4" />
-            {parsing ? "Procesando…" : "Completar con IA gratis"}
-          </Button>
-          {parseError && <p className="text-xs text-destructive">{parseError}</p>}
-          <p className="text-xs text-muted-foreground">
-            Completa el borrador; revísalo antes de guardar.
-          </p>
-        </div>
         <div className="space-y-1.5">
           <Label htmlFor="agent-name">Nombre del agente</Label>
           <Input
@@ -439,23 +200,6 @@ function ProfileSection({
             value={form.greeting ?? ""}
             onChange={(e) => setForm({ ...form, greeting: e.target.value })}
           />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="agent-provider">Proveedor de IA</Label>
-          <select
-            id="agent-provider"
-            value={form.aiProvider}
-            onChange={(e) =>
-              setForm({ ...form, aiProvider: e.target.value as Profile["aiProvider"] })
-            }
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option value="openai">OpenAI (recomendado)</option>
-            <option value="openrouter">OpenRouter — modelo gratuito</option>
-          </select>
-          <p className="text-xs text-muted-foreground">
-            Si el preferido falla o no está configurado, el agente cae automáticamente al otro.
-          </p>
         </div>
         <Button onClick={() => void onSave(form)}>Guardar comportamiento</Button>
       </CardContent>
@@ -509,7 +253,7 @@ function KbSection({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Información del negocio</CardTitle>
+            <CardTitle>Knowledge base</CardTitle>
             <CardDescription>
               La única fuente de verdad del agente: lo que no está aquí, no lo
               afirma.
@@ -522,7 +266,7 @@ function KbSection({
           )}
         </div>
         {kbSize?.warning && (
-          <p className="text-xs text-[#8a6d3b]">
+          <p className="text-xs text-warning-text">
             El conocimiento se acerca al límite del contexto del modelo (v1 lo
             inyecta completo en cada turno). Considera depurar entradas.
           </p>

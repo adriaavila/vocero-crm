@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -115,6 +116,20 @@ export const contact = pgTable(
      * Llave de resolución WhatsApp (003): teléfono normalizado (521→52) o
      * `bsuid:<id>` cuando Meta no manda wa_id. Estable de por vida.
      */
+    /**
+     * 014: canal por el que vive este contacto. Aditivo y con default: toda
+     * fila existente sigue significando exactamente lo mismo.
+     */
+    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger"] })
+      .notNull()
+      .default("whatsapp"),
+    /**
+     * Llave de resolucion. WhatsApp: telefono normalizado (521 a 52) o
+     * `bsuid:<id>`. Instagram (014): `ig:<IGSID>`. Estable de por vida.
+     * El nombre `wa_identity` se conserva porque es contrato publicado:
+     * `/api/bot/context?waIdentity=...` lo recibe y lo devuelve, y hay
+     * cerebros externos que dependen de el.
+     */
     waIdentity: text("wa_identity").notNull(),
     /** Teléfono como ATRIBUTO opcional (003): falta en contactos BSUID. */
     phone: text("phone"),
@@ -122,14 +137,35 @@ export const contact = pgTable(
     waUserId: text("wa_user_id"),
     name: text("name").notNull(),
     notes: text("notes"),
-    /** Ficha flexible que completa el agente externo durante la calificación. */
-    ficha: jsonb("ficha").$type<Record<string, unknown>>().notNull().default({}),
+    /**
+     * Ficha de calificación que levanta un cerebro externo por
+     * `PUT /api/bot/ficha`. Es un objeto libre a propósito: los datos que
+     * importan de un lead los define cada negocio (una clínica querrá
+     * "tratamiento", una constructora "metros"), y cablearlos como columnas
+     * obligaría a migrar el CRM cada vez que alguien cambia su cuestionario.
+     * Merge campo a campo; `null` explícito borra la clave.
+     */
+    ficha: jsonb("ficha").$type<Record<string, unknown>>(),
+    /**
+     * De dónde salió el prospecto. NULL = nadie la capturó, y entonces la API
+     * la deduce. Así no hace falta backfill ni marcar en falso los contactos
+     * que ya existían.
+     */
+    source: text("source", {
+      enum: ["anuncio", "organico", "referido", "conocido", "otro"],
+    }),
     archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("contact_org_wa_identity_uq").on(t.organizationId, t.waIdentity),
+    // 014: el canal entra en la llave. Sin el, un IGSID que coincidiera con
+    // un telefono normalizado mezclaria dos personas en silencio.
+    uniqueIndex("contact_org_channel_identity_uq").on(
+      t.organizationId,
+      t.channel,
+      t.waIdentity
+    ),
     index("contact_org_wa_user_id_idx").on(t.organizationId, t.waUserId),
     index("contact_org_name_idx").on(t.organizationId, t.name),
   ]
@@ -167,6 +203,21 @@ export const lead = pgTable(
       .notNull()
       .references(() => pipelineStage.id),
     position: integer("position").notNull().default(0),
+    /**
+     * Monto de la negociación en CENTAVOS ENTEROS. NULL = nadie lo capturó, que
+     * no es lo mismo que cero: un trato sin monto no vale $0, simplemente no se
+     * sabe, y el tablero lo dice con palabras en vez de sumar un cero.
+     */
+    amountCents: integer("amount_cents"),
+    /** Moneda del monto; la del negocio al capturarlo (Ajustes → Marca). */
+    currency: text("currency"),
+    /**
+     * Prioridad de cierre. NULL = nadie la ha decidido, que NO es lo mismo que
+     * "media": nada la escribe automáticamente, así que el dueño puede confiar
+     * en que lo que ve es lo que él puso.
+     */
+    priority: text("priority", { enum: ["alta", "media", "baja"] }),
+    priorityUpdatedAt: timestamp("priority_updated_at"),
     lastActivityAt: timestamp("last_activity_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -174,6 +225,92 @@ export const lead = pgTable(
   (t) => [
     uniqueIndex("lead_contact_uq").on(t.contactId),
     index("lead_org_stage_idx").on(t.organizationId, t.stageId, t.position),
+  ]
+);
+
+/**
+ * Bitácora de movimientos de etapa: append-only. Nada se actualiza ni se borra;
+ * corregir un dato es agregar un movimiento nuevo.
+ *
+ * Es el cimiento de todo lo histórico: sin ella el CRM solo sabe dónde está
+ * cada lead HOY, y "¿cuánto cerré en julio?" no tiene respuesta.
+ *
+ * Regla dura: la ÚNICA puerta que escribe aquí —y que escribe `lead.stage_id`—
+ * es `src/server/leads/stage-history.ts`. Un unit test de vigilancia falla si
+ * aparece otra escritura, porque un camino que mueva el lead sin registrar el
+ * evento no truena: solo hace que las gráficas mientan meses después.
+ */
+export const leadStageEvent = pgTable(
+  "lead_stage_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    leadId: text("lead_id")
+      .notNull()
+      .references(() => lead.id, { onDelete: "cascade" }),
+    /** Denormalizado a propósito: casi toda agregación cruza con el contacto,
+     *  y el join extra se pagaría en cada consulta. */
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    /** NULL = el lead nació en `toStage` (evento de creación). */
+    fromStageId: text("from_stage_id").references(() => pipelineStage.id, {
+      onDelete: "set null",
+    }),
+    fromStageName: text("from_stage_name"),
+    toStageId: text("to_stage_id").references(() => pipelineStage.id, {
+      onDelete: "set null",
+    }),
+    /** Snapshots: sobreviven al renombre y al borrado de la etapa, para que
+     *  reorganizar el tablero de hoy no reescriba el embudo del pasado. */
+    toStageName: text("to_stage_name").notNull(),
+    toStageKind: text("to_stage_kind", { enum: ["open", "won", "lost"] })
+      .notNull()
+      .default("open"),
+    /** Cuándo PASÓ (no cuándo se registró). */
+    occurredAt: timestamp("occurred_at").notNull().defaultNow(),
+    /** NULL = no lo movió una persona (bot, sistema, migración). */
+    actorUserId: text("actor_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    source: text("source", {
+      enum: ["dueno", "bot", "sistema", "migracion"],
+    })
+      .notNull()
+      .default("dueno"),
+    /** true = fecha SEMBRADA en la migración, no observada. Cuenta para los
+     *  totales pero jamás para promedios de tiempo. */
+    approximate: boolean("approximate").notNull().default(false),
+    lossReason: text("loss_reason", {
+      enum: [
+        "precio",
+        "no_es_perfil",
+        "sin_presupuesto",
+        "eligio_otro",
+        "nunca_contesto",
+        "otro",
+      ],
+    }),
+    lossNote: text("loss_note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("lse_org_occurred_idx").on(t.organizationId, t.occurredAt),
+    index("lse_lead_occurred_idx").on(t.leadId, t.occurredAt),
+    index("lse_org_kind_occurred_idx").on(
+      t.organizationId,
+      t.toStageKind,
+      t.occurredAt
+    ),
+    // Perder un trato sin motivo es imposible a nivel de BASE, no por
+    // disciplina de cada ruta. La excepción es la siembra de la migración: no
+    // puede inventar un motivo que nadie capturó.
+    check(
+      "lse_loss_reason_ck",
+      sql`${t.toStageKind} <> 'lost' OR ${t.approximate} = true OR ${t.lossReason} IS NOT NULL`
+    ),
   ]
 );
 
@@ -189,10 +326,32 @@ export const conversation = pgTable(
       .references(() => contact.id, { onDelete: "cascade" }),
     /** Conversación del Laboratorio: jamás toca la API de WhatsApp. */
     isTest: boolean("is_test").notNull().default(false),
+    /**
+     * 014: canal de la conversacion. Denormalizado del contacto a proposito:
+     * el ruteo de salida y el filtro de la bandeja lo leen en cada mensaje.
+     */
+    channel: text("channel", { enum: ["whatsapp", "instagram", "messenger"] })
+      .notNull()
+      .default("whatsapp"),
+    /**
+     * 014: identificador del hilo en la plataforma de origen. Zernio entrega
+     * un conversationId opaco ("no asumas su formato") que hace falta para
+     * responder; WhatsApp no lo necesita y queda null.
+     */
+    channelThreadRef: text("channel_thread_ref"),
+    /**
+     * Apagada al nacer (fork de agencia). Upstream la abre por defecto porque
+     * una instancia = un negocio que ya configuró su agente; aquí una
+     * instancia se ENTREGA a un cliente, y una conversación real contestada
+     * por un agente a medio configurar es un incidente con el cliente final,
+     * no un bug interno. Se enciende por conversación, o en masa desde
+     * Configuración → Agente cuando el dueño ya probó el agente.
+     */
     aiEnabled: boolean("ai_enabled").notNull().default(false),
     handoffAt: timestamp("handoff_at"),
     handoffReason: text("handoff_reason", {
       // 008: manual_reply = el dueño respondió desde la app del teléfono.
+      // hostilidad = el lead se puso agresivo y el agente se retiró.
       enum: [
         "cliente",
         "modelo",
@@ -341,60 +500,86 @@ export const metaCredentials = pgTable(
   ]
 );
 
-export const booking = pgTable(
-  "booking",
+/**
+ * 014 - Credenciales del canal de Instagram. Tabla explicita (no un jsonb
+ * generico) porque unas credenciales tienen forma fija y conocida: asi
+ * conservan tipado e indices. El token se cifra con los mismos helpers que el
+ * de WhatsApp; un segundo mecanismo de cifrado seria un segundo mecanismo que
+ * auditar.
+ */
+export const instagramCredentials = pgTable(
+  "instagram_credentials",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    conversationId: text("conversation_id")
+    /** De donde vienen los mensajes: API unificada o app propia de Meta. */
+    source: text("source", { enum: ["zernio", "meta"] }).notNull(),
+    /** IG_ID del perfil profesional: por el enruta el webhook. */
+    igUserId: text("ig_user_id").notNull(),
+    /** Zernio: accountId de la cuenta conectada. Meta directo: null. */
+    accountRef: text("account_ref"),
+    username: text("username"),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    /** Secreto HMAC de las entregas (Zernio); null en modo Meta. */
+    webhookSecret: text("webhook_secret"),
+    status: text("status", { enum: ["connected", "reconnect_required"] })
       .notNull()
-      .references(() => conversation.id, { onDelete: "cascade" }),
-    contactId: text("contact_id")
-      .notNull()
-      .references(() => contact.id, { onDelete: "cascade" }),
-    startAt: timestamp("start_at").notNull(),
-    endAt: timestamp("end_at").notNull(),
-    googleEventId: text("google_event_id").notNull(),
-    meetUrl: text("meet_url"),
-    status: text("status", {
-      enum: ["pending", "confirmed", "failed", "cancelled"],
-    })
-      .notNull()
-      .default("pending"),
-    error: text("error"),
+      .default("connected"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("booking_org_start_uq").on(t.organizationId, t.startAt),
-    index("booking_org_contact_start_idx").on(
-      t.organizationId,
-      t.contactId,
-      t.startAt
-    ),
+    uniqueIndex("instagram_credentials_org_uq").on(t.organizationId),
+    uniqueIndex("instagram_credentials_ig_user_uq").on(t.igUserId),
+    index("instagram_credentials_account_ref_idx").on(t.accountRef),
   ]
 );
 
-/** OAuth es fallback: normalmente la instancia usa una cuenta de servicio. */
-export const googleCalendarConnection = pgTable(
-  "google_calendar_connection",
+/**
+ * 017 — Credenciales del canal de Messenger: la página de Facebook y su token
+ * de acceso, cifrado con el mismo AES-256-GCM que los demás. Tabla propia y
+ * explícita, como la de Instagram: unas credenciales tienen forma fija y
+ * conocida, y esconderlas en un jsonb perdería el tipado y los índices.
+ */
+export const messengerCredentials = pgTable(
+  "messenger_credentials",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
-    accountEmail: text("account_email"),
-    calendarId: text("calendar_id").notNull().default("primary"),
-    refreshTokenCipher: text("refresh_token_cipher").notNull(),
-    refreshTokenIv: text("refresh_token_iv").notNull(),
-    refreshTokenTag: text("refresh_token_tag").notNull(),
+    /** De donde vienen los mensajes: API unificada o app propia de Meta. */
+    source: text("source", { enum: ["zernio", "meta"] })
+      .notNull()
+      .default("meta"),
+    /**
+     * ID de la página de Facebook: por él enruta el webhook de Meta
+     * (`entry[].id`). En modo Zernio puede no conocerse — ahí enruta
+     * `account_ref` — así que es opcional.
+     */
+    pageId: text("page_id"),
+    pageName: text("page_name"),
+    /** Zernio: accountId de la cuenta conectada. Meta directo: null. */
+    accountRef: text("account_ref"),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    /** Secreto HMAC de las entregas (Zernio); null en modo Meta. */
+    webhookSecret: text("webhook_secret"),
+    status: text("status", { enum: ["connected", "reconnect_required"] })
+      .notNull()
+      .default("connected"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("google_calendar_connection_org_uq").on(t.organizationId),
+    uniqueIndex("messenger_credentials_org_uq").on(t.organizationId),
+    uniqueIndex("messenger_credentials_page_uq").on(t.pageId),
+    index("messenger_credentials_account_ref_idx").on(t.accountRef),
   ]
 );
 
@@ -507,6 +692,203 @@ export const agentTestRun = pgTable(
   ]
 );
 
+/* ============================================================
+ * 015 — Motor de agenda (detrás de la bandera AGENDA)
+ *
+ * Las tablas se crean SIEMPRE, encendida o apagada la bandera: una tabla
+ * vacía es inerte, y a cambio todas las instancias del mundo comparten la
+ * misma estructura y la misma cadena de migraciones (ADR-001).
+ * ============================================================ */
+
+/** Configuración de la agenda del negocio: una fila por organización. */
+export const calendarSettings = pgTable(
+  "calendar_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** `{"mon":[{"start":"09:00","end":"18:00"}]}` — hora de PARED, no UTC. */
+    weeklyHours: jsonb("weekly_hours").notNull(),
+    slotMinutes: integer("slot_minutes").notNull().default(30),
+    bufferMinutes: integer("buffer_minutes").notNull().default(0),
+    minNoticeHours: integer("min_notice_hours").notNull().default(2),
+    maxDaysAhead: integer("max_days_ahead").notNull().default(7),
+    timezone: text("timezone").notNull().default("America/Mexico_City"),
+    /**
+     * Cómo se entrega la reunión. `enlace-fijo` no habla con nadie: es el
+     * default y la razón de que encender la agenda no exija terceros.
+     * Un fork agrega el suyo al catálogo del código sin tocar esta columna.
+     */
+    connector: text("connector").notNull().default("enlace-fijo"),
+    /** Sala fija del conector `enlace-fijo`; null ⇒ citas sin link. */
+    meetingLink: text("meeting_link"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("calendar_settings_org_uq").on(t.organizationId)]
+);
+
+/**
+ * La cita. Una sola tabla para sesiones y bloqueos manuales: un bloqueo es
+ * una cita sin contacto que ocupa agenda igual.
+ */
+export const booking = pgTable(
+  "booking",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["session", "block"] })
+      .notNull()
+      .default("session"),
+    status: text("status", {
+      enum: ["agendada", "realizada", "no_show", "cancelada"],
+    })
+      .notNull()
+      .default("agendada"),
+    source: text("source", { enum: ["manual", "ai"] })
+      .notNull()
+      .default("manual"),
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "cascade",
+    }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    leadId: text("lead_id").references(() => lead.id, { onDelete: "set null" }),
+    /** Instante UTC. El horario semanal es de pared; esto ya está resuelto. */
+    scheduledAt: timestamp("scheduled_at").notNull(),
+    /** Capturada al crear: cambiar la configuración no reescribe el pasado. */
+    durationMinutes: integer("duration_minutes").notNull(),
+    /**
+     * Con qué conector nació la ENTREGA. Reprogramar y cancelar hablan con
+     * ESTE, no con el activo: si el negocio cambia de proveedor, las citas ya
+     * confirmadas siguen viviendo donde se crearon.
+     */
+    connector: text("connector"),
+    /** Id de la reunión/evento en el proveedor; null en `enlace-fijo`. */
+    externalRef: text("external_ref"),
+    /**
+     * El link que se le dio al cliente. Se COPIA, no se lee de la
+     * configuración: la cita es un hecho histórico, no una vista del presente.
+     */
+    meetingLink: text("meeting_link"),
+    /**
+     * El proveedor falló al crear la reunión. La cita existe igual —un tercero
+     * caído no cuesta la conversión— y el operador reintenta desde "Citas".
+     */
+    linkPending: boolean("link_pending").notNull().default(false),
+    /** Conversación del Laboratorio: jamás llama a un conector real. */
+    isTest: boolean("is_test").notNull().default(false),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("booking_org_when_idx").on(t.organizationId, t.scheduledAt),
+    index("booking_org_status_idx").on(t.organizationId, t.status),
+    /**
+     * Anti doble-booking ATÓMICO. La re-validación al confirmar deja una
+     * ventana entre leer y escribir; esto la cierra en la BASE: dos
+     * confirmaciones simultáneas del mismo instante no pueden ganar las dos, y
+     * la perdedora recibe un 23505 que el servicio traduce a `slot_taken` con
+     * alternativas frescas. Las citas de prueba quedan fuera: no consumen la
+     * agenda real.
+     */
+    uniqueIndex("booking_org_active_slot_uq")
+      .on(t.organizationId, t.scheduledAt)
+      .where(
+        sql`${t.status} in ('agendada','realizada') and ${t.isTest} = false`
+      ),
+  ]
+);
+
+/**
+ * La memoria de lo ofrecido. Es lo que hace verificable el requisito
+ * innegociable: sin fila aquí, no hay reserva.
+ *
+ * Vive en el CRM y no en quien conduce la conversación porque Vocero promete
+ * "conecta TU propio cerebro": con la garantía del lado del cliente, cualquier
+ * cerebro podría reservar un instante que jamás se ofreció y el CRM lo
+ * aceptaría.
+ */
+export const offeredSlot = pgTable(
+  "offered_slot",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    startUtc: timestamp("start_utc").notNull(),
+    /** La etiqueta EXACTA que se le mostró al cliente. */
+    label: text("label").notNull(),
+    offeredAt: timestamp("offered_at").notNull().defaultNow(),
+  },
+  (t) => [index("offered_slot_conv_idx").on(t.conversationId, t.startUtc)]
+);
+
+/**
+ * Credenciales del conector Zoom (app Server-to-Server del propio negocio).
+ * Tabla explícita como las de WhatsApp e Instagram: unas credenciales tienen
+ * forma fija y conocida, y así conservan tipado e índices. El secreto se cifra
+ * con los mismos helpers; un segundo mecanismo sería otro que auditar.
+ */
+export const zoomCredentials = pgTable(
+  "zoom_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    accountId: text("account_id").notNull(),
+    clientId: text("client_id").notNull(),
+    secretCipher: text("secret_cipher").notNull(),
+    secretIv: text("secret_iv").notNull(),
+    secretTag: text("secret_tag").notNull(),
+    /** `error` SE ESCRIBE cuando el proveedor rechaza la autenticación. */
+    status: text("status", { enum: ["connected", "error"] })
+      .notNull()
+      .default("connected"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("zoom_credentials_org_uq").on(t.organizationId)]
+);
+
+/**
+ * Credenciales del conector Google (Calendar + Meet), de la app de Google
+ * Cloud del propio negocio. DOS secretos cifrados: el client secret y el
+ * refresh token pegado una sola vez.
+ */
+export const googleCredentials = pgTable(
+  "google_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    clientSecretCipher: text("client_secret_cipher").notNull(),
+    clientSecretIv: text("client_secret_iv").notNull(),
+    clientSecretTag: text("client_secret_tag").notNull(),
+    refreshTokenCipher: text("refresh_token_cipher").notNull(),
+    refreshTokenIv: text("refresh_token_iv").notNull(),
+    refreshTokenTag: text("refresh_token_tag").notNull(),
+    calendarId: text("calendar_id").notNull().default("primary"),
+    status: text("status", { enum: ["connected", "error"] })
+      .notNull()
+      .default("connected"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("google_credentials_org_uq").on(t.organizationId)]
+);
+
 export const agentTestCase = pgTable(
   "agent_test_case",
   {
@@ -532,4 +914,136 @@ export const agentTestCase = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("test_case_run_idx").on(t.runId)]
+);
+
+/* ============================================================
+ * 016 — Atribución de anuncios y Conversions API
+ * (detrás de la bandera ATRIBUCION)
+ * ============================================================ */
+
+/**
+ * De qué anuncio vino una conversación. El primer referral gana: el UNIQUE de
+ * abajo es lo que vuelve idempotente la captura ante los reintentos de Meta,
+ * en vez de un "consulta y luego inserta" que dos webhooks simultáneos
+ * ganarían los dos.
+ */
+export const adAttribution = pgTable(
+  "ad_attribution",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    /**
+     * El identificador del clic en el anuncio. Es la llave de TODO: sin él no
+     * hay nada que reportarle a Meta. Nullable porque hay referrals sin clid.
+     */
+    ctwaClid: text("ctwa_clid"),
+    sourceId: text("source_id"),
+    sourceType: text("source_type"),
+    sourceUrl: text("source_url"),
+    headline: text("headline"),
+    body: text("body"),
+    mediaType: text("media_type"),
+    /**
+     * Payload íntegro del referral. Es la póliza contra "Meta agregó un campo":
+     * nada se pierde y un fork puede pintar el creativo sin migrar nada.
+     */
+    raw: jsonb("raw").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ad_attribution_org_conversation_uq").on(
+      t.organizationId,
+      t.conversationId
+    ),
+    index("ad_attribution_org_contact_idx").on(t.organizationId, t.contactId),
+  ]
+);
+
+/**
+ * Cada intento de reportarle un desenlace a Meta. Las filas `skipped` no son
+ * basura: son la respuesta a "¿por qué este lead no aparece en Meta?", que sin
+ * ellas se contesta adivinando.
+ */
+export const conversionEvent = pgTable(
+  "conversion_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    attributionId: text("attribution_id").references(() => adAttribution.id, {
+      onDelete: "set null",
+    }),
+    /** Nombre del catálogo de Meta tal cual (`QualifiedLead`, `Purchase`). */
+    eventName: text("event_name").notNull(),
+    status: text("status", { enum: ["pending", "sent", "failed", "skipped"] })
+      .notNull()
+      .default("pending"),
+    /** Motivo legible: por qué se omitió, o qué contestó Meta. */
+    error: text("error"),
+    /**
+     * Acuse del envío. Es la única referencia que Meta pide para rastrear un
+     * evento de su lado; sin persistirla, un `sent` no se puede reclamar.
+     */
+    fbTraceId: text("fb_trace_id"),
+    sentAt: timestamp("sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // El dedup ES este índice: la fila se inserta ANTES de hablar con Meta y
+    // con ON CONFLICT DO NOTHING. Dos movimientos simultáneos del mismo lead
+    // no pueden mandar dos compras.
+    uniqueIndex("conversion_event_org_conv_name_uq").on(
+      t.organizationId,
+      t.conversationId,
+      t.eventName
+    ),
+    index("conversion_event_org_created_idx").on(
+      t.organizationId,
+      t.createdAt
+    ),
+  ]
+);
+
+/** Conexión del negocio con su dataset de Meta (token cifrado en reposo). */
+export const capiSettings = pgTable(
+  "capi_settings",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    datasetId: text("dataset_id").notNull(),
+    tokenCipher: text("token_cipher").notNull(),
+    tokenIv: text("token_iv").notNull(),
+    tokenTag: text("token_tag").notNull(),
+    /**
+     * Qué etapa significa "lead calificado" PARA ESTE NEGOCIO. Las etapas
+     * sembradas de Vocero no incluyen ninguna con ese nombre y cada quien
+     * renombra las suyas, así que se elige en vez de adivinarse. NULL = ese
+     * evento no se emite. `set null` a propósito: borrar la etapa apaga el
+     * evento, no rompe la configuración.
+     */
+    qualifiedStageId: text("qualified_stage_id").references(
+      () => pipelineStage.id,
+      { onDelete: "set null" }
+    ),
+    status: text("status", { enum: ["connected", "error"] })
+      .notNull()
+      .default("connected"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("capi_settings_org_uq").on(t.organizationId)]
 );

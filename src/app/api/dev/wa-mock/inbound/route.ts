@@ -26,6 +26,10 @@ const schema = z
     caption: z.string().optional(),
     filename: z.string().optional(),
     location: z.record(z.unknown()).optional(),
+    // 016 — anuncio de origen simulado (referral)
+    ctwaClid: z.string().optional(),
+    adHeadline: z.string().optional(),
+    adSourceId: z.string().optional(),
   })
   .refine((v) => v.from || v.fromUserId, {
     message: "Se requiere from o fromUserId",

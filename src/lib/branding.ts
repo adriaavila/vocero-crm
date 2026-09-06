@@ -1,5 +1,7 @@
+import { DEFAULT_CURRENCY, isCurrency, type Currency } from "@/lib/money";
+
 /**
- * White-label: nombre del CRM + acento por organización.
+ * White-label: nombre del CRM, acento y moneda por organización.
  * Presets sobrios del sistema Atlas; para un color personalizado se derivan
  * hover/soft/tint/text y se garantiza contraste con texto blanco.
  */
@@ -10,32 +12,72 @@ export type AccentSet = {
   soft: string;
   tint: string;
   text: string;
+  /** Tinta legible ENCIMA del acento (botones, badges). */
+  fg: string;
+};
+
+/** El acento se deriva distinto según el tema activo. */
+export type ThemeMode = "light" | "dark";
+
+/**
+ * Icono subido. Solo el tipo y una versión: el binario vive en el volumen de
+ * medios, porque `organization.metadata` se lee en CADA render de página y
+ * meter ahí un archivo en base64 haría pagar ese peso en todas.
+ */
+export type BrandingFavicon = {
+  mime: string;
+  /**
+   * Marca de tiempo de la carga. Es lo que hace que el navegador suelte el
+   * icono anterior. No es un contador a propósito: al quitar el icono no queda
+   * dónde recordar por cuál íbamos, y reiniciar en 1 repetiría una URL ya
+   * cacheada con OTRO logo dentro.
+   */
+  version: number;
 };
 
 export type Branding = {
   name: string;
   accent: string; // hex del acento base elegido
+  /** Moneda del negocio: la única que el tablero suma. */
+  currency: Currency;
+  /** `null` = se dibuja con la inicial sobre el acento (ver `lib/favicon`). */
+  favicon: BrandingFavicon | null;
 };
 
-export const DEFAULT_BRANDING: Branding = { name: "Vocero", accent: "#3f5972" };
+export const DEFAULT_BRANDING: Branding = {
+  name: "Vocero",
+  // El azul eléctrico de vocerocrm.com: la instancia recién instalada se ve
+  // igual que la landing. Una agencia lo cambia en Configuración → Marca.
+  accent: "#0d5bff",
+  currency: DEFAULT_CURRENCY,
+  favicon: null,
+};
 
-/** Presets del handoff (valores exactos). */
+/**
+ * Presets. El primero es la marca Vocero (valores exactos de la landing); los
+ * demás son los tonos sobrios del handoff Atlas, que siguen disponibles para
+ * quien quiera un CRM más discreto.
+ */
 export const ACCENT_PRESETS: Record<string, { label: string; set: AccentSet }> = {
+  "#0d5bff": {
+    label: "Azul Vocero",
+    set: { accent: "#0d5bff", hover: "#0a4de6", soft: "#d3e2ff", tint: "#ebf1ff", text: "#0038d8", fg: "#ffffff" },
+  },
   "#3f5972": {
     label: "Azul acero",
-    set: { accent: "#3f5972", hover: "#334a60", soft: "#dde5ee", tint: "#f3f6f9", text: "#2b4056" },
+    set: { accent: "#3f5972", hover: "#334a60", soft: "#dde5ee", tint: "#f3f6f9", text: "#2b4056", fg: "#ffffff" },
   },
   "#4b5563": {
     label: "Grafito",
-    set: { accent: "#4b5563", hover: "#3b4350", soft: "#e2e5ea", tint: "#f4f5f7", text: "#333a45" },
+    set: { accent: "#4b5563", hover: "#3b4350", soft: "#e2e5ea", tint: "#f4f5f7", text: "#333a45", fg: "#ffffff" },
   },
   "#3f6b66": {
     label: "Verde apagado",
-    set: { accent: "#3f6b66", hover: "#335752", soft: "#dcebe8", tint: "#f2f8f6", text: "#2b4a46" },
+    set: { accent: "#3f6b66", hover: "#335752", soft: "#dcebe8", tint: "#f2f8f6", text: "#2b4a46", fg: "#ffffff" },
   },
   "#5f5470": {
     label: "Ciruela",
-    set: { accent: "#5f5470", hover: "#4d4459", soft: "#e6e1ec", tint: "#f6f4f8", text: "#443c52" },
+    set: { accent: "#5f5470", hover: "#4d4459", soft: "#e6e1ec", tint: "#f6f4f8", text: "#443c52", fg: "#ffffff" },
   },
 };
 
@@ -80,34 +122,91 @@ function luminance({ r, g, b }: Rgb): number {
   return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
 }
 
-/**
- * Set completo para cualquier acento: preset exacto si existe; si no, se
- * deriva. Un base demasiado claro (texto blanco ilegible encima) se oscurece
- * hasta contraste ≥ 3:1 con blanco.
- */
-export function resolveAccentSet(accentHex: string): AccentSet {
-  const preset = ACCENT_PRESETS[accentHex.toLowerCase()];
-  if (preset) return preset.set;
-  if (!isValidHex(accentHex)) return ACCENT_PRESETS["#3f5972"]!.set;
+/** Contraste WCAG entre dos colores. */
+function contrast(a: Rgb, b: Rgb): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [
+    number,
+    number,
+  ];
+  return (hi + 0.05) / (lo + 0.05);
+}
 
-  let base = hexToRgb(accentHex.toLowerCase());
-  // contraste con blanco = (1.05) / (L + 0.05); exigir ≥ 3
-  while (1.05 / (luminance(base) + 0.05) < 3 && luminance(base) > 0.005) {
-    base = mix(base, BLACK, 0.12);
+/** Fondo de referencia del tema oscuro (debe seguir a `--bg` de globals.css). */
+const DARK_BG: Rgb = { r: 0x0b, g: 0x13, b: 0x27 };
+
+/**
+ * Set completo para cualquier acento, según el tema.
+ *
+ * Claro: preset exacto si existe; si no se deriva mezclando hacia blanco, y un
+ * base demasiado claro (texto blanco ilegible encima) se oscurece hasta
+ * contraste ≥ 3:1 con blanco.
+ *
+ * Oscuro: los presets NO aplican — un acento pensado para fondo blanco se
+ * hunde en el fondo oscuro. Se aclara hasta contraste ≥ 3.5:1 con el fondo y
+ * las variantes soft/tint se mezclan hacia el fondo oscuro, no hacia blanco.
+ */
+export function resolveAccentSet(
+  accentHex: string,
+  mode: ThemeMode = "light"
+): AccentSet {
+  if (mode === "light") {
+    const preset = ACCENT_PRESETS[accentHex.toLowerCase()];
+    if (preset) return preset.set;
+    if (!isValidHex(accentHex)) return ACCENT_PRESETS[DEFAULT_BRANDING.accent]!.set;
+
+    let base = hexToRgb(accentHex.toLowerCase());
+    // contraste con blanco = (1.05) / (L + 0.05); exigir ≥ 3
+    while (1.05 / (luminance(base) + 0.05) < 3 && luminance(base) > 0.005) {
+      base = mix(base, BLACK, 0.12);
+    }
+    return {
+      accent: rgbToHex(base),
+      hover: rgbToHex(mix(base, BLACK, 0.16)),
+      soft: rgbToHex(mix(base, WHITE, 0.82)),
+      tint: rgbToHex(mix(base, WHITE, 0.94)),
+      text: rgbToHex(mix(base, BLACK, 0.28)),
+      fg: "#ffffff",
+    };
+  }
+
+  let base = hexToRgb(
+    isValidHex(accentHex) ? accentHex.toLowerCase() : DEFAULT_BRANDING.accent
+  );
+  while (contrast(base, DARK_BG) < 3.5 && luminance(base) < 0.95) {
+    base = mix(base, WHITE, 0.1);
   }
   return {
     accent: rgbToHex(base),
-    hover: rgbToHex(mix(base, BLACK, 0.16)),
-    soft: rgbToHex(mix(base, WHITE, 0.82)),
-    tint: rgbToHex(mix(base, WHITE, 0.94)),
-    text: rgbToHex(mix(base, BLACK, 0.28)),
+    hover: rgbToHex(mix(base, WHITE, 0.16)),
+    soft: rgbToHex(mix(base, DARK_BG, 0.72)),
+    tint: rgbToHex(mix(base, DARK_BG, 0.88)),
+    text: rgbToHex(mix(base, WHITE, 0.28)),
+    // Sobre un acento ya aclarado, la tinta blanca deja de leerse.
+    fg: contrast(base, WHITE) >= 3 ? "#ffffff" : "#0f1419",
   };
 }
 
-/** CSS de variables para inyectar en el <head> (SSR, sin flash). */
+function accentBlock(selector: string, s: AccentSet): string {
+  return `${selector}{--accent:${s.accent};--accent-hover:${s.hover};--accent-soft:${s.soft};--accent-tint:${s.tint};--accent-text:${s.text};--accent-fg:${s.fg};}`;
+}
+
+/**
+ * CSS de variables para inyectar en el <head> (SSR, sin flash). Emite los DOS
+ * temas aunque el servidor ya sepa cuál está activo: el botón de tema cambia
+ * `data-theme` en el cliente sin recargar, así que el CSS del otro tema tiene
+ * que estar presente desde el primer pintado.
+ *
+ * El selector va duplicado (`:root:root`) a propósito: así gana en
+ * especificidad a los bloques de globals.css sin depender del orden de carga.
+ */
 export function accentCssVariables(accentHex: string): string {
-  const s = resolveAccentSet(accentHex);
-  return `:root{--accent:${s.accent};--accent-hover:${s.hover};--accent-soft:${s.soft};--accent-tint:${s.tint};--accent-text:${s.text};}`;
+  return (
+    accentBlock(":root:root", resolveAccentSet(accentHex, "light")) +
+    accentBlock(
+      ':root:root[data-theme="dark"]',
+      resolveAccentSet(accentHex, "dark")
+    )
+  );
 }
 
 export function normalizeBranding(input: Partial<Branding> | null): Branding {
@@ -116,5 +215,15 @@ export function normalizeBranding(input: Partial<Branding> | null): Branding {
     input?.accent && isValidHex(input.accent)
       ? input.accent.toLowerCase()
       : DEFAULT_BRANDING.accent;
-  return { name, accent };
+  const currency = isCurrency(input?.currency)
+    ? input.currency
+    : DEFAULT_BRANDING.currency;
+  // El icono no se toca desde el formulario de marca: se sube y se quita por
+  // su propia ruta. Un PUT de nombre/color no debe borrarlo de rebote.
+  const f = input?.favicon;
+  const favicon =
+    f && typeof f.mime === "string" && Number.isFinite(f.version)
+      ? { mime: f.mime, version: Math.max(1, Math.floor(f.version)) }
+      : null;
+  return { name, accent, currency, favicon };
 }

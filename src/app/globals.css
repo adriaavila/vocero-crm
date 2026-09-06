@@ -3,53 +3,150 @@
 @tailwind utilities;
 
 /*
-  Sistema de diseño "Atlas": modo claro sobrio (neutros fríos + un acento).
+  Sistema de diseño de Vocero: la misma marca que vocerocrm.com dentro del CRM.
+  Papel frío (#f6f8fc), tinta azul marino, acento azul eléctrico con remate
+  cian, tipografía Archivo para la interfaz, Instrument Serif itálica para los
+  acentos editoriales e IBM Plex Mono para etiquetas y horas.
+
+  El tema activo se selecciona con `data-theme` en <html> (ver src/lib/theme.ts):
+  el servidor lo escribe desde la cookie, así que no hay parpadeo.
   Los tokens de acento (--accent*) se sobreescriben en runtime por el
-  white-label de la organización (Configuración → Marca).
+  white-label de la organización (Configuración → Marca), para AMBOS temas.
 */
 @layer base {
   :root {
-    /* Neutros (valores exactos del handoff) */
+    color-scheme: light;
+
+    /* Neutros: papel frío de la landing */
     --bg: #ffffff;
-    --bg-subtle: #fbfbfc;
-    --bg-panel: #f8f8f9;
-    --bg-hover: #f4f4f5;
-    --workspace: #f5f5f3;
-    --text: #1a1a1e;
-    --text-2: #56565e;
-    --text-3: #8c8c95;
-    --text-4: #aeaeb6;
-    --border: #ecedf0;
-    --border-strong: #e0e1e6;
+    --bg-subtle: #f6f8fc;
+    --bg-panel: #eef2f9;
+    --bg-hover: #e9eef8;
+    --text: #0a1730;
+    --text-2: #42506b;
+    --text-3: #8391aa;
+    --text-4: #aab4c8;
+    --border: #e8edf6;
+    --border-strong: #dde5f1;
 
-    /* Chat */
-    --chat-bg: #f4f5f7;
-    --bubble-out: #f2f5f8;
-    --bubble-out-text: #33414f;
+    /* Chat: el cliente entra en verde WhatsApp, el CRM contesta en el acento */
+    --chat-bg: #f6f8fc;
+    --bubble-in: #eaf7ef;
+    --bubble-in-border: #d7eede;
+    --bubble-out: var(--accent-tint);
+    --bubble-out-border: var(--accent-soft);
+    --bubble-out-text: var(--text);
 
-    /* Acento (default: azul acero apagado; white-label lo sobreescribe) */
-    --accent: #3f5972;
-    --accent-hover: #334a60;
-    --accent-soft: #dde5ee;
-    --accent-tint: #f3f6f9;
-    --accent-text: #2b4056;
+    /* Acento (default: azul Vocero; el white-label lo sobreescribe) */
+    --accent: #0d5bff;
+    --accent-hover: #0a4de6;
+    --accent-soft: #d3e2ff;
+    --accent-tint: #ebf1ff;
+    --accent-text: #0038d8;
+    --accent-fg: #ffffff;
+    /* Velo translúcido ENCIMA del acento (contadores dentro de un chip). */
+    --accent-veil: rgba(255, 255, 255, 0.22);
     --bg-active: var(--accent-tint);
 
-    /* Estado */
-    --success: #5f8f74;
-    --warning: #b08b5e;
-    --danger: #a2504c;
+    /* Estado: color puro + tríada (tint = fondo, soft = borde, text = tinta) */
+    --success: #1fb35b;
+    --success-tint: #e9f7ee;
+    --success-soft: #c9ebd6;
+    --success-text: #157a41;
 
-    /* Radios y sombras */
-    --radius-sm: 7px;
-    --radius: 10px;
-    --radius-lg: 14px;
-    --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.05);
-    --shadow-md: 0 6px 20px -6px rgba(20, 20, 35, 0.12);
-    --shadow-pop: 0 12px 32px -8px rgba(20, 20, 35, 0.22);
+    --warning: #f2a71b;
+    --warning-tint: #fef6e6;
+    --warning-soft: #f8e3b5;
+    --warning-text: #935f0b;
+
+    --danger: #d94a4a;
+    --danger-tint: #fdf0f0;
+    --danger-soft: #f5cccc;
+    --danger-text: #b73535;
+    --danger-fg: #ffffff;
+
+    --info: #0d5bff;
+    --info-tint: #ebf1ff;
+    --info-soft: #d3e2ff;
+    --info-text: #0038d8;
+
+    /* Superficies auxiliares */
+    --overlay: rgba(4, 16, 46, 0.55);
+    --knob: #ffffff;
+
+    /* Radios y sombras (las de la landing, con tinte azul marino) */
+    --radius-sm: 9px;
+    --radius: 12px;
+    --radius-lg: 16px;
+    --shadow-sm: 0 1px 2px rgba(8, 27, 82, 0.06);
+    --shadow-md: 0 14px 40px -16px rgba(8, 27, 82, 0.16);
+    --shadow-pop: 0 30px 80px -20px rgba(8, 27, 82, 0.22),
+      0 8px 24px -12px rgba(8, 27, 82, 0.12);
 
     /* Densidad de filas de conversación */
     --row-py: 11px;
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+
+    /* Neutros: el azul marino de las secciones oscuras de la landing */
+    --bg: #0b1327;
+    --bg-subtle: #070e20;
+    --bg-panel: #111b36;
+    --bg-hover: #172346;
+    --text: #e8eefc;
+    --text-2: #a9b8dc;
+    --text-3: #7688b0;
+    --text-4: #55648a;
+    --border: #1a2748;
+    --border-strong: #26376a;
+
+    /* Chat */
+    --chat-bg: #070e20;
+    --bubble-in: #0f2419;
+    --bubble-in-border: #1c3b2a;
+
+    /* Acento: respaldo con el azul Vocero ya aclarado para fondo oscuro; el
+       white-label lo recalcula (ver resolveAccentSet en lib/branding). */
+    --accent: #256bff;
+    --accent-hover: #4883ff;
+    --accent-soft: #122c64;
+    --accent-tint: #0e1e41;
+    --accent-text: #6294ff;
+    --accent-fg: #ffffff;
+    --accent-veil: rgba(0, 0, 0, 0.22);
+
+    /* Estado sobre fondo oscuro */
+    --success: #4fd07f;
+    --success-tint: #0f2418;
+    --success-soft: #1c3d29;
+    --success-text: #7fe0a3;
+
+    --warning: #f5b74a;
+    --warning-tint: #2a1f0c;
+    --warning-soft: #4a3714;
+    --warning-text: #f7c86f;
+
+    --danger: #ef6b6b;
+    --danger-tint: #2a1216;
+    --danger-soft: #4a1f26;
+    --danger-text: #f59a9a;
+    --danger-fg: #1b0d10;
+
+    --info: #6a9dff;
+    --info-tint: #101c3a;
+    --info-soft: #1d3468;
+    --info-text: #9dbbff;
+
+    --overlay: rgba(2, 8, 24, 0.74);
+    --knob: #dfe6fa;
+
+    /* Sombras: sobre oscuro necesitan más negro para leerse */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-md: 0 14px 40px -16px rgba(0, 0, 0, 0.6);
+    --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.75),
+      0 8px 24px -12px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -60,13 +157,11 @@
   body {
     @apply bg-background text-foreground antialiased;
     letter-spacing: -0.01em;
+    text-rendering: optimizeLegibility;
   }
-  button,
-  a,
-  input,
-  select,
-  textarea {
-    -webkit-tap-highlight-color: transparent;
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-fg);
   }
   ::-webkit-scrollbar {
     width: 8px;
@@ -82,15 +177,91 @@
 }
 
 @layer components {
-  .module-cap {
-    background-color: var(--bg-subtle);
-    background-image: repeating-linear-gradient(
-      135deg,
-      transparent 0,
-      transparent 7px,
-      rgba(30, 35, 45, 0.025) 7px,
-      rgba(30, 35, 45, 0.025) 8px
+  /* Mosaico de marca: degradado del acento, como el favicon */
+  .brand-tile {
+    background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  }
+
+  /* Rejilla difuminada del hero de la landing (login) */
+  .brand-grid {
+    background-image:
+      linear-gradient(to right, var(--accent-soft) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--accent-soft) 1px, transparent 1px);
+    background-size: 52px 52px;
+    opacity: 0.3;
+    -webkit-mask-image: radial-gradient(
+      ellipse 90% 80% at 50% 20%,
+      #000 30%,
+      transparent 75%
     );
+    mask-image: radial-gradient(ellipse 90% 80% at 50% 20%, #000 30%, transparent 75%);
+  }
+
+  /* Resplandores suaves que flotan detrás del formulario */
+  .brand-glow {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(90px);
+    pointer-events: none;
+  }
+  .brand-glow-a {
+    width: 640px;
+    height: 640px;
+    right: -160px;
+    top: -120px;
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--accent) 16%, transparent),
+      transparent 65%
+    );
+    animation: brand-drift 14s ease-in-out infinite alternate;
+  }
+  .brand-glow-b {
+    width: 460px;
+    height: 460px;
+    left: -140px;
+    bottom: -180px;
+    background: radial-gradient(circle, rgba(0, 198, 245, 0.14), transparent 65%);
+    animation: brand-drift 18s ease-in-out infinite alternate-reverse;
+  }
+  @keyframes brand-drift {
+    from {
+      transform: translate(0, 0) scale(1);
+    }
+    to {
+      transform: translate(-40px, 30px) scale(1.08);
+    }
+  }
+
+  /* Fondo del hilo: un leve resplandor del acento en la esquina, como en el
+     mockup de la landing. Si el navegador no sabe color-mix, queda el plano. */
+  .thread-bg {
+    background-color: var(--chat-bg);
+    background-image: radial-gradient(
+      circle at 82% 0%,
+      color-mix(in srgb, var(--accent) 7%, transparent),
+      transparent 55%
+    );
+  }
+
+  /* Etiqueta editorial en mono: "01 · BANDEJA", "ETAPA", "NOTAS" */
+  .kicker {
+    @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-text-3;
+  }
+}
+
+/*
+  Safari en iOS hace zoom a la página cuando enfocas un campo cuya tipografía
+  mide menos de 16px, y luego no la devuelve: escribir en la Bandeja dejaba el
+  CRM descuadrado. Por debajo de `md` subimos el mínimo de TODO campo de texto
+  (los `select` quedan fuera: abren su propia rueda nativa y varios viven como
+  chips angostos). Va con `!important` a propósito — compite contra utilidades
+  de Tailwind (`text-sm`, `text-xs`) que ganan por especificidad de clase.
+*/
+@media (max-width: 767px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea {
+    font-size: 16px !important;
   }
 }
 

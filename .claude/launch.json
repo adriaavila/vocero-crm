@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "vocero-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev"],
+      "port": 3000,
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=8192"
+      }
+    }
+  ]
+}

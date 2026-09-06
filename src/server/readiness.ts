@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAgentConfigured, isWahaConfigured } from "@/lib/env";
 import { getBranding } from "@/server/branding";
+import { pasoAgenda, type PasoAgenda } from "@/server/agencia/readiness-agenda";
 
 export type ReadinessStepId =
   | "whatsapp"
@@ -11,7 +12,9 @@ export type ReadinessStepId =
   | "agent_profile"
   | "knowledge"
   | "simulation"
-  | "live_test";
+  | "live_test"
+  // Capa de agencia: solo aparece con la bandera AGENDA encendida.
+  | "agenda";
 export type ReadinessStepStatus = "complete" | "pending" | "stale" | "unavailable";
 export type ReadinessStep = {
   id: ReadinessStepId;
@@ -39,6 +42,8 @@ type Input = {
   redCount: number;
   brandingCustomized: boolean;
   teamMemberCount: number;
+  /** Capa de agencia: el paso de la agenda, o null si esta instancia no agenda. */
+  agendaStep: PasoAgenda | null;
 };
 
 export function evaluateReadiness(input: Input): ReadinessResponse {
@@ -124,9 +129,14 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
           : liveStatus === "unavailable"
             ? "La prueba real no está habilitada en esta instancia."
             : "Comprueba la experiencia desde un WhatsApp real.",
-      href: "/lab?mode=live",
+      href: "/lab",
     },
   ];
+
+  // Capa de agencia: solo si esta instancia agenda. Va antes de las pruebas
+  // porque probar un agente que no tiene horarios que ofrecer no prueba nada.
+  // Llega resuelto desde fuera para que esta función siga siendo PURA.
+  if (input.agendaStep) steps.splice(4, 0, input.agendaStep);
 
   return {
     overall: steps.every((step) => step.status === "complete") ? "ready" : "needs_attention",
@@ -179,5 +189,6 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
     redCount: redRows[0]?.count ?? 0,
     brandingCustomized: branding.name !== DEFAULT_BRANDING.name || branding.accent !== DEFAULT_BRANDING.accent,
     teamMemberCount: members[0]?.count ?? 0,
+    agendaStep: await pasoAgenda(organizationId),
   });
 }
