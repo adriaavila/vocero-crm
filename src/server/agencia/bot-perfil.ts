@@ -35,6 +35,7 @@ import { agendaEnabled } from "@/server/agenda/flag";
 export async function perfilDeAgencia(organizationId: string): Promise<{
   activationEnabled: boolean;
   activationMessages: string[];
+  timezone: string;
 }> {
   const rows = await getDb()
     .select({
@@ -46,12 +47,25 @@ export async function perfilDeAgencia(organizationId: string): Promise<{
     .limit(1);
 
   const row = rows[0];
+  // La zona del NEGOCIO, no la del servidor ni la del bot.
+  //
+  // El cerebro externo redacta "mañana" y "el jueves" con su propio reloj. Si
+  // ese reloj no es el mismo con el que el motor etiquetó los huecos, el
+  // agente y el CRM hablan de dos jueves distintos: el modelo ofrece un día y
+  // reserva otro, o propone una hora que ya pasó. Una constante en el bot
+  // (`America/Mexico_City` cableada) es el mismo fallo con más pasos.
+  //
+  // La verdad vive en `calendar_settings`, que es de donde salen las
+  // etiquetas. Viaja siempre, con la agenda encendida o apagada: la fecha de
+  // referencia le hace falta al agente aunque no agende nada.
+  const settings = await getSettings(organizationId);
   return {
     activationEnabled: row?.activationEnabled ?? false,
     // Tolerante a propósito: la columna guardó objetos `{message}` en una
     // versión vieja del fork, y una instancia sin migrar no debe tumbar el
     // perfil entero por un formato heredado.
     activationMessages: normalizarMensajes(row?.activationMessages),
+    timezone: settings.timezone,
   };
 }
 

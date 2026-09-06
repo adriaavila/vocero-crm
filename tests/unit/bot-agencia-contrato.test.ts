@@ -53,6 +53,10 @@ function query(rows: unknown[]) {
   return chain;
 }
 
+vi.mock("@/server/agenda/settings", () => ({
+  getSettings: async () => ({ timezone: "America/Caracas" }),
+}));
+
 vi.mock("@/lib/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db")>();
   return {
@@ -68,6 +72,13 @@ describe("contrato de agencia con el cerebro externo", () => {
     const out = await perfilDeAgencia("org_1");
     expect(out.activationEnabled).toBe(true);
     expect(out.activationMessages).toEqual(["quiero informacion"]);
+  });
+
+  it("y la zona del negocio, para que el bot no invente el día", async () => {
+    // Nea redacta "mañana" y "el jueves" con esta zona. Si no viaja, cae a su
+    // constante cableada y el agente vive en otro día que el motor de agenda.
+    const out = await perfilDeAgencia("org_1");
+    expect(out.timezone).toBe("America/Caracas");
   });
 
   it("el contexto lleva la allowlist", async () => {
