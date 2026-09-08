@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   CONNECTOR_META,
@@ -160,7 +161,26 @@ export function AgendaClient() {
     void refreshPreview();
   }
 
-  if (!settings) return <p className="text-sm text-text-3">Cargando…</p>;
+  if (!settings) {
+    return (
+      <div className="max-w-2xl">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-44" />
+            <Skeleton className="h-4 w-full max-w-md" />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-start gap-3">
+                <Skeleton className="h-7 w-24 shrink-0" />
+                <Skeleton className="h-7 flex-1 max-w-xs" />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-4">

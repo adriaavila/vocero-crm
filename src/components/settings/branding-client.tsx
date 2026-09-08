@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function BrandingClient() {
   const router = useRouter();
@@ -70,7 +71,28 @@ export function BrandingClient() {
     router.refresh();
   }
 
-  if (!loaded) return <p className="text-sm text-text-3">Cargando…</p>;
+  if (!loaded) {
+    return (
+      <div className="max-w-2xl">
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-full max-w-md" />
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-1.5">
+              <Skeleton className="h-3.5 w-16" />
+              <Skeleton className="h-9 w-full max-w-xs" />
+            </div>
+            <div className="space-y-1.5">
+              <Skeleton className="h-3.5 w-32" />
+              <Skeleton className="h-9 w-full max-w-xs" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -90,7 +112,7 @@ export function BrandingClient() {
               maxLength={30}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Vocero"
+              placeholder="Nombre del negocio"
               className="max-w-xs"
             />
           </div>

@@ -103,14 +103,14 @@ export async function GET(req: Request, ctx: Params) {
 
   // 017 — GET {pageId}?fields=id,name → validación de la página de Facebook
   if (path.length === 1 && /(^|,)name(,|$)/.test(fields)) {
-    return Response.json({ id: path[0], name: "Página de prueba Vocero" });
+    return Response.json({ id: path[0], name: "Página de prueba" });
   }
 
   // GET {phoneNumberId}?fields=... → validación del wizard
   if (path.length === 1) {
     return Response.json({
       display_phone_number: "+52 55 0000 0000",
-      verified_name: "Número de prueba Vocero",
+      verified_name: "Número de prueba",
       id: path[0],
     });
   }

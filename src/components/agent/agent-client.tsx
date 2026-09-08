@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Skeleton } from "@/components/ui/skeleton";
 // Capa de agencia (fork). Todo lo propio vive en components/agencia/ para que
 // la próxima fusión con upstream no toque este archivo más que en esta línea.
 import {
@@ -64,8 +65,33 @@ export function AgentClient() {
 
   if (!profile) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Cargando…
+      <div className="h-full overflow-y-auto">
+        <header className="flex items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-6 w-11 rounded-full" />
+        </header>
+        <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
+          <div className="space-y-4 sm:space-y-6">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-5 w-32" />
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Skeleton className="h-9 w-full" />
+                <Skeleton className="h-20 w-full" />
+              </CardContent>
+            </Card>
+          </div>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-40" />
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

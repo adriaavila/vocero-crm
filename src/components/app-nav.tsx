@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  BarChart3,
   CalendarDays,
   CircleUserRound,
   Gauge,
@@ -23,6 +24,12 @@ import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo } from "@/components/brand-mark";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { APP_VERSION, BUILD_COMMIT, versionLabel } from "@/lib/version";
 
 type NavItem = {
@@ -49,6 +56,10 @@ const NAV: NavItem[] = [
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/agent", label: "Agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical, owner: true },
+  // Capa de agencia: muestra ingresos, igual que Agente y Laboratorio — solo
+  // el propietario. Pantalla propia (`src/server/agencia/analitica.ts`),
+  // `/overview` sigue siendo el tablero de puesta en marcha.
+  { href: "/analytics", label: "Analítica", icon: BarChart3, owner: true },
 ];
 
 /** 015 — "Citas" solo existe si esta instancia encendió la agenda. */
@@ -145,7 +156,7 @@ export function AppNav({
         open ? "visible translate-x-0 shadow-pop" : "invisible -translate-x-full"
       )}
     >
-      {/* Marca: el logo de Vocero o, white-label, la inicial y el nombre */}
+      {/* Marca: mosaico con la inicial + nombre del negocio (Configuración → Marca) */}
       <div className="mb-5 flex items-start gap-1.5 px-2 pt-0.5">
         {/* En móvil el cajón necesita su propio cierre: el velo no siempre es
             alcanzable con el pulgar. */}
@@ -219,18 +230,24 @@ export function AppNav({
           </span>
         </span>
         <ThemeToggle initial={theme} />
-        <button
-          aria-label="Cerrar sesión"
-          title="Cerrar sesión"
-          className="rounded p-1 text-text-3 hover:text-foreground"
-          onClick={async () => {
-            await signOut();
-            router.push("/login");
-            router.refresh();
-          }}
-        >
-          <LogOut className="h-4 w-4" strokeWidth={1.7} />
-        </button>
+        <TooltipProvider delayDuration={300}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                aria-label="Cerrar sesión"
+                className="rounded p-1 text-text-3 hover:text-foreground"
+                onClick={async () => {
+                  await signOut();
+                  router.push("/login");
+                  router.refresh();
+                }}
+              >
+                <LogOut className="h-4 w-4" strokeWidth={1.7} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Cerrar sesión</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
 
       {/* Qué versión está corriendo. Discreta pero siempre visible: la duda

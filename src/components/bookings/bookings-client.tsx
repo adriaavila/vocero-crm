@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useEvents } from "@/components/use-events";
 
 /** 015 — Citas: lo agendado por el operador y por la IA, con sus acciones. */
@@ -114,7 +115,31 @@ export function BookingsClient() {
     await refresh();
   }
 
-  if (!bookings) return <p className="text-sm text-text-3">Cargando…</p>;
+  if (!bookings) {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-40" />
+          <div className="flex flex-wrap items-end gap-2">
+            <Skeleton className="h-9 w-56" />
+            <Skeleton className="h-9 w-24" />
+            <Skeleton className="h-9 w-24" />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-24" />
+          <div className="space-y-px rounded-md border">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="space-y-2 border-b p-3 last:border-b-0">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-3 w-1/4" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

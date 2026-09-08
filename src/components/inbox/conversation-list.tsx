@@ -9,6 +9,7 @@ import { matchesQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime, previewText } from "./helpers";
 
 /* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
@@ -243,7 +244,7 @@ export function ConversationList({
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <p className="p-6 text-center text-xs text-text-3">Cargando…</p>
+          <ConversationListSkeleton />
         ) : conversations.length === 0 ? (
           <EmptyState onSeeded={onSeeded} />
         ) : visible.length === 0 ? (
@@ -338,5 +339,22 @@ export function ConversationList({
         )}
       </div>
     </div>
+  );
+}
+
+/** Filas del tamaño real (avatar + dos líneas) para no saltar de alto al llegar los datos. */
+function ConversationListSkeleton() {
+  return (
+    <ul>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <li key={i} className="flex items-start gap-[11px] border-b border-border px-4 py-[var(--row-py)]">
+          <Skeleton className="h-11 w-11 shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-2 pt-0.5">
+            <Skeleton className="h-3.5 w-1/3" />
+            <Skeleton className="h-3 w-2/3" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -7,6 +7,8 @@ import {
   Archive,
   ArchiveRestore,
   MessageSquareText,
+  MoreVertical,
+  Pencil,
   Search,
   Send,
   UserPlus,
@@ -16,6 +18,12 @@ import { formatPhone } from "@/lib/utils";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SOURCE_LABELS } from "@/server/contact-source";
@@ -193,41 +201,40 @@ export function ContactsClient() {
                   </p>
                 </div>
                 <div className="ml-auto flex shrink-0 items-center gap-1.5">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditing(c)}
-                  >
-                    Editar
-                  </Button>
-                  {/* A quien nunca escribió hay que abrirle la conversación con
-                      una plantilla: es regla de Meta, no del CRM. */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Escribir primero"
-                    title="Escribir primero (con plantilla)"
-                    onClick={() => setEscribiendo(c)}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
                   <Link href={`/inbox?contact=${c.id}`}>
                     <Button variant="ghost" size="icon" aria-label="Abrir conversación">
                       <MessageSquareText className="h-4 w-4" />
                     </Button>
                   </Link>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={c.archivedAt ? "Desarchivar" : "Archivar"}
-                    onClick={() => void patch(c.id, { archived: !c.archivedAt })}
-                  >
-                    {c.archivedAt ? (
-                      <ArchiveRestore className="h-4 w-4" />
-                    ) : (
-                      <Archive className="h-4 w-4" />
-                    )}
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Más acciones">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setEditing(c)}>
+                        <Pencil className="h-4 w-4" />
+                        Editar
+                      </DropdownMenuItem>
+                      {/* A quien nunca escribió hay que abrirle la conversación
+                          con una plantilla: es regla de Meta, no del CRM. */}
+                      <DropdownMenuItem onClick={() => setEscribiendo(c)}>
+                        <Send className="h-4 w-4" />
+                        Escribir primero (con plantilla)
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => void patch(c.id, { archived: !c.archivedAt })}
+                      >
+                        {c.archivedAt ? (
+                          <ArchiveRestore className="h-4 w-4" />
+                        ) : (
+                          <Archive className="h-4 w-4" />
+                        )}
+                        {c.archivedAt ? "Desarchivar" : "Archivar"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </li>
             ))}

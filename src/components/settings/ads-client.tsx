@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /**
  * 016 — Ajustes → Anuncios: conectar el dataset de Meta, decir qué etapa
@@ -250,7 +251,11 @@ export function AdsClient() {
             Actualizar
           </Button>
           {activity === null ? (
-            <p className="text-sm text-muted-foreground">Cargando…</p>
+            <div className="space-y-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </div>
           ) : activity.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               Todavía no hay conversiones. Aparecerán cuando un lead que llegó

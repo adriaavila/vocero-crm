@@ -46,11 +46,11 @@ describe("white-label: acento", () => {
     expect(lum).toBeLessThan(0xd0);
   });
 
-  it("hex inválido cae al default (el azul Vocero)", () => {
+  it("hex inválido cae al azul por defecto", () => {
     expect(resolveAccentSet("rojo")).toEqual(ACCENT_PRESETS["#0d5bff"]!.set);
   });
 
-  it("el azul Vocero es el default y trae los valores exactos de la landing", () => {
+  it("el azul por defecto trae los valores exactos del preset", () => {
     expect(DEFAULT_BRANDING.accent).toBe("#0d5bff");
     expect(resolveAccentSet(DEFAULT_BRANDING.accent)).toEqual({
       accent: "#0d5bff",
@@ -112,9 +112,9 @@ describe("white-label: acento en tema oscuro", () => {
 });
 
 describe("white-label: normalización", () => {
-  it("nombre vacío o nulo → default 'Vocero'; se recorta a 30", () => {
-    expect(normalizeBranding(null).name).toBe("Vocero");
-    expect(normalizeBranding({ name: "   " }).name).toBe("Vocero");
+  it("nombre vacío o nulo → default 'allok'; se recorta a 30", () => {
+    expect(normalizeBranding(null).name).toBe("allok");
+    expect(normalizeBranding({ name: "   " }).name).toBe("allok");
     expect(normalizeBranding({ name: "x".repeat(50) }).name).toHaveLength(30);
   });
 

@@ -1,4 +1,27 @@
-<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Vocero">
-  <rect width="64" height="64" rx="16" fill="#08090a"/>
-  <path d="M0 32 Q2.08 30.35 4.17 32 Q6.25 40.86 8.33 32 Q10.42 14.22 12.5 32 Q14.58 55.17 16.67 32 Q18.75 10.62 20.83 32 Q22.92 44.55 25 32 Q27.08 19.45 29.17 32 Q31.25 53.38 33.33 32 Q35.42 8.83 37.5 32 Q39.58 49.78 41.67 32 Q43.75 23.14 45.83 32 Q47.92 33.65 50 32" transform="translate(7,0)" fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round"/>
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="allok">
+  <defs>
+    <linearGradient id="allok-logo" x1="7" y1="0" x2="57" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.5" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+    <filter id="allok-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#0a0a12"/>
+  <path
+    d="M0 32 Q3 23 6 32 Q9 44 12 32 Q15 11 18 32 Q21 57 24 32 Q27 7 30 32 Q33 53 36 32 Q39 15 42 32 Q45 47 48 32 Q49 29 50 32"
+    transform="translate(7,0)"
+    fill="none"
+    stroke="url(#allok-logo)"
+    stroke-width="3.2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    filter="url(#allok-glow)"
+  />
 </svg>
