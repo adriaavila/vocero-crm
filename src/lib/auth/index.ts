@@ -12,7 +12,14 @@ import {
   resolveOrganizationIdForHost,
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed } from "@/server/auth/registration";
-import { isAllokSaaSMode, isKnownAllokHost, isSaaSAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import {
+  isAllokSaaSMode,
+  isKnownAllokHost,
+  isSaaSAppHost,
+  saasAppHost,
+  SIGNUP_HOST_HINT,
+  tenantSlugFromHost,
+} from "@/lib/tenant-host";
 
 /**
  * Contexto interno del proceso: permite que el alta de cuentas de equipo
@@ -52,8 +59,8 @@ function createAuth() {
     baseURL: env.APP_BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
     advanced: {
-      // app.allok.fun and negocio.allok.fun must share the same session, but
-      // legacy deployments keep host-only cookies exactly as before.
+      // The SaaS app host and negocio.allok.fun must share the same session,
+      // but legacy deployments keep host-only cookies exactly as before.
       crossSubDomainCookies: isAllokSaaSMode()
         ? {
             enabled: true,
@@ -122,7 +129,7 @@ function createAuth() {
             ctx.headers?.get("x-forwarded-host") ?? ctx.headers?.get("host");
           if (isAllokSaaSMode() && !isSaaSAppHost(host)) {
             throw new APIError("FORBIDDEN", {
-              message: "El registro de Allok empieza en app.allok.fun",
+              message: `${SIGNUP_HOST_HINT} ${saasAppHost()}`,
             });
           }
           if (!isInternalSignup() && !(await isPublicSignupAllowed())) {

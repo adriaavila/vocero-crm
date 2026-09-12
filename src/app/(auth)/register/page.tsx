@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, ShieldCheck } from "lucide-react";
 import { signUp } from "@/lib/auth/client";
+import { SIGNUP_HOST_HINT } from "@/lib/tenant-host";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,7 +33,7 @@ export default function RegisterPage() {
     if (err) {
       setLoading(false);
       if (err.status === 403) {
-        setError(err.message?.includes("app.allok.fun")
+        setError(err.message?.startsWith(SIGNUP_HOST_HINT)
           ? err.message
           : "El registro está cerrado: esta instancia ya tiene su organización. Pide acceso al propietario.");
       } else if (err.status === 429) {

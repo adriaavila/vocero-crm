@@ -1,4 +1,12 @@
 const DEFAULT_ROOT_DOMAIN = "allok.fun";
+/**
+ * Subdominios que NUNCA pueden ser un negocio.
+ *
+ * La raíz `allok.fun` reparte un subdominio por producto, y la cookie de sesión
+ * se comparte en toda la raíz: si un negocio pudiera llamarse `agent` o
+ * `inmox`, se quedaría con el hostname de otro producto. Van aquí todos los que
+ * están en uso, no solo los de este repo.
+ */
 const RESERVED_SUBDOMAINS = new Set([
   "www",
   "app",
@@ -6,7 +14,24 @@ const RESERVED_SUBDOMAINS = new Set([
   "admin",
   "status",
   "crm",
+  "whatsapp",
+  "agent",
+  "inmox",
+  "waha",
+  "n8n",
+  "coolify",
+  "mail",
+  "docs",
+  "blog",
 ]);
+
+/**
+ * Prefijo estable del aviso "regístrate en el host correcto". La pantalla de
+ * registro lo reconoce por aquí para mostrarlo tal cual: el hostname cambia con
+ * la configuración, la frase no. Vive en este módulo (puro, sin servidor) para
+ * que el cliente pueda importarlo sin arrastrar la capa de autenticación.
+ */
+export const SIGNUP_HOST_HINT = "El registro de Allok empieza en";
 
 export function isAllokSaaSMode(): boolean {
   return process.env.ALLOK_SAAS_MODE === "true";
@@ -14,6 +39,25 @@ export function isAllokSaaSMode(): boolean {
 
 export function isReservedSubdomain(value: string): boolean {
   return RESERVED_SUBDOMAINS.has(value.trim().toLowerCase());
+}
+
+/**
+ * El hostname donde empieza el alta. Se usa en mensajes de error, así que sale
+ * de la configuración y no de una constante: mover el producto de subdominio no
+ * puede dejar a nadie leyendo una dirección que ya no existe.
+ */
+export function saasAppHost(
+  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+): string {
+  const configured = process.env.ALLOK_SAAS_APP_URL?.trim();
+  if (configured) {
+    try {
+      return new URL(configured).hostname;
+    } catch {
+      return cleanHost(configured);
+    }
+  }
+  return `app.${cleanRootDomain(rootDomain)}`;
 }
 
 function cleanHost(host: string): string {

@@ -5,6 +5,7 @@ import {
   isSaaSAdminHost,
   isSaaSAppHost,
   isTenantSlug,
+  saasAppHost,
   slugifyTenantName,
   tenantSlugFromHost,
 } from "../../src/lib/tenant-host";
@@ -33,6 +34,29 @@ describe("tenant host resolver", () => {
     expect(isKnownAllokHost("clinicaperez.localhost:3000")).toBe(true);
     expect(isKnownAllokHost("admin.localhost:3000")).toBe(true);
     expect(isKnownAllokHost("foo.bar.localhost:3000")).toBe(false);
+  });
+
+  it("el host del alta sale de la configuración, no de una constante", () => {
+    const previo = process.env.ALLOK_SAAS_APP_URL;
+    try {
+      delete process.env.ALLOK_SAAS_APP_URL;
+      expect(saasAppHost()).toBe("app.allok.fun");
+      process.env.ALLOK_SAAS_APP_URL = "https://whatsapp.allok.fun";
+      expect(saasAppHost()).toBe("whatsapp.allok.fun");
+      // Un valor sin esquema no puede dejar el aviso en blanco.
+      process.env.ALLOK_SAAS_APP_URL = "whatsapp.allok.fun";
+      expect(saasAppHost()).toBe("whatsapp.allok.fun");
+    } finally {
+      if (previo === undefined) delete process.env.ALLOK_SAAS_APP_URL;
+      else process.env.ALLOK_SAAS_APP_URL = previo;
+    }
+  });
+
+  it("ningún subdominio de producto puede ser un negocio", () => {
+    for (const reservado of ["whatsapp", "agent", "inmox", "crm", "admin", "app"]) {
+      expect(tenantSlugFromHost(`${reservado}.allok.fun`)).toBeNull();
+    }
+    expect(slugifyTenantName("WhatsApp")).toBe("negocio");
   });
 
   it("permite desarrollo local sin relajar producción", () => {
