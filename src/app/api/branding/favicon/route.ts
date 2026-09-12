@@ -67,9 +67,12 @@ export async function GET(req: Request) {
     });
   }
 
+  // `undefined` significa "la única organización de esta instancia" y `null`
+  // significa "ninguna": pasar null fuera del SaaS dejaba el icono público con
+  // la marca por defecto y sin el logo subido, sin que nada fallara.
   const legacyOrganizationId = isAllokSaaSMode() && !tenantSlug
     ? await resolveLegacyOrganizationId().catch(() => null)
-    : null;
+    : undefined;
   const ctx = await getBrandingContext(legacyOrganizationId).catch(() => null);
   const branding = ctx?.branding ?? DEFAULT_BRANDING;
 

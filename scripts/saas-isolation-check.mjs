@@ -86,6 +86,18 @@ try {
   });
   check("Allok no activa automatización sin suscripción confirmada", activation.status() === 402);
 
+  // Un número conectado sin plan igual consume la app de Meta de Allok, así que
+  // las DOS puertas del alta —la guiada y el respaldo manual— piden pago.
+  const guiada = await alpha.request.post(`${base}/api/saas/whatsapp/onboarding-link`, {
+    headers: headers(alphaHost),
+  });
+  check("el alta guiada de WhatsApp pide plan activo", guiada.status() === 402);
+  const manual = await alpha.request.put(`${base}/api/settings/whatsapp`, {
+    headers: { ...headers(alphaHost), "content-type": "application/json" },
+    data: { wabaId: "WABA-SIN-PLAN", phoneNumberId: "PN-SIN-PLAN", token: "token-sin-plan" },
+  });
+  check("el respaldo manual tampoco conecta sin plan", manual.status() === 402);
+
   const crossTenant = await alpha.request.get(`${base}/api/overview`, {
     headers: headers(betaHost),
     maxRedirects: 0,

@@ -6,6 +6,7 @@ import {
   tokenLast4,
 } from "@/server/whatsapp/credentials";
 import { subscribeAppToWaba, testConnection } from "@/server/whatsapp/connect";
+import { canAutomate } from "@/server/agencia/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,12 @@ const putSchema = z.object({
 
 /** Guarda la conexión: re-valida contra Meta, cifra y suscribe (FR-040). */
 export const PUT = withOwner(async (session, req: Request) => {
+  // El respaldo manual conecta el mismo número que el alta guiada, así que
+  // pasa por la misma puerta: fuera del SaaS `canAutomate` siempre deja pasar.
+  if (!(await canAutomate(session.organizationId))) {
+    return apiError(402, "billing_inactive", "Activa tu plan para conectar un número de WhatsApp");
+  }
+
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 

@@ -48,19 +48,28 @@ export default function RegisterPage() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ plan }),
     }).catch(() => null);
-    const payload = (await checkout?.json().catch(() => null)) as { url?: string } | null;
+    const payload = (await checkout?.json().catch(() => null)) as
+      { url?: string; error?: { code?: string } } | null;
     if (checkout?.ok && payload?.url) {
       window.location.assign(payload.url);
       return;
     }
+    // El cobro es el paso 2 de 7, no un extra. Si el checkout no abrió por algo
+    // que el dueño puede reintentar, la siguiente pantalla es Facturación y no
+    // el panel: cayendo en el panel, la cuenta se queda sin pagar y sin que
+    // nadie se entere. `billing_unconfigured` es la excepción — eso lo arregla
+    // quien administra la instancia, no el cliente.
+    const destino = payload?.error?.code === "billing_unconfigured"
+      ? "/overview?billing=unavailable"
+      : "/settings/billing?checkout=failed";
     const tenant = await fetch("/api/saas/tenant").then((response) =>
       response.ok ? response.json().catch(() => null) : null
     ) as { url?: string | null } | null;
     if (tenant?.url && new URL(tenant.url).origin !== window.location.origin) {
-      window.location.assign(`${tenant.url}/overview?billing=unavailable`);
+      window.location.assign(`${tenant.url}${destino}`);
       return;
     }
-    router.push("/overview?billing=unavailable");
+    router.push(destino);
     router.refresh();
   }
 

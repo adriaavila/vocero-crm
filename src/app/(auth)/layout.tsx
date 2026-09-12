@@ -20,8 +20,12 @@ export default async function AuthLayout({
     requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const tenantSlug = tenantSlugFromHost(host);
   if (isAllokSaaSMode() && !isKnownAllokHost(host)) notFound();
-  const organizationId = await resolveOrganizationIdForHost(host) ??
-    (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null);
+  // Fuera del SaaS la instancia tiene una sola organización y se resuelve sola:
+  // `undefined` la busca, `null` la descarta y deja la marca por defecto.
+  const organizationId = isAllokSaaSMode()
+    ? (await resolveOrganizationIdForHost(host) ??
+        (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null))
+    : undefined;
   if (tenantSlug && !organizationId) notFound();
   const branding = await getBranding(organizationId).catch(() => DEFAULT_BRANDING);
   const saasMode = isAllokSaaSMode();

@@ -190,6 +190,10 @@ ok(
   JSON.stringify(marca?.branding?.favicon)
 );
 
+// El icono es de la instancia, no de este guion: dejarlo subido hace que el
+// siguiente guion del arnés mida la marca de este. Se devuelve al generado.
+await api("/api/settings/branding/favicon", { method: "DELETE" });
+
 console.log(
   failures === 0
     ? `\nTODO VERDE — ${checks}/${checks} checks`

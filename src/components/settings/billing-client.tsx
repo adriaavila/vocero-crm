@@ -12,7 +12,13 @@ const plans: { id: SaaSPlan; name: string; price: string; description: string; f
   { id: "pro", name: "Pro", price: "$99/mes", description: "Para convertir conversaciones en oportunidades.", features: ["Todo lo de Básico", "Pipeline y agenda", "Hasta 3 usuarios"] },
 ];
 
-export function BillingClient({ billing }: { billing: SaaSBillingState }) {
+export function BillingClient({
+  billing,
+  notice = null,
+}: {
+  billing: SaaSBillingState;
+  notice?: string | null;
+}) {
   const [loading, setLoading] = useState<SaaSPlan | "portal" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const active = billing.status === "active" || billing.status === "trialing";
@@ -58,6 +64,7 @@ export function BillingClient({ billing }: { billing: SaaSBillingState }) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
+      {notice && !active && <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-sm text-warning-text">{notice}</p>}
       <div><p className="kicker">Allok SaaS</p><h1 className="mt-1 text-2xl font-[700] tracking-tight">Facturación</h1><p className="mt-1 text-sm text-text-2">Gestiona tu plan sin salir de Stripe. Tus conversaciones e historial se conservan aunque pauses la automatización.</p></div>
       {active && <Card className="border-success-soft bg-success-tint"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-full bg-success text-white"><Check className="h-4 w-4" /></span><div><p className="font-semibold">Plan {billing.plan === "pro" ? "Pro" : "Básico"} activo</p><p className="mt-1 text-sm text-success-text">{billing.cancelAtPeriodEnd && billing.currentPeriodEnd ? `Finaliza el ${new Date(billing.currentPeriodEnd).toLocaleDateString("es-VE")}.` : billing.currentPeriodEnd ? `Próxima renovación: ${new Date(billing.currentPeriodEnd).toLocaleDateString("es-VE")}.` : "La automatización está habilitada."}</p></div></div><Button variant="outline" onClick={() => void openPortal()} disabled={loading !== null}>{loading === "portal" ? "Abriendo…" : <>Gestionar facturación <ExternalLink className="ml-2 h-4 w-4" /></>}</Button></CardContent></Card>}
       {!active && billing.status !== "inactive" && <Card className="border-warning-soft bg-warning-tint"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><Badge variant="warning">{billing.status.replace("_", " ")}</Badge><p className="mt-2 text-sm text-warning-text">{statusCopy}</p></div>{billing.customerId && <Button variant="outline" onClick={() => void openPortal()} disabled={loading !== null}>{loading === "portal" ? "Abriendo…" : <>Actualizar pago <ExternalLink className="ml-2 h-4 w-4" /></>}</Button>}</CardContent></Card>}

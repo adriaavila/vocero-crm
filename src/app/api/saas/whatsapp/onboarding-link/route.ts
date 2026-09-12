@@ -3,11 +3,19 @@ import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { eq } from "drizzle-orm";
 import { tenantOrigin } from "@/server/saas/billing";
+import { canAutomate } from "@/server/agencia/entitlements";
 
 export const dynamic = "force-dynamic";
 
 export const POST = withOwner(async (session, request: Request) => {
   if (!isAllokSaaSMode()) return apiError(404, "not_found", "SaaS no está habilitado");
+
+  // Un número conectado sin suscripción sigue consumiendo la app de Meta de
+  // Allok y su cuota de conversaciones: el enlace de alta se entrega solo a
+  // quien ya paga.
+  if (!(await canAutomate(session.organizationId))) {
+    return apiError(402, "billing_inactive", "Activa tu plan para conectar un número de WhatsApp");
+  }
 
   const endpoint = process.env.ALLOK_SAAS_LINK_URL?.trim();
   const secret = process.env.ALLOK_SAAS_LINK_SECRET?.trim();
