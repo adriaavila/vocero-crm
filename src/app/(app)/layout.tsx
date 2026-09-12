@@ -1,7 +1,7 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { getAuth } from "@/lib/auth";
-import { getSessionOrNull } from "@/lib/auth/session";
+import { requireSession, SaaSMemberPlanRequiredError, UnauthorizedError } from "@/lib/auth/session";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
 import { AppShell } from "@/components/app-shell";
@@ -9,15 +9,32 @@ import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
+import { isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
+import { getOrganizationBilling } from "@/server/saas/billing";
 
 export default async function AppLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const session = await getSessionOrNull();
+  const saasMode = isAllokSaaSMode();
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const tenantSlug = tenantSlugFromHost(host);
+  if (saasMode && !isKnownAllokHost(host)) notFound();
+  if (saasMode && tenantSlug && !(await resolveOrganizationIdForHost(host))) notFound();
+  let session;
+  try {
+    session = await requireSession();
+  } catch (error) {
+    if (error instanceof SaaSMemberPlanRequiredError) redirect("/member-access-paused");
+    if (saasMode && tenantSlug && !(error instanceof UnauthorizedError && error.message === "No autenticado")) notFound();
+    session = null;
+  }
   if (!session) redirect("/login");
   const branding = await getBranding(session.organizationId);
+  const billing = saasMode ? await getOrganizationBilling(session.organizationId) : null;
   const authSession = await getAuth().api.getSession({
-    headers: await headers(),
+    headers: requestHeaders,
   });
   const theme = normalizeThemePreference(
     (await cookies()).get(THEME_COOKIE)?.value
@@ -35,6 +52,8 @@ export default async function AppLayout({
       // prop, igual que los canales de la Bandeja. El nav es un componente de
       // cliente: no puede —ni debe— leer variables de entorno.
       agenda={agendaEnabled()}
+      saasMode={saasMode}
+      saasPlan={billing?.status === "active" || billing?.status === "trialing" ? billing.plan : null}
     >
       <ToastProvider>{children}</ToastProvider>
     </AppShell>

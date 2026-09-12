@@ -10,7 +10,6 @@ const TABS: Tab[] = [
   { href: "/settings/whatsapp", label: "WhatsApp" },
   { href: "/settings/branding", label: "Marca" },
   { href: "/settings/templates", label: "Plantillas" },
-  { href: "/settings/team", label: "Equipo" },
 ];
 
 /** 015 — "Agenda" solo existe si esta instancia encendió la bandera. */
@@ -21,15 +20,21 @@ const ADS_TAB: Tab = { href: "/settings/ads", label: "Anuncios" };
 
 /** 017 — "Messenger" solo si el canal está encendido con CHANNELS. */
 const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
+const BILLING_TAB: Tab = { href: "/settings/billing", label: "Facturación" };
+const TEAM_TAB: Tab = { href: "/settings/team", label: "Equipo" };
 
 export function SettingsNav({
   agenda = false,
   atribucion = false,
   messenger = false,
+  saas = false,
+  saasPro = false,
 }: {
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
+  saas?: boolean;
+  saasPro?: boolean;
 }) {
   const pathname = usePathname();
   // Qué pestañas existen lo decide el servidor y baja por prop: este es un
@@ -39,11 +44,13 @@ export function SettingsNav({
     ...TABS.slice(0, 1),
     ...(messenger ? [MESSENGER_TAB] : []),
     ...TABS.slice(1),
+    ...(saasPro ? [TEAM_TAB] : []),
+    ...(saas ? [BILLING_TAB] : []),
     ...(agenda ? [AGENDA_TAB] : []),
     ...(atribucion ? [ADS_TAB] : []),
   ];
   return (
-    <nav className="flex shrink-0 gap-1 overflow-x-auto border-b p-2 sm:w-44 sm:flex-col sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3">
+    <nav aria-label="Secciones de configuración" className="flex shrink-0 gap-1 overflow-x-auto border-b bg-subtle/60 p-2 sm:w-44 sm:flex-col sm:space-y-1 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3">
       {tabs.map((t) => (
         <Link
           key={t.href}
@@ -54,6 +61,7 @@ export function SettingsNav({
               ? "bg-brand-tint text-brand-text"
               : "text-text-2 hover:bg-accent hover:text-foreground"
           )}
+          aria-current={pathname.startsWith(t.href) ? "page" : undefined}
         >
           {t.label}
         </Link>

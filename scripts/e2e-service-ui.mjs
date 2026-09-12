@@ -38,7 +38,7 @@ try {
 
 
   await page.goto(`${base}/overview`, { waitUntil: "load", timeout: 90000 });
-  await page.getByRole("heading", { name: "Panel operativo" }).waitFor();
+  await page.getByRole("heading", { name: "Inicio" }).waitFor();
   check("propietario aterriza en Inicio", page.url().includes("/overview"));
   check("checklist de puesta en marcha visible", await page.getByText("Puesta en marcha", { exact: true }).isVisible());
 

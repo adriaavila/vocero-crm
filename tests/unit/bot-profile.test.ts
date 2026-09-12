@@ -41,6 +41,9 @@ function profileRow(overrides: Partial<AgentProfile> = {}): AgentProfile {
     instructions: "Vendemos limpiezas dentales.",
     escalationRules: "Urgencias de dolor → humano.",
     greeting: "¡Hola! Soy Sofi 🦷",
+    businessHours: {},
+    businessTimezone: "America/Mexico_City",
+    responseMode: "outside_hours",
     // Capa de agencia: mensajes de activación, allowlist, última prueba real
     // y proveedor de IA preferido.
     activationEnabled: false,

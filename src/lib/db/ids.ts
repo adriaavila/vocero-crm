@@ -29,6 +29,9 @@ const prefixes = {
   adAttribution: "att",
   conversionEvent: "cve",
   capiSettings: "capi",
+  saasBillingEvent: "sbe",
+  saasAdminAudit: "saa",
+  agentJob: "aj",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   const denied = requireBotKey(req);
   if (denied) return denied;
 
-  const organizationId = await resolveInstanceOrg();
+  const organizationId = await resolveInstanceOrg(req);
   if (!organizationId) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
@@ -78,6 +78,12 @@ export async function POST(req: Request) {
       }
       if (err.code === "sandbox_violation") {
         return apiError(409, "sandbox_violation", err.message);
+      }
+      if (err.code === "billing_inactive") {
+        return apiError(402, "billing_inactive", err.message);
+      }
+      if (err.code === "outside_hours") {
+        return apiError(409, "outside_hours", err.message);
       }
       return apiError(502, err.code, err.message);
     }

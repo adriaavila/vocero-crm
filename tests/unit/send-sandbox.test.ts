@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * FR-031 / FR-082: una conversación de prueba del Laboratorio JAMÁS alcanza
@@ -31,6 +31,7 @@ vi.mock("@/lib/db", () => ({
   schema: {
     conversation: { contactId: "contactId", id: "id" },
     contact: { id: "id" },
+    agentProfile: { enabled: "enabled", organizationId: "organizationId" },
     message: {},
   },
 }));
@@ -40,6 +41,8 @@ describe("sandbox del Laboratorio en el sender", () => {
     graphRequest.mockReset();
     selectRows.length = 0;
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   it("conversación is_test → lanza sandbox_violation y NO llama a Graph", async () => {
     selectRows.push([
@@ -108,6 +111,36 @@ describe("sandbox del Laboratorio en el sender", () => {
     await expect(
       sendText({
         conversationId: "cv_handoff",
+        organizationId: "org_1",
+        text: "respuesta tardía",
+        aiGenerated: true,
+      })
+    ).rejects.toMatchObject({ code: "ai_disabled" });
+
+    expect(graphRequest).not.toHaveBeenCalled();
+  });
+
+  it("toggle global apagado durante la generación → no llama a Graph", async () => {
+    vi.stubEnv("ALLOK_SAAS_MODE", "true");
+    selectRows.push([
+      {
+        conversation: {
+          id: "cv_paused",
+          organizationId: "org_1",
+          isTest: false,
+          aiEnabled: true,
+          handoffAt: null,
+          lastInboundAt: new Date(),
+        },
+        contact: { id: "ct_1", phone: "5215511111111" },
+      },
+    ]);
+    selectRows.push([{ enabled: false }]);
+    const { sendText } = await import("@/server/inbox/send");
+
+    await expect(
+      sendText({
+        conversationId: "cv_paused",
         organizationId: "org_1",
         text: "respuesta tardía",
         aiGenerated: true,

@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { getDb, schema } from "@/lib/db";
 import { apiError } from "@/lib/api";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 /**
  * Autenticación de la API de servicio `/api/bot/*`.
@@ -31,12 +33,17 @@ export function requireBotKey(req: Request): Response | null {
 }
 
 /**
- * Organización única de la instancia (self-hosted, un negocio). Cacheada en
- * memoria: la instancia jamás cambia de organización en runtime.
+ * En SaaS, el host es la frontera del tenant. Legacy conserva la resolución
+ * cacheada de la instancia única para no cambiar el contrato existente.
  */
 let cachedOrgId: string | null = null;
 
-export async function resolveInstanceOrg(): Promise<string | null> {
+export async function resolveInstanceOrg(req?: Request): Promise<string | null> {
+  if (isAllokSaaSMode()) {
+    if (!req) return null;
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+    return resolveOrganizationIdForHost(host);
+  }
   if (cachedOrgId) return cachedOrgId;
   const db = getDb();
   const rows = await db

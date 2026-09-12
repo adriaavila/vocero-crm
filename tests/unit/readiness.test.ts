@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateReadiness } from "@/server/readiness";
+import { evaluateReadiness, saasActivationBlockers } from "@/server/readiness";
 
 const changedAt = new Date("2026-08-10T10:00:00Z");
 const runAt = new Date("2026-08-10T11:00:00Z");
@@ -69,6 +69,30 @@ describe("readiness", () => {
   it("never accepts a live test when the current simulation failed", () => {
     const result = evaluateReadiness(input({ redCount: 1 }));
     expect(result.steps.find((step) => step.id === "live_test")?.status).toBe("stale");
+  });
+
+  it("exposes the critical SaaS steps that must be complete before activation", () => {
+    const readiness = evaluateReadiness(input({
+      saasMode: true,
+      businessHoursConfigured: false,
+      knowledgeCount: 0,
+      profile: { ...input().profile, tone: null },
+      latestRun: null,
+    }));
+    expect(saasActivationBlockers(readiness).map((step) => step.id)).toEqual([
+      "business_hours",
+      "agent_profile",
+      "knowledge",
+      "simulation",
+    ]);
+  });
+
+  it("does not block SaaS readiness when the optional live test is unavailable", () => {
+    expect(evaluateReadiness(input({
+      saasMode: true,
+      businessHoursConfigured: true,
+      liveTestAvailable: false,
+    })).overall).toBe("ready");
   });
 });
 

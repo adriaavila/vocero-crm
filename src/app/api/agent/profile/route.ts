@@ -3,7 +3,12 @@ import { agentProfilePutSchema, compatibleActivation } from "@/lib/agent-profile
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAgentConfigured } from "@/lib/env";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { encenderConversacionesEnEspera } from "@/server/agencia/ia-inicial";
+import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
+import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
+import { getReadiness, saasActivationBlockers } from "@/server/readiness";
+import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +46,34 @@ export const GET = withOwner(async (session) => {
 export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, agentProfilePutSchema);
   if (!body.ok) return body.response;
+  if (body.data.enabled === true && !(await canAutomate(session.organizationId))) {
+    return apiError(402, "billing_inactive", "Activa o recupera tu suscripción para encender Allok.");
+  }
+  if (body.data.enabled === true && isAllokSaaSMode()) {
+    if (!isAgentConfigured()) {
+      return apiError(503, "ai_not_configured", "La IA todavía no está configurada en esta instancia.");
+    }
+    const credentials = await getCredentialsByOrg(session.organizationId);
+    if (!credentials || credentials.status !== "connected") {
+      return apiError(409, "whatsapp_required", "Conecta y verifica tu número de WhatsApp antes de activar Allok.");
+    }
+    const businessHours = await getBusinessHours(session.organizationId);
+    if (businessHours.responseMode === "all_day" && !(await hasSaaSPlan(session.organizationId, "pro"))) {
+      return apiError(402, "pro_required", "La atención todo el día está disponible en Pro.");
+    }
+    if (!hasConfiguredBusinessHours(businessHours)) {
+      return apiError(409, "business_hours_required", "Define al menos un horario de respuesta antes de activar Allok.");
+    }
+    const pending = saasActivationBlockers(await getReadiness(session.organizationId))
+      .filter((step) => step.id !== "whatsapp" && step.id !== "business_hours");
+    if (pending.length) {
+      return apiError(
+        409,
+        "onboarding_incomplete",
+        `Completa antes de activar: ${pending.map((step) => step.label).join(", ")}.`,
+      );
+    }
+  }
 
   const db = getDb();
   const updated = await db

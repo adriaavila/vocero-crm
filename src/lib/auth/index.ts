@@ -9,8 +9,10 @@ import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
 import {
   onUserCreated,
   resolveActiveOrganizationId,
+  resolveOrganizationIdForHost,
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed } from "@/server/auth/registration";
+import { isAllokSaaSMode, isKnownAllokHost, isSaaSAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
 
 /**
  * Contexto interno del proceso: permite que el alta de cuentas de equipo
@@ -42,9 +44,23 @@ const RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
 
 function createAuth() {
   const env = getEnv();
+  const appHost = new URL(env.APP_BASE_URL).hostname;
+  const cookieDomain = appHost === "localhost"
+    ? ".localhost"
+    : `.${process.env.ALLOK_ROOT_DOMAIN ?? "allok.fun"}`;
   return betterAuth({
     baseURL: env.APP_BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
+    advanced: {
+      // app.allok.fun and negocio.allok.fun must share the same session, but
+      // legacy deployments keep host-only cookies exactly as before.
+      crossSubDomainCookies: isAllokSaaSMode()
+        ? {
+            enabled: true,
+            domain: cookieDomain,
+          }
+        : undefined,
+    },
     database: drizzleAdapter(getDb(), {
       provider: "pg",
       schema: {
@@ -65,6 +81,21 @@ function createAuth() {
     plugins: [organization({ creatorRole: "owner" })],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        if (isAllokSaaSMode()) {
+          const host =
+            ctx.headers?.get("x-forwarded-host") ?? ctx.headers?.get("host");
+          if (!isKnownAllokHost(host)) {
+            throw new APIError("NOT_FOUND", {
+              message: "El host de Allok no existe",
+            });
+          }
+          const tenantSlug = tenantSlugFromHost(host);
+          if (tenantSlug && !(await resolveOrganizationIdForHost(host))) {
+            throw new APIError("NOT_FOUND", {
+              message: "El negocio no existe",
+            });
+          }
+        }
         // Rate limit por IP en login/registro (FR-062): 10 / 10 min → 429.
         //
         // Se levanta SOLO en el entorno de pruebas internas (`isMockEnabled`:
@@ -87,6 +118,13 @@ function createAuth() {
         }
         // Registro público cerrado tras la primera organización (FR-060).
         if (ctx.path === "/sign-up/email") {
+          const host =
+            ctx.headers?.get("x-forwarded-host") ?? ctx.headers?.get("host");
+          if (isAllokSaaSMode() && !isSaaSAppHost(host)) {
+            throw new APIError("FORBIDDEN", {
+              message: "El registro de Allok empieza en app.allok.fun",
+            });
+          }
           if (!isInternalSignup() && !(await isPublicSignupAllowed())) {
             throw new APIError("FORBIDDEN", {
               message:
@@ -100,16 +138,18 @@ function createAuth() {
       user: {
         create: {
           after: async (user) => {
-            await onUserCreated(user.id, user.name);
+            await onUserCreated(user.id, user.name, {
+              skipOrganization: isInternalSignup(),
+            });
           },
         },
       },
       session: {
         create: {
           before: async (session) => {
-            const organizationId = await resolveActiveOrganizationId(
-              session.userId
-            );
+            const organizationId = isAllokSaaSMode()
+              ? null
+              : await resolveActiveOrganizationId(session.userId);
             return {
               data: { ...session, activeOrganizationId: organizationId },
             };

@@ -1,7 +1,7 @@
 import { randomInt } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
-import { apiError, withOwner } from "@/lib/api";
+import { apiError, withProOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +14,7 @@ function temporaryPassword(): string {
   return Array.from({ length: 16 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
 }
 
-export const POST = withOwner(async (session, _req: Request, ctx: Params) => {
+export const POST = withProOwner(async (session, _req: Request, ctx: Params) => {
   const { memberId } = await ctx.params;
   const db = getDb();
   const [target] = await db

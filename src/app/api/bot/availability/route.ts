@@ -8,6 +8,7 @@ import { computeAvailability } from "@/server/agenda/availability";
 import { getSettings } from "@/server/agenda/settings";
 import { daysWithAgenda, spreadByDay } from "@/server/agenda/spread";
 import { replaceOffers } from "@/server/agenda/offers";
+import { hasSaaSPlan } from "@/server/agencia/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -44,9 +45,12 @@ export async function GET(req: Request) {
   const denied = requireBotKey(req);
   if (denied) return denied;
 
-  const organizationId = await resolveInstanceOrg();
+  const organizationId = await resolveInstanceOrg(req);
   if (!organizationId) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
+  }
+  if (!(await hasSaaSPlan(organizationId, "pro"))) {
+    return apiError(403, "plan_required", "La agenda está disponible en el plan Pro");
   }
 
   const url = new URL(req.url);

@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/api";
+import { withPro } from "@/lib/api";
 import { dayIsoInTz, timeInTz, dayLabelInTz } from "@/lib/time/slots";
 import { agendaDisabledResponse, agendaEnabled } from "@/server/agenda/flag";
 import { computeAvailability } from "@/server/agenda/availability";
@@ -17,7 +17,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * Sin huecos responde `{"slots":[]}` con 200: agenda llena es una respuesta,
  * no un error.
  */
-export const GET = withAuth(async (session, req: Request) => {
+export const GET = withPro(async (session, req: Request) => {
   if (!agendaEnabled()) return agendaDisabledResponse();
 
   const url = new URL(req.url);

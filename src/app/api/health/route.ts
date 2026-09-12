@@ -1,11 +1,23 @@
 import { sql } from "drizzle-orm";
+import { headers } from "next/headers";
 import { getDb } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { APP_VERSION, resolveBuildCommit } from "@/lib/version";
+import { isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  if (isAllokSaaSMode()) {
+    const requestHeaders = await headers();
+    const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+    if (!isKnownAllokHost(host)) return Response.json({ error: "not_found" }, { status: 404 });
+    const tenantSlug = tenantSlugFromHost(host);
+    if (tenantSlug && !(await resolveOrganizationIdForHost(host))) {
+      return Response.json({ error: "not_found" }, { status: 404 });
+    }
+  }
   // Una instancia de producción sin META_APP_SECRET acepta webhooks que no
   // puede verificar. En el modelo de agencia eso se despliega y se entrega sin
   // que nadie lo note, así que la instancia se declara NO saludable: el

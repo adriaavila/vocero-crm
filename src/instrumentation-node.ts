@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 /**
  * Limpieza al arranque (FR-034): corridas del Laboratorio que quedaron
@@ -25,5 +26,9 @@ export async function cleanupOrphanRuns(): Promise<void> {
   } catch (err) {
     // La BD puede no estar lista aún (migraciones corren antes del server).
     console.error("[boot] limpieza de corridas huérfanas falló:", err);
+  }
+  if (isAllokSaaSMode()) {
+    const { startAgentWorker } = await import("@/server/ai/worker");
+    startAgentWorker();
   }
 }

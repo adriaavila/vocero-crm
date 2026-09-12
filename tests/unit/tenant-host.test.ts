@@ -1,0 +1,54 @@
+import { describe, expect, it } from "vitest";
+import {
+  isKnownAllokHost,
+  isLegacyAppHost,
+  isSaaSAdminHost,
+  isSaaSAppHost,
+  isTenantSlug,
+  slugifyTenantName,
+  tenantSlugFromHost,
+} from "../../src/lib/tenant-host";
+
+describe("tenant host resolver", () => {
+  it("resuelve el slug desde el subdominio del negocio", () => {
+    expect(tenantSlugFromHost("clinicaperez.allok.fun")).toBe("clinicaperez");
+    expect(tenantSlugFromHost("ClinicaPerez.Allok.Fun:443")).toBe("clinicaperez");
+  });
+
+  it("reserva hosts de plataforma y rechaza hosts ambiguos", () => {
+    expect(tenantSlugFromHost("app.allok.fun")).toBeNull();
+    expect(tenantSlugFromHost("foo.bar.allok.fun")).toBeNull();
+    expect(tenantSlugFromHost("allok.fun")).toBeNull();
+    expect(tenantSlugFromHost("otro.example.com")).toBeNull();
+    expect(isSaaSAppHost("app.allok.fun")).toBe(true);
+    expect(isSaaSAppHost("app.localhost:3000")).toBe(true);
+    expect(isSaaSAppHost("clinicaperez.allok.fun")).toBe(false);
+    expect(isLegacyAppHost("crm.allok.fun")).toBe(true);
+    expect(isLegacyAppHost("crm.localhost:3000")).toBe(true);
+    expect(isKnownAllokHost("clinicaperez.allok.fun")).toBe(true);
+    expect(isKnownAllokHost("foo.bar.allok.fun")).toBe(false);
+    expect(isKnownAllokHost("desconocido.allok.fun")).toBe(true);
+    expect(isSaaSAdminHost("admin.allok.fun")).toBe(true);
+    expect(isSaaSAdminHost("desconocido.allok.fun")).toBe(false);
+    expect(isKnownAllokHost("clinicaperez.localhost:3000")).toBe(true);
+    expect(isKnownAllokHost("admin.localhost:3000")).toBe(true);
+    expect(isKnownAllokHost("foo.bar.localhost:3000")).toBe(false);
+  });
+
+  it("permite desarrollo local sin relajar producción", () => {
+    expect(tenantSlugFromHost("clinica.localhost:3000")).toBe("clinica");
+    expect(tenantSlugFromHost("localhost:3000")).toBeNull();
+  });
+
+  it("normaliza nombres humanos a slugs seguros", () => {
+    expect(slugifyTenantName("Clínica Pérez & Asociados")).toBe(
+      "clinica-perez-asociados",
+    );
+    expect(slugifyTenantName("   ")).toBe("negocio");
+    expect(isTenantSlug("a-b-9")).toBe(true);
+    expect(isTenantSlug("-bad")).toBe(false);
+    expect(slugifyTenantName("App")).toBe("negocio");
+    expect(slugifyTenantName("Status")).toBe("negocio");
+    expect(slugifyTenantName("CRM")).toBe("negocio");
+  });
+});

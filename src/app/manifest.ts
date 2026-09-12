@@ -1,13 +1,23 @@
 import type { MetadataRoute } from "next";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getBranding } from "@/server/branding";
+import { headers } from "next/headers";
+import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
+import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 // El manifiesto hereda el white-label de la organización: instalada en el
 // teléfono, la app lleva el nombre y el acento del negocio, no "Vocero".
 export const dynamic = "force-dynamic";
 
 export default async function manifest(): Promise<MetadataRoute.Manifest> {
-  const branding = await getBranding().catch(() => DEFAULT_BRANDING);
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const organizationId = isAllokSaaSMode()
+    ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
+    : undefined;
+  const branding = await (isAllokSaaSMode() && !organizationId
+    ? Promise.resolve(DEFAULT_BRANDING)
+    : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
   return {
     name: `${branding.name} — CRM de WhatsApp`,
     short_name: branding.name,

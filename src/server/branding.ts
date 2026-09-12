@@ -5,6 +5,7 @@ import {
   normalizeBranding,
   type Branding,
 } from "@/lib/branding";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 /** Marca guardada en organization.metadata (JSON de Better Auth). */
 
@@ -33,22 +34,26 @@ export async function getBrandingContext(
   const db = getDb();
   const rows = organizationId
     ? await db
-        .select({ id: schema.organization.id, metadata: schema.organization.metadata })
+        .select({ id: schema.organization.id, name: schema.organization.name, metadata: schema.organization.metadata })
         .from(schema.organization)
         .where(eq(schema.organization.id, organizationId))
         .limit(1)
-    : // Sin sesión (login, layout raíz): la única organización de la instancia.
+    : organizationId === null
+      ? []
+      : // Sin sesión (login legacy, layout raíz): la única organización de la instancia.
       await db
-        .select({ id: schema.organization.id, metadata: schema.organization.metadata })
+        .select({ id: schema.organization.id, name: schema.organization.name, metadata: schema.organization.metadata })
         .from(schema.organization)
         .limit(1);
   if (!rows[0]) return { organizationId: null, branding: DEFAULT_BRANDING };
   const meta = parseMetadata(rows[0].metadata);
+  const customBranding = meta.branding as Partial<Branding> | undefined;
+  const branding = normalizeBranding(customBranding ?? null);
   return {
     organizationId: rows[0].id,
-    branding: normalizeBranding(
-      (meta.branding as Partial<Branding> | undefined) ?? null
-    ),
+    branding: customBranding || !isAllokSaaSMode()
+      ? branding
+      : { ...branding, name: rows[0].name },
   };
 }
 

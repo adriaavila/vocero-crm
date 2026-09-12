@@ -75,6 +75,68 @@ export const organization = pgTable("organization", {
   metadata: text("metadata"),
 });
 
+/**
+ * Eventos de Stripe SaaS ya aplicados. El id de Stripe es la clave primaria:
+ * un reintento o evento duplicado nunca vuelve a mutar la suscripción.
+ */
+export const saasBillingEvent = pgTable(
+  "saas_billing_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    type: text("type").notNull(),
+    processedAt: timestamp("processed_at").notNull().defaultNow(),
+  },
+  (t) => [index("saas_billing_event_org_idx").on(t.organizationId)]
+);
+
+/** Accesos al panel interno SaaS; no guarda payloads ni datos del cliente. */
+export const saasAdminAudit = pgTable(
+  "saas_admin_audit",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    organizationId: text("organization_id").references(() => organization.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("saas_admin_audit_created_idx").on(t.createdAt)]
+);
+
+/** Trabajos durables del agente SaaS: una conversación, como máximo, en vuelo. */
+export const agentJob = pgTable(
+  "agent_job",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: ["queued", "running", "done", "failed", "needs_review"],
+    })
+      .notNull()
+      .default("queued"),
+    availableAt: timestamp("available_at").notNull().defaultNow(),
+    lockedAt: timestamp("locked_at"),
+    lockedBy: text("locked_by"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("agent_job_active_conversation_uq")
+      .on(t.conversationId)
+      .where(sql`${t.status} in ('queued', 'running')`),
+    index("agent_job_claim_idx").on(t.status, t.availableAt, t.lockedAt),
+  ]
+);
+
 export const member = pgTable("member", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id")
@@ -596,6 +658,16 @@ export const agentProfile = pgTable(
     instructions: text("instructions"),
     escalationRules: text("escalation_rules"),
     greeting: text("greeting"),
+    /** Horario de respuestas de Allok; no es la disponibilidad de citas. */
+    businessHours: jsonb("business_hours").notNull().default({}),
+    businessTimezone: text("business_timezone")
+      .notNull()
+      .default("America/Mexico_City"),
+    responseMode: text("response_mode", {
+      enum: ["outside_hours", "all_day"],
+    })
+      .notNull()
+      .default("outside_hours"),
     activationEnabled: boolean("preset_only").notNull().default(false),
     activationMessages: jsonb("preset_replies")
       .$type<string[]>()

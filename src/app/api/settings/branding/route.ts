@@ -1,16 +1,31 @@
 import { z } from "zod";
 import { parseBody, withOwner } from "@/lib/api";
 import { getSessionOrNull } from "@/lib/auth/session";
-import { isValidHex, resolveAccentSet } from "@/lib/branding";
+import { DEFAULT_BRANDING, isValidHex, resolveAccentSet } from "@/lib/branding";
 import { CURRENCIES } from "@/lib/money";
 import { getBranding, saveBranding } from "@/server/branding";
+import { isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 export const dynamic = "force-dynamic";
 
 /** GET público: el login necesita la marca antes de autenticarse. */
-export async function GET() {
+export async function GET(req: Request) {
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const saasMode = isAllokSaaSMode();
+  const tenantSlug = tenantSlugFromHost(host);
+  if (saasMode && !isKnownAllokHost(host)) return Response.json({ error: "not_found" }, { status: 404 });
+  const hostOrganizationId = tenantSlug
+    ? await resolveOrganizationIdForHost(host)
+    : isLegacyAppHost(host)
+      ? await resolveLegacyOrganizationId()
+      : null;
+  if (saasMode && tenantSlug && !hostOrganizationId) return Response.json({ error: "not_found" }, { status: 404 });
+  if (saasMode && !tenantSlug && !isLegacyAppHost(host)) {
+    return Response.json({ branding: DEFAULT_BRANDING, accentSet: resolveAccentSet(DEFAULT_BRANDING.accent) });
+  }
   const session = await getSessionOrNull();
-  const branding = await getBranding(session?.organizationId);
+  const branding = await getBranding(hostOrganizationId ?? session?.organizationId);
   return Response.json({ branding, accentSet: resolveAccentSet(branding.accent) });
 }
 

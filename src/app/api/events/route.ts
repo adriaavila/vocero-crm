@@ -1,4 +1,4 @@
-import { requireSession, UnauthorizedError } from "@/lib/auth/session";
+import { requireSession, SaaSMemberPlanRequiredError, UnauthorizedError } from "@/lib/auth/session";
 import { subscribe } from "@/server/events/bus";
 
 /**
@@ -18,6 +18,9 @@ export async function GET(req: Request) {
   } catch (err) {
     if (err instanceof UnauthorizedError) {
       return new Response("No autenticado", { status: 401 });
+    }
+    if (err instanceof SaaSMemberPlanRequiredError) {
+      return new Response("El acceso de miembros requiere el plan Pro", { status: 402 });
     }
     throw err;
   }

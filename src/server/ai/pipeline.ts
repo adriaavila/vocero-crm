@@ -1,4 +1,4 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -19,6 +19,9 @@ import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
+import { hasSaaSPlan } from "@/server/agencia/entitlements";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { canAgentRespondNow } from "@/server/business-hours";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -47,7 +50,7 @@ function coalesceMap(): Map<string, CoalesceEntry> {
 }
 
 /** Punto de entrada con debounce (mensajes entrantes reales). */
-export function scheduleAgentTurn(conversationId: string): void {
+function scheduleLegacyAgentTurn(conversationId: string): void {
   const map = coalesceMap();
   const entry = map.get(conversationId) ?? {
     timer: null,
@@ -66,6 +69,43 @@ export function scheduleAgentTurn(conversationId: string): void {
     entry.timer = null;
     void executeTurn(conversationId);
   }, delay);
+}
+
+export async function scheduleAgentTurn(conversationId: string): Promise<void> {
+  if (!isAllokSaaSMode()) {
+    scheduleLegacyAgentTurn(conversationId);
+    return;
+  }
+  const db = getDb();
+  const conversation = await db
+    .select({ organizationId: schema.conversation.organizationId })
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversationId))
+    .limit(1);
+  const organizationId = conversation[0]?.organizationId;
+  if (!organizationId) return;
+
+  const now = new Date();
+  const availableAt = new Date(now.getTime() + getEnv().AGENT_COALESCE_MS);
+  await db
+    .insert(schema.agentJob)
+    .values({
+      id: newId("agentJob"),
+      organizationId,
+      conversationId,
+      availableAt,
+    })
+    .onConflictDoNothing();
+  await db
+    .update(schema.agentJob)
+    .set({ availableAt, updatedAt: now })
+    .where(
+      and(
+        eq(schema.agentJob.conversationId, conversationId),
+        eq(schema.agentJob.status, "queued"),
+      )
+    );
+  void import("./worker").then(({ kickAgentWorker }) => kickAgentWorker());
 }
 
 async function executeTurn(conversationId: string): Promise<void> {
@@ -118,6 +158,7 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   // El toggle global aplica a conversaciones reales; el Laboratorio evalúa el
   // comportamiento configurado aunque el agente aún no esté encendido.
   if (!conversation.isTest && !profile.enabled) return;
+  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) return;
 
   const history = await db
     .select()
@@ -146,13 +187,16 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
     .from(schema.kbEntry)
     .where(eq(schema.kbEntry.organizationId, organizationId))
     .orderBy(asc(schema.kbEntry.createdAt));
-  const stages = await db
-    .select({ id: schema.pipelineStage.id, name: schema.pipelineStage.name })
-    .from(schema.pipelineStage)
-    .where(eq(schema.pipelineStage.organizationId, organizationId))
-    .orderBy(asc(schema.pipelineStage.position));
+  const proEnabled = await hasSaaSPlan(organizationId, "pro");
+  const stages = proEnabled
+    ? await db
+        .select({ id: schema.pipelineStage.id, name: schema.pipelineStage.name })
+        .from(schema.pipelineStage)
+        .where(eq(schema.pipelineStage.organizationId, organizationId))
+        .orderBy(asc(schema.pipelineStage.position))
+    : [];
 
-  const agenda = agendaEnabled();
+  const agenda = proEnabled && agendaEnabled();
   const settings = await getSettings(organizationId);
   const messages: ChatMessage[] = [
     {
@@ -281,6 +325,8 @@ async function deliverReply(
     });
   } catch (err) {
     if (err instanceof SendError && err.code === "ai_disabled") return;
+    if (err instanceof SendError && err.code === "billing_inactive") return;
+    if (err instanceof SendError && err.code === "outside_hours") return;
     if (err instanceof SendError && err.code === "window_closed") {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
       return;

@@ -10,5 +10,5 @@ export async function maybeRunAgentTurn(
   conversationId: string
 ): Promise<void> {
   if (!shouldRunInternalAgent()) return;
-  scheduleAgentTurn(conversationId);
+  await scheduleAgentTurn(conversationId);
 }

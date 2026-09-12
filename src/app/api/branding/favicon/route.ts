@@ -2,6 +2,8 @@ import { readMediaFile } from "@/server/whatsapp/media";
 import { getBrandingContext } from "@/server/branding";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { FAVICON_ASSET, generatedFaviconSvg } from "@/lib/favicon";
+import { isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +37,40 @@ function cabeceras(mime: string, cacheable: boolean): HeadersInit {
 export async function GET(req: Request) {
   const cacheable = new URL(req.url).searchParams.has("v");
 
-  const ctx = await getBrandingContext().catch(() => null);
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
+  const tenantSlug = tenantSlugFromHost(host);
+  if (isAllokSaaSMode() && !isKnownAllokHost(host)) {
+    return new Response("Not found", { status: 404 });
+  }
+  if (isAllokSaaSMode() && tenantSlug) {
+    const organizationId = await resolveOrganizationIdForHost(host);
+    if (!organizationId) return new Response("Not found", { status: 404 });
+    const ctx = await getBrandingContext(organizationId).catch(() => null);
+    const branding = ctx?.branding ?? DEFAULT_BRANDING;
+    if (ctx?.organizationId && branding.favicon) {
+      try {
+        const buf = await readMediaFile(ctx.organizationId, FAVICON_ASSET);
+        return new Response(new Uint8Array(buf), {
+          headers: cabeceras(branding.favicon.mime, cacheable),
+        });
+      } catch {
+        // El archivo puede desaparecer al restaurar el volumen.
+      }
+    }
+    return new Response(generatedFaviconSvg(branding), {
+      headers: cabeceras("image/svg+xml", cacheable),
+    });
+  }
+  if (isAllokSaaSMode() && !isLegacyAppHost(host)) {
+    return new Response(generatedFaviconSvg(DEFAULT_BRANDING), {
+      headers: cabeceras("image/svg+xml", cacheable),
+    });
+  }
+
+  const legacyOrganizationId = isAllokSaaSMode() && !tenantSlug
+    ? await resolveLegacyOrganizationId().catch(() => null)
+    : null;
+  const ctx = await getBrandingContext(legacyOrganizationId).catch(() => null);
   const branding = ctx?.branding ?? DEFAULT_BRANDING;
 
   if (ctx?.organizationId && branding.favicon) {

@@ -62,6 +62,8 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   reconnect_required: 409,
   ai_disabled: 409,
   window_closed: 409,
+  billing_inactive: 402,
+  outside_hours: 409,
   meta_error: 422,
   meta_unavailable: 503,
   upload_failed: 502,

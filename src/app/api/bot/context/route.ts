@@ -7,6 +7,7 @@ import { serializeFicha } from "@/server/bot/ficha";
 import { accesoDeAgencia, proximaCita } from "@/server/agencia/bot-perfil";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import { normalizeMx } from "@/lib/meta/client";
+import { hasSaaSPlan } from "@/server/agencia/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
   const denied = requireBotKey(req);
   if (denied) return denied;
 
-  const organizationId = await resolveInstanceOrg();
+  const organizationId = await resolveInstanceOrg(req);
   if (!organizationId) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
@@ -105,24 +106,27 @@ export async function GET(req: Request) {
     return apiError(404, "not_found", "Conversación no encontrada");
   }
 
-  const leadRows = await db
-    .select({ lead: schema.lead, stage: schema.pipelineStage })
-    .from(schema.lead)
-    .innerJoin(
-      schema.pipelineStage,
-      eq(schema.lead.stageId, schema.pipelineStage.id)
-    )
-    .where(
-      and(
-        eq(schema.lead.organizationId, organizationId),
-        eq(schema.lead.contactId, contact.id)
-      )
-    )
-    .limit(1);
+  const proEnabled = await hasSaaSPlan(organizationId, "pro");
+  const leadRows = proEnabled
+    ? await db
+        .select({ lead: schema.lead, stage: schema.pipelineStage })
+        .from(schema.lead)
+        .innerJoin(
+          schema.pipelineStage,
+          eq(schema.lead.stageId, schema.pipelineStage.id)
+        )
+        .where(
+          and(
+            eq(schema.lead.organizationId, organizationId),
+            eq(schema.lead.contactId, contact.id)
+          )
+        )
+        .limit(1)
+    : [];
 
   const [agentAccess, booking] = await Promise.all([
     accesoDeAgencia(organizationId),
-    proximaCita(organizationId, contact.id),
+    proEnabled ? proximaCita(organizationId, contact.id) : Promise.resolve(null),
   ]);
 
   return Response.json({

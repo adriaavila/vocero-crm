@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Archivo, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { faviconHref } from "@/lib/favicon";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
+import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
+import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import "./globals.css";
 
 // Las tres voces de la marca, las mismas de vocerocrm.com. next/font las
@@ -31,10 +33,23 @@ const plexMono = IBM_Plex_Mono({
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const branding = await getBranding().catch(() => DEFAULT_BRANDING);
+  const saasMode = isAllokSaaSMode();
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const organizationId = saasMode
+    ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
+    : null;
+  const branding = await Promise.resolve(saasMode
+    ? organizationId ? getBranding(organizationId) : DEFAULT_BRANDING
+    : getBranding()
+  ).catch(() => DEFAULT_BRANDING);
   return {
-    title: `${branding.name} — CRM de WhatsApp`,
-    description: "CRM de WhatsApp con agente de IA y Laboratorio de auto-evaluación",
+    title: saasMode
+      ? `${branding.name} — Tu WhatsApp responde aunque estés cerrado`
+      : `${branding.name} — CRM de WhatsApp`,
+    description: saasMode
+      ? "Allok atiende las preguntas de tus clientes cuando tu equipo no está disponible."
+      : "CRM de WhatsApp con agente de IA y Laboratorio de auto-evaluación",
     // El `?v=` cambia con la marca: los navegadores guardan el favicon con una
     // insistencia notable y, sin eso, el logo nuevo tarda días en aparecer.
     icons: { icon: faviconHref(branding) },
@@ -44,10 +59,24 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const branding = await getBranding().catch(() => DEFAULT_BRANDING);
+  const saasMode = isAllokSaaSMode();
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const organizationId = saasMode
+    ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
+    : null;
+  const branding = await Promise.resolve(saasMode
+    ? organizationId ? getBranding(organizationId) : DEFAULT_BRANDING
+    : getBranding()
+  ).catch(() => DEFAULT_BRANDING);
   const theme = normalizeThemePreference(
     (await cookies()).get(THEME_COOKIE)?.value
   );
+  // Allok gets its own product surface; the legacy Vocero CRM keeps the
+  // existing palette and white-label behavior untouched.
+  const accent = saasMode && branding.accent === DEFAULT_BRANDING.accent
+    ? "#147d52"
+    : branding.accent;
   return (
     <html
       lang="es"
@@ -55,11 +84,12 @@ export default async function RootLayout({
       // La preferencia siempre es explícita: el tema viaja resuelto en el HTML
       // del servidor, así que no hay divergencia con el cliente ni parpadeo.
       data-theme={theme}
+      data-saas={saasMode ? "true" : undefined}
     >
       <head>
         {/* Acento white-label inyectado en SSR: sin flash de tema */}
         <style
-          dangerouslySetInnerHTML={{ __html: accentCssVariables(branding.accent) }}
+          dangerouslySetInnerHTML={{ __html: accentCssVariables(accent) }}
         />
       </head>
       <body className="font-sans">{children}</body>

@@ -1,5 +1,6 @@
 import { getEnv } from "@/lib/env";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { resolveInstanceOrg } from "@/server/bot/auth";
 import { saveCredentials } from "@/server/whatsapp/credentials";
 import {
@@ -45,7 +46,9 @@ export async function POST(req: Request): Promise<Response> {
   const parsed = parseProvisionPayload(body);
   if (!parsed.ok) return fail(400, parsed.message);
 
-  const target = resolveTargetOrg(parsed.payload.organizationId, await resolveInstanceOrg());
+  const target = isAllokSaaSMode()
+    ? await resolveSaaSProvisionOrg(parsed.payload.organizationId)
+    : resolveTargetOrg(parsed.payload.organizationId, await resolveInstanceOrg());
   if (!target.ok) return fail(409, target.message);
 
   // El índice `meta_credentials_phone_uq` es de instancia: si ese número ya está
@@ -90,4 +93,18 @@ export async function POST(req: Request): Promise<Response> {
       env.APP_BASE_URL
     ).toString(),
   });
+}
+
+async function resolveSaaSProvisionOrg(
+  requested: string | null,
+): Promise<{ ok: true; organizationId: string } | { ok: false; message: string }> {
+  if (!requested) return { ok: false, message: "SaaS requiere organization_id." };
+  const rows = await getDb()
+    .select({ id: schema.organization.id })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, requested))
+    .limit(1);
+  return rows[0]
+    ? { ok: true, organizationId: rows[0].id }
+    : { ok: false, message: "La organización SaaS no existe en esta instancia." };
 }

@@ -4,6 +4,7 @@ import { scoped } from "@/lib/db/tenant";
 import { partsInTz } from "@/lib/time/slots";
 import { getSettings } from "@/server/agenda/settings";
 import { agendaEnabled } from "@/server/agenda/flag";
+import { getBusinessHours } from "@/server/business-hours";
 
 /**
  * Capa de agencia — lo que el cerebro externo necesita y el contrato de
@@ -36,6 +37,9 @@ export async function perfilDeAgencia(organizationId: string): Promise<{
   activationEnabled: boolean;
   activationMessages: string[];
   timezone: string;
+  businessTimezone: string;
+  businessHours: Awaited<ReturnType<typeof getBusinessHours>>["weeklyHours"];
+  responseMode: Awaited<ReturnType<typeof getBusinessHours>>["responseMode"];
 }> {
   const rows = await getDb()
     .select({
@@ -59,6 +63,7 @@ export async function perfilDeAgencia(organizationId: string): Promise<{
   // etiquetas. Viaja siempre, con la agenda encendida o apagada: la fecha de
   // referencia le hace falta al agente aunque no agende nada.
   const settings = await getSettings(organizationId);
+  const businessHours = await getBusinessHours(organizationId);
   return {
     activationEnabled: row?.activationEnabled ?? false,
     // Tolerante a propósito: la columna guardó objetos `{message}` en una
@@ -66,6 +71,9 @@ export async function perfilDeAgencia(organizationId: string): Promise<{
     // perfil entero por un formato heredado.
     activationMessages: normalizarMensajes(row?.activationMessages),
     timezone: settings.timezone,
+    businessTimezone: businessHours.timezone,
+    businessHours: businessHours.weeklyHours,
+    responseMode: businessHours.responseMode,
   };
 }
 

@@ -7,6 +7,7 @@ import type { Branding } from "@/lib/branding";
 import type { ThemePreference } from "@/lib/theme";
 import { AppNav } from "@/components/app-nav";
 import { BrandLogo } from "@/components/brand-mark";
+import type { SaaSPlan } from "@/server/saas/billing";
 
 /**
  * Cascarón de la app en dos modos:
@@ -27,6 +28,8 @@ export function AppShell({
   theme,
   commit,
   agenda = false,
+  saasMode = false,
+  saasPlan = null,
   children,
 }: {
   branding: Branding;
@@ -37,6 +40,9 @@ export function AppShell({
   commit?: string;
   /** 015 — ¿esta instancia tiene agenda? Lo decide el servidor. */
   agenda?: boolean;
+  /** La navegación Allok reduce el CRM a las cuatro acciones principales. */
+  saasMode?: boolean;
+  saasPlan?: SaaSPlan | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -57,8 +63,29 @@ export function AppShell({
     return () => window.removeEventListener("keydown", onKey);
   }, [navOpen]);
 
+  const pageLabel =
+    pathname === "/overview"
+      ? "Inicio"
+      : pathname.startsWith("/inbox")
+        ? "Conversaciones"
+        : pathname.startsWith("/pipeline")
+          ? "Ventas"
+          : pathname.startsWith("/bookings")
+            ? "Agenda"
+            : pathname.startsWith("/settings")
+              ? "Configuración"
+              : pathname.startsWith("/lab")
+                ? "Probar Allok"
+                : "Allok";
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
+      <a
+        href="#main-content"
+        className="sr-only fixed left-3 top-3 z-[70] rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground shadow-pop focus:not-sr-only"
+      >
+        Saltar al contenido
+      </a>
       {navOpen && (
         <button
           aria-label="Cerrar el menú"
@@ -75,24 +102,27 @@ export function AppShell({
         role={role}
         theme={theme}
         agenda={agenda}
+        saasMode={saasMode}
+        saasPlan={saasPlan}
         open={navOpen}
         onClose={() => setNavOpen(false)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-1.5 border-b bg-subtle px-2 lg:hidden">
+        <header className="flex h-14 shrink-0 items-center gap-1.5 border-b bg-background/90 px-2 backdrop-blur lg:hidden">
           <button
             onClick={() => setNavOpen(true)}
             aria-label="Abrir el menú"
             aria-expanded={navOpen}
-            className="rounded-md p-2 text-text-2 hover:bg-accent hover:text-foreground"
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-text-2 hover:bg-accent hover:text-foreground"
           >
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
-          <BrandLogo branding={branding} className="min-w-0" />
+          <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />
+          <span className="ml-auto border-l pl-3 text-sm font-semibold text-text-2">{pageLabel}</span>
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
+        <main id="main-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>
   );

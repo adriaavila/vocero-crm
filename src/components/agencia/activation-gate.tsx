@@ -16,15 +16,16 @@ import { Button } from "@/components/ui/button";
  * Apagar nunca pregunta: frenar al bot tiene que ser instantáneo.
  */
 
-type Step = { status: string; label: string; detail: string };
+type Step = { id?: string; status: string; label: string; detail: string };
 
 export function useActivationGate(input: {
   enabled: boolean;
+  strict?: boolean;
   onConfirm: (enabled: boolean) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [pending, setPending] = useState<Step[]>([]);
-  const { enabled, onConfirm } = input;
+  const { enabled, strict = false, onConfirm } = input;
 
   const toggle = useCallback(async () => {
     if (enabled) return onConfirm(false);
@@ -51,6 +52,13 @@ export function useActivationGate(input: {
     <ActivationGate
       ref={dialog}
       steps={pending}
+      blocked={strict && pending.some((step) =>
+        step.id === "whatsapp" ||
+        step.id === "business_hours" ||
+        step.id === "agent_profile" ||
+        step.id === "knowledge" ||
+        step.id === "simulation"
+      )}
       onConfirm={() => {
         dialog.current?.close();
         onConfirm(true);
@@ -64,10 +72,12 @@ export function useActivationGate(input: {
 export function ActivationGate({
   ref,
   steps,
+  blocked = false,
   onConfirm,
 }: {
   ref: React.Ref<HTMLDialogElement>;
   steps: Step[];
+  blocked?: boolean;
   onConfirm: () => void;
 }) {
   return (
@@ -78,7 +88,9 @@ export function ActivationGate({
       <div className="border-b p-5">
         <h3 className="font-semibold">Aún hay pasos pendientes</h3>
         <p className="mt-1 text-sm text-text-3">
-          Puedes activar el agente, pero recomendamos revisar esto primero.
+          {blocked
+            ? "Completa la conexión, el horario, la información y la prueba antes de permitir respuestas reales."
+            : "Puedes activar el agente, pero recomendamos revisar esto primero."}
         </p>
       </div>
       <div className="space-y-2 p-5">
@@ -96,7 +108,7 @@ export function ActivationGate({
         >
           Volver y corregir
         </Button>
-        <Button onClick={onConfirm}>Activar de todas formas</Button>
+        {!blocked && <Button onClick={onConfirm}>Activar de todas formas</Button>}
       </div>
     </dialog>
   );

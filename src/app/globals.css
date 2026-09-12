@@ -148,6 +148,50 @@
     --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.75),
       0 8px 24px -12px rgba(0, 0, 0, 0.5);
   }
+
+  /* SaaS surface: warm, quiet and product-led. Scoped to Allok so the
+     existing Vocero instance remains visually unchanged. */
+  :root[data-saas="true"] {
+    color-scheme: light;
+    --bg: #fbfbf7;
+    --bg-subtle: #f3f5ef;
+    --bg-panel: #ffffff;
+    --bg-hover: #edf1e8;
+    --text: #161817;
+    --text-2: #5e635f;
+    --text-3: #7b837b;
+    --text-4: #a8afa7;
+    --border: #e4e8df;
+    --border-strong: #d5ddd2;
+    --chat-bg: #f7f8f3;
+    --bubble-in: #eaf6ec;
+    --bubble-in-border: #d5ead9;
+    --shadow-sm: 0 1px 2px rgba(22, 24, 23, 0.05);
+    --shadow-md: 0 14px 40px -16px rgba(22, 24, 23, 0.14);
+    --shadow-pop: 0 30px 80px -20px rgba(22, 24, 23, 0.18),
+      0 8px 24px -12px rgba(22, 24, 23, 0.1);
+  }
+
+  :root[data-theme="dark"][data-saas="true"] {
+    color-scheme: dark;
+    --bg: #101311;
+    --bg-subtle: #0b0e0c;
+    --bg-panel: #171b18;
+    --bg-hover: #202720;
+    --text: #f2f4ee;
+    --text-2: #b0b8af;
+    --text-3: #7d887e;
+    --text-4: #5b665d;
+    --border: #263029;
+    --border-strong: #344338;
+    --chat-bg: #0b0e0c;
+    --bubble-in: #132619;
+    --bubble-in-border: #24442d;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.42);
+    --shadow-md: 0 14px 40px -16px rgba(0, 0, 0, 0.62);
+    --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.75),
+      0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  }
 }
 
 @layer base {
@@ -158,6 +202,15 @@
     @apply bg-background text-foreground antialiased;
     letter-spacing: -0.01em;
     text-rendering: optimizeLegibility;
+  }
+
+  :root[data-saas="true"] button,
+  :root[data-saas="true"] a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :root[data-saas="true"] button:not([aria-hidden="true"]) {
+    min-height: 44px;
   }
   ::selection {
     background: var(--accent);

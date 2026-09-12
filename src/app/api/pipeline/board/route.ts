@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { withAuth } from "@/lib/api";
+import { withPro } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { getBranding } from "@/server/branding";
@@ -7,7 +7,7 @@ import { getBranding } from "@/server/branding";
 export const dynamic = "force-dynamic";
 
 /** Datos completos del kanban: etapas ordenadas + tarjetas con su contacto. */
-export const GET = withAuth(async (session) => {
+export const GET = withPro(async (session) => {
   const db = getDb();
 
   const stages = await db

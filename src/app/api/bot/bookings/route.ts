@@ -7,6 +7,7 @@ import {
   rescheduleForConversation,
 } from "@/server/agenda/service";
 import { bookingErrorResponse, bookingPayload } from "@/server/agenda/http";
+import { hasSaaSPlan } from "@/server/agencia/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -86,12 +87,14 @@ async function guard(req: Request): Promise<Gate> {
   if (!agendaEnabled()) return { response: agendaDisabledResponse() };
   const denied = requireBotKey(req);
   if (denied) return { response: denied };
-  const organizationId = await resolveInstanceOrg();
+  const organizationId = await resolveInstanceOrg(req);
   if (!organizationId) {
     return {
       response: apiError(409, "no_org", "La instancia aún no tiene organización"),
     };
   }
+  if (!(await hasSaaSPlan(organizationId, "pro"))) {
+    return { response: apiError(403, "plan_required", "La agenda está disponible en el plan Pro") };
+  }
   return { organizationId };
 }
-

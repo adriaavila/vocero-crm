@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -35,6 +35,9 @@ import {
   uploadGraphMedia,
   validateOutgoing,
 } from "@/server/whatsapp/media";
+import { canAutomate } from "@/server/agencia/entitlements";
+import { canAgentRespondNow } from "@/server/business-hours";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 /** Error tipado del envío; `code` mapea a HTTP en la capa de API. */
 export class SendError extends Error {
@@ -44,6 +47,8 @@ export class SendError extends Error {
     | "reconnect_required"
     | "ai_disabled"
     | "window_closed"
+    | "billing_inactive"
+    | "outside_hours"
     | "meta_error"
     | "meta_unavailable"
     | "upload_failed";
@@ -91,10 +96,13 @@ async function prepareSend(
       schema.contact,
       eq(schema.conversation.contactId, schema.contact.id)
     )
-    .where(eq(schema.conversation.id, conversationId))
+    .where(and(
+      eq(schema.conversation.id, conversationId),
+      eq(schema.conversation.organizationId, organizationId),
+    ))
     .limit(1);
   const row = rows[0];
-  if (!row || row.conversation.organizationId !== organizationId) {
+  if (!row) {
     throw new SendError("meta_error", "Conversación no encontrada");
   }
 
@@ -117,6 +125,37 @@ async function prepareSend(
     throw new SendError(
       "ai_disabled",
       "La IA fue pausada antes de entregar esta respuesta"
+    );
+  }
+
+  // El dueño puede apagar Allok mientras el modelo está generando. La
+  // conversación puede seguir diciendo `aiEnabled=true`, así que el toggle
+  // global también se relee justo antes del transporte.
+  if (requireAiEnabled && isAllokSaaSMode()) {
+    const profiles = await db
+      .select({ enabled: schema.agentProfile.enabled })
+      .from(schema.agentProfile)
+      .where(eq(schema.agentProfile.organizationId, organizationId))
+      .limit(1);
+    if (!profiles[0]?.enabled) {
+      throw new SendError(
+        "ai_disabled",
+        "Allok fue pausado antes de entregar esta respuesta"
+      );
+    }
+  }
+
+  if (requireAiEnabled && !(await canAutomate(organizationId))) {
+    throw new SendError(
+      "billing_inactive",
+      "La automatización está pausada: revisa la suscripción de Allok",
+    );
+  }
+
+  if (requireAiEnabled && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
+    throw new SendError(
+      "outside_hours",
+      "El agente está configurado para responder solo fuera del horario de atención",
     );
   }
 

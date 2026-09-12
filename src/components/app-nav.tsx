@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import type { ThemePreference } from "@/lib/theme";
+import type { SaaSPlan } from "@/server/saas/billing";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
@@ -62,6 +63,19 @@ const NAV: NavItem[] = [
   { href: "/analytics", label: "Analítica", icon: BarChart3, owner: true },
 ];
 
+const ALLOK_NAV: NavItem[] = [
+  { href: "/overview", label: "Inicio", icon: Gauge },
+  { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
+  { href: "/lab", label: "Probar Allok", icon: FlaskConical, owner: true },
+  { href: "/settings", label: "Configuración", icon: Settings, owner: true },
+];
+
+const ALLOK_PRO_NAV: NavItem[] = [
+  { href: "/pipeline", label: "Ventas", icon: Kanban },
+  { href: "/bookings", label: "Agenda", icon: CalendarDays },
+  { href: "/settings/team", label: "Equipo", icon: Users, owner: true },
+];
+
 /** 015 — "Citas" solo existe si esta instancia encendió la agenda. */
 const AGENDA_ITEM: NavItem = {
   href: "/bookings",
@@ -75,7 +89,7 @@ const AGENDA_ITEM: NavItem = {
  */
 function navItemClass(active: boolean) {
   return cn(
-    "flex items-center gap-[10px] rounded-sm px-2.5 py-2.5 text-[13.5px] font-semibold transition-colors lg:py-2",
+    "flex min-h-11 items-center gap-[10px] rounded-sm px-2.5 py-2.5 text-[13.5px] font-semibold transition-colors lg:min-h-10 lg:py-2",
     active
       ? "bg-brand-tint text-brand-text"
       : "text-text-2 hover:bg-accent hover:text-foreground"
@@ -89,6 +103,8 @@ export function AppNav({
   theme,
   commit,
   agenda = false,
+  saasMode = false,
+  saasPlan = null,
   open = false,
   onClose,
 }: {
@@ -107,6 +123,8 @@ export function AppNav({
    * todavía debe ver la entrada igual.
    */
   agenda?: boolean;
+  saasMode?: boolean;
+  saasPlan?: SaaSPlan | null;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
   onClose?: () => void;
@@ -138,9 +156,17 @@ export function AppNav({
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const esPropietario = role === "owner";
-  const items = (agenda
-    ? [...NAV.slice(0, 2), AGENDA_ITEM, ...NAV.slice(2)]
-    : NAV
+  const sourceNav = saasMode
+    ? [
+        ...ALLOK_NAV,
+        ...(saasPlan === "pro"
+          ? ALLOK_PRO_NAV.filter((item) => item.href !== "/bookings" || agenda)
+          : []),
+      ]
+    : NAV;
+  const items = (agenda && !saasMode
+    ? [...sourceNav.slice(0, 2), AGENDA_ITEM, ...sourceNav.slice(2)]
+    : sourceNav
   ).filter((item) => !item.owner || esPropietario);
 
   return (
@@ -178,7 +204,12 @@ export function AppNav({
           const active =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
-            <Link key={item.href} href={item.href} className={navItemClass(active)}>
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={navItemClass(active)}
+            >
               <item.icon
                 className={cn("h-[17px] w-[17px]", active ? "text-brand" : "text-text-3")}
                 strokeWidth={1.8}
@@ -198,7 +229,7 @@ export function AppNav({
 
       {/* Capa de agencia: cada miembro del equipo del cliente cambia aquí su
           nombre y su contraseña, sin pasar por la agencia. */}
-      <Link href="/account" className={navItemClass(pathname.startsWith("/account"))}>
+      {!saasMode && <Link href="/account" className={navItemClass(pathname.startsWith("/account"))}>
         <CircleUserRound
           className={cn(
             "h-[17px] w-[17px]",
@@ -207,9 +238,9 @@ export function AppNav({
           strokeWidth={1.8}
         />
         Mi cuenta
-      </Link>
+      </Link>}
 
-      {esPropietario && (
+      {esPropietario && !saasMode && (
       <Link href="/settings" className={navItemClass(settingsActive)}>
         <Settings
           className={cn("h-[17px] w-[17px]", settingsActive ? "text-brand" : "text-text-3")}
@@ -235,7 +266,7 @@ export function AppNav({
             <TooltipTrigger asChild>
               <button
                 aria-label="Cerrar sesión"
-                className="rounded p-1 text-text-3 hover:text-foreground"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded text-text-3 hover:text-foreground"
                 onClick={async () => {
                   await signOut();
                   router.push("/login");

@@ -30,6 +30,13 @@ export default function LoginPage() {
       );
       return;
     }
+    const tenant = await fetch("/api/saas/tenant").then((response) =>
+      response.ok ? response.json().catch(() => null) : null
+    ).catch(() => null) as { url?: string | null } | null;
+    if (tenant?.url && new URL(tenant.url).origin !== window.location.origin) {
+      window.location.assign(`${tenant.url}/overview`);
+      return;
+    }
     router.push("/overview");
     router.refresh();
   }

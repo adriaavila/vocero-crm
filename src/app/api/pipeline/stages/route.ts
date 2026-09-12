@@ -1,13 +1,13 @@
 import { asc, sql } from "drizzle-orm";
 import { z } from "zod";
-import { parseBody, withAuth, withOwner } from "@/lib/api";
+import { parseBody, withPro, withProOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withAuth(async (session) => {
+export const GET = withPro(async (session) => {
   const db = getDb();
   const stages = await db
     .select()
@@ -21,7 +21,7 @@ const createSchema = z.object({
   name: z.string().trim().min(1).max(60),
 });
 
-export const POST = withOwner(async (session, req: Request) => {
+export const POST = withProOwner(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
 

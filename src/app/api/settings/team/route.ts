@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { z } from "zod";
-import { apiError, parseBody, withOwner } from "@/lib/api";
+import { apiError, parseBody, withProOwner } from "@/lib/api";
 import { getAuth, runInternalSignup } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -8,7 +8,7 @@ import { scoped } from "@/lib/db/tenant";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withOwner(async (session) => {
+export const GET = withProOwner(async (session) => {
   const db = getDb();
   const members = await db
     .select({
@@ -39,9 +39,17 @@ const createSchema = z.object({
 });
 
 /** Alta de cuenta de equipo (owner only): email + contraseña temporal (FR-061). */
-export const POST = withOwner(async (session, req: Request) => {
+export const POST = withProOwner(async (session, req: Request) => {
   const body = await parseBody(req, createSchema);
   if (!body.ok) return body.response;
+
+  const memberCount = await getDb()
+    .select({ count: count() })
+    .from(schema.member)
+    .where(scoped(schema.member.organizationId, session.organizationId));
+  if ((memberCount[0]?.count ?? 0) >= 3) {
+    return apiError(409, "member_limit", "Pro incluye hasta 3 usuarios, incluido el propietario");
+  }
 
   const auth = getAuth();
   let newUserId: string;

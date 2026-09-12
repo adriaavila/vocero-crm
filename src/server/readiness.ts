@@ -5,9 +5,12 @@ import { scoped } from "@/lib/db/tenant";
 import { isAgentConfigured, isWahaConfigured } from "@/lib/env";
 import { getBranding } from "@/server/branding";
 import { pasoAgenda, type PasoAgenda } from "@/server/agencia/readiness-agenda";
+import { businessHoursFromProfile, hasConfiguredBusinessHours } from "@/server/business-hours";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 export type ReadinessStepId =
   | "whatsapp"
+  | "business_hours"
   | "ai_provider"
   | "agent_profile"
   | "knowledge"
@@ -31,8 +34,35 @@ export type ReadinessResponse = {
   optional: { brandingCustomized: boolean; teamMemberCount: number };
 };
 
+const SAAS_ACTIVATION_STEP_IDS = new Set<ReadinessStepId>([
+  "whatsapp",
+  "business_hours",
+  "agent_profile",
+  "knowledge",
+  "simulation",
+]);
+
+export function saasActivationBlockers(readiness: ReadinessResponse): ReadinessStep[] {
+  return readiness.steps.filter(
+    (step) => SAAS_ACTIVATION_STEP_IDS.has(step.id) && step.status !== "complete",
+  );
+}
+
 type Input = {
-  profile: typeof schema.agentProfile.$inferSelect;
+  profile: {
+    enabled: boolean;
+    name: string;
+    tone: string | null;
+    greeting: string | null;
+    instructions: string | null;
+    escalationRules: string | null;
+    lastLiveTestAt: Date | null;
+    lastLiveTestPassed: boolean | null;
+    updatedAt: Date;
+    businessHours?: unknown;
+    businessTimezone?: string;
+    responseMode?: string;
+  };
   whatsappConnected: boolean;
   aiConfigured: boolean;
   liveTestAvailable: boolean;
@@ -42,6 +72,8 @@ type Input = {
   redCount: number;
   brandingCustomized: boolean;
   teamMemberCount: number;
+  businessHoursConfigured?: boolean;
+  saasMode?: boolean;
   /** Capa de agencia: el paso de la agenda, o null si esta instancia no agenda. */
   agendaStep: PasoAgenda | null;
 };
@@ -86,6 +118,17 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
       detail: input.whatsappConnected ? "Número conectado y vigente." : "Conecta el número que atenderá a tus clientes.",
       href: "/settings/whatsapp",
     },
+    ...(input.saasMode
+      ? [{
+          id: "business_hours" as const,
+          status: input.businessHoursConfigured ? "complete" as const : "pending" as const,
+          label: "Define el horario de respuesta",
+          detail: input.businessHoursConfigured
+            ? "Allok sabe cuándo responder por ti."
+            : "Elige los días, las horas y la zona horaria del negocio.",
+          href: "/agent",
+        }]
+      : []),
     {
       id: "ai_provider",
       status: input.aiConfigured ? "complete" : "unavailable",
@@ -138,8 +181,13 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
   // Llega resuelto desde fuera para que esta función siga siendo PURA.
   if (input.agendaStep) steps.splice(4, 0, input.agendaStep);
 
+  const blockingSteps = steps.filter(
+    (step) => step.status !== "complete" &&
+      !(input.saasMode && step.id === "live_test" && step.status === "unavailable"),
+  );
+
   return {
-    overall: steps.every((step) => step.status === "complete") ? "ready" : "needs_attention",
+    overall: blockingSteps.length === 0 ? "ready" : "needs_attention",
     agentEnabled: profile.enabled,
     steps,
     latestLab: latestRun?.finishedAt && latestRun.score !== null
@@ -170,6 +218,7 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
   ]);
   const profile = profiles[0];
   if (!profile) throw new Error("Perfil del agente no encontrado");
+  const businessHours = businessHoursFromProfile(profile);
   const latestRun = runs[0] ?? null;
   const redRows = latestRun
     ? await db.select({ count: count() }).from(schema.agentTestCase).where(and(
@@ -189,6 +238,8 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
     redCount: redRows[0]?.count ?? 0,
     brandingCustomized: branding.name !== DEFAULT_BRANDING.name || branding.accent !== DEFAULT_BRANDING.accent,
     teamMemberCount: members[0]?.count ?? 0,
+    businessHoursConfigured: hasConfiguredBusinessHours(businessHours),
+    saasMode: isAllokSaaSMode(),
     agendaStep: await pasoAgenda(organizationId),
   });
 }
