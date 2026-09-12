@@ -166,7 +166,7 @@ async function main() {
   });
   ok(
     "PUT con token válido → 200 con el nombre de la página",
-    conn.res.ok && conn.json?.pageName === "Página de prueba Vocero",
+    conn.res.ok && conn.json?.pageName === "Página de prueba",
     JSON.stringify(conn.json)
   );
 
