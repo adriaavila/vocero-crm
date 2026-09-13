@@ -55,6 +55,19 @@ describe("readiness", () => {
     expect(evaluateReadiness(input()).overall).toBe("ready");
   });
 
+  it("un token revocado no se lee como un número sin conectar", () => {
+    const muerto = evaluateReadiness(
+      input({ whatsappConnected: false, whatsappStatus: "reconnect_required" }),
+    ).steps.find((step) => step.id === "whatsapp")!;
+    expect(muerto.status).toBe("pending");
+    expect(muerto.detail).toMatch(/expiró o fue revocado/);
+
+    const nunca = evaluateReadiness(
+      input({ whatsappConnected: false, whatsappStatus: null }),
+    ).steps.find((step) => step.id === "whatsapp")!;
+    expect(nunca.detail).toMatch(/Conecta el número/);
+  });
+
   it.each([
     ["score bajo", { latestRun: { ...input().latestRun!, score: 79 } }, "simulation", "pending"],
     ["casos rojos", { redCount: 1 }, "simulation", "pending"],

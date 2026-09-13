@@ -64,6 +64,8 @@ type Input = {
     responseMode?: string;
   };
   whatsappConnected: boolean;
+  /** `reconnect_required` cuando el token murió: hay conexión, pero no sirve. */
+  whatsappStatus?: "connected" | "reconnect_required" | null;
   aiConfigured: boolean;
   liveTestAvailable: boolean;
   knowledgeCount: number;
@@ -115,7 +117,14 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
       id: "whatsapp",
       status: input.whatsappConnected ? "complete" : "pending",
       label: "Conecta WhatsApp",
-      detail: input.whatsappConnected ? "Número conectado y vigente." : "Conecta el número que atenderá a tus clientes.",
+      // Un token revocado deja la conexión guardada pero muerta. Decir
+      // "conecta tu número" ahí manda al dueño a rehacer un alta que ya hizo,
+      // en vez de a pegar un token nuevo.
+      detail: input.whatsappConnected
+        ? "Número conectado y vigente."
+        : input.whatsappStatus === "reconnect_required"
+          ? "El token de WhatsApp expiró o fue revocado: los envíos están pausados hasta reconectar."
+          : "Conecta el número que atenderá a tus clientes.",
       href: "/settings/whatsapp",
     },
     ...(input.saasMode
@@ -230,6 +239,7 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
   return evaluateReadiness({
     profile,
     whatsappConnected: credentials[0]?.status === "connected",
+    whatsappStatus: credentials[0]?.status ?? null,
     aiConfigured: isAgentConfigured(),
     liveTestAvailable: isWahaConfigured(),
     knowledgeCount: knowledge[0]?.count ?? 0,
