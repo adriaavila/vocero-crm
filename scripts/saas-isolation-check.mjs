@@ -97,6 +97,10 @@ try {
     data: { wabaId: "WABA-SIN-PLAN", phoneNumberId: "PN-SIN-PLAN", token: "token-sin-plan" },
   });
   check("el respaldo manual tampoco conecta sin plan", manual.status() === 402);
+  const rescate = await alpha.request.post(`${base}/api/saas/whatsapp/retry-connection`, {
+    headers: headers(alphaHost),
+  });
+  check("recuperar la conexión tampoco esquiva el plan", rescate.status() === 402);
 
   const crossTenant = await alpha.request.get(`${base}/api/overview`, {
     headers: headers(betaHost),

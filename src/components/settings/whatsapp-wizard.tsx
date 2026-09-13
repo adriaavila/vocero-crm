@@ -39,6 +39,8 @@ export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
   const [loaded, setLoaded] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
 
   const refetch = useCallback(async () => {
     const [c, w] = await Promise.all([
@@ -131,6 +133,37 @@ export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
             </Button>
             {connectError && <p className="mt-3 text-sm text-destructive">{connectError}</p>}
             <p className="mt-3 text-xs text-text-3">Se abrirá una ventana segura y volverás aquí cuando el número esté conectado.</p>
+            {!connection && (
+              <div className="mt-4 border-t border-brand-soft pt-4">
+                {/* El alta puede caerse DESPUÉS de conectar el número en Meta: ahí
+                    el número ya es suyo y reconectarlo es justo lo que no hay que
+                    hacer. Este botón repite solo la entrega. */}
+                <p className="text-xs text-text-3">¿Ya conectaste tu número con Meta y no aparece aquí?</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  disabled={retrying}
+                  onClick={async () => {
+                    setRetrying(true);
+                    setRetryNotice(null);
+                    const response = await fetch("/api/saas/whatsapp/retry-connection", { method: "POST" }).catch(() => null);
+                    const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
+                    setRetrying(false);
+                    if (response?.ok) {
+                      setRetryNotice("Listo: tu número quedó conectado.");
+                      void refetch();
+                      return;
+                    }
+                    setRetryNotice(payload?.error?.message ?? "No se pudo recuperar la conexión.");
+                  }}
+                >
+                  {retrying ? "Recuperando…" : "Recuperar mi conexión"}
+                </Button>
+                {retryNotice && <p className="mt-2 text-sm text-text-2">{retryNotice}</p>}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
