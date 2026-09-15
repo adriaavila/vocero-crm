@@ -33,6 +33,13 @@ type WebhookInfo = {
   signatureLayer: boolean;
 };
 
+export function shouldShowHandoverRecovery(
+  saasMode: boolean,
+  connection: Connection | null,
+): boolean {
+  return saasMode && connection?.status !== "reconnect_required";
+}
+
 export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
@@ -133,12 +140,16 @@ export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
             </Button>
             {connectError && <p className="mt-3 text-sm text-destructive">{connectError}</p>}
             <p className="mt-3 text-xs text-text-3">Se abrirá una ventana segura y volverás aquí cuando el número esté conectado.</p>
-            {!connection && (
+            {shouldShowHandoverRecovery(saasMode, connection) && (
               <div className="mt-4 border-t border-brand-soft pt-4">
                 {/* El alta puede caerse DESPUÉS de conectar el número en Meta: ahí
                     el número ya es suyo y reconectarlo es justo lo que no hay que
                     hacer. Este botón repite solo la entrega. */}
-                <p className="text-xs text-text-3">¿Ya conectaste tu número con Meta y no aparece aquí?</p>
+                <p className="text-xs text-text-3">
+                  {connection
+                    ? "¿Tu número aparece conectado, pero Vocero no recibe mensajes? Vuelve a sincronizar la conexión sin reconectarlo."
+                    : "¿Ya conectaste tu número con Meta y no aparece aquí?"}
+                </p>
                 <Button
                   type="button"
                   variant="outline"
@@ -152,7 +163,9 @@ export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
                     const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
                     setRetrying(false);
                     if (response?.ok) {
-                      setRetryNotice("Listo: tu número quedó conectado.");
+                      setRetryNotice(connection
+                        ? "Listo: volvimos a sincronizar la conexión."
+                        : "Listo: tu número quedó conectado.");
                       void refetch();
                       return;
                     }
