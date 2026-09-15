@@ -64,8 +64,8 @@ por estar en verde local.
       Para probar el embudo sin dinero real hace falta una de prueba
       (`sk_test_`), y para estrenar en vivo, la decisión suya. Crear los precios
       Básico USD 29/mes y Pro USD 99/mes y el endpoint de webhook.
-- [ ] Decidir si Pro lleva prueba gratuita (`trial_period_days`). El código ya
-      la honra.
+- [x] Decidir si Pro lleva prueba gratuita: sí, 7 días. `trialDaysForPlan`
+      en `src/server/saas/billing.ts`, wireado al checkout (2026-09-15).
 - [ ] Encender: añadir los dominios `whatsapp.` + `admin.` + `*.allok.fun` al
       mismo app de Coolify, poner `ALLOK_SAAS_MODE=true` y desplegar los dos
       lados. Se dejó sin hacer a propósito: añadir dominios sin DNS ni
