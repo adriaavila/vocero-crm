@@ -9,6 +9,7 @@ import {
   saveOrganizationBilling,
   stripeForSaaS,
   tenantOrigin,
+  trialDaysForPlan,
   type SaaSPlan,
 } from "@/server/saas/billing";
 
@@ -56,6 +57,7 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
       plan: parsed.data.plan,
     },
     subscription_data: {
+      trial_period_days: trialDaysForPlan(parsed.data.plan),
       metadata: {
         organizationId: session.organizationId,
         plan: parsed.data.plan,

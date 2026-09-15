@@ -5,6 +5,7 @@ import {
   planForPriceId,
   statusFromStripe,
   tenantOrigin,
+  trialDaysForPlan,
 } from "../../src/server/saas/billing";
 
 describe("Allok SaaS billing", () => {
@@ -60,5 +61,10 @@ describe("Allok SaaS billing", () => {
       headers: { "x-forwarded-host": "alpha.localhost:3000", "x-forwarded-proto": "http" },
     });
     expect(tenantOrigin("alpha", request)).toBe("http://alpha.localhost:3000");
+  });
+
+  it("sólo Pro lleva prueba gratis, y son 7 días", () => {
+    expect(trialDaysForPlan("pro")).toBe(7);
+    expect(trialDaysForPlan("basic")).toBeUndefined();
   });
 });
