@@ -80,10 +80,22 @@ por estar en verde local.
       y recuperarlo con "Recuperar mi conexión".
 - [ ] Comprobar que `crm.allok.fun` sigue funcionando como inquilino legacy con
       el número de siempre, sin reconectar nada.
-- [ ] Correr `scripts/alta-vocero.sh` completo con un slug de prueba y borrarlo
-      después — el Camino B nunca se ha ejecutado entero.
-- [ ] Escribir el runbook de **baja** de cliente. Está esbozado en
-      `docs/operations/clients.md` y no existe como procedimiento.
+- [x] Correr `scripts/alta-vocero.sh` completo por primera vez — no con un
+      slug de prueba descartable, sino de verdad, con Mística (2026-09-15).
+      Encontró un bug real en el momento: `new-app.sh` asumía `internal_db_url`
+      en la respuesta de Coolify, que esta versión (4.3.19) nunca devuelve
+      (ni el password), así que `DATABASE_URL` no se ponía y el deploy quedaba
+      `exited:unhealthy` en silencio. Se resolvió a mano para el alta de hoy.
+- [x] Arreglar `new-app.sh` de raíz (`ssh-c001/scripts/new-app.sh`,
+      2026-09-15): arma `DATABASE_URL` con el password que el propio script
+      genera al crear el Postgres, en vez de leerlo de vuelta de la API. Si el
+      Postgres ya existía (password desconocido), ahora sale con `exit 1` y un
+      mensaje claro en vez de desplegar roto en silencio. Verificado en vivo:
+      ciclo completo alta→baja con un proyecto/app/Postgres/DNS de prueba,
+      `DATABASE_URL` puesto solo, migraciones corriendo sin intervención
+      manual, y todo el recurso de prueba borrado al final.
+- [x] Escribir el runbook de **baja** de cliente:
+      `ssh-c001/docs/runbooks/baja-cliente-whatsapp.md` (2026-09-15).
 
 ## Decisiones abiertas
 
