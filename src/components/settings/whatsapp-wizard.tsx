@@ -34,13 +34,19 @@ type WebhookInfo = {
 };
 
 export function shouldShowHandoverRecovery(
-  saasMode: boolean,
+  guidedAvailable: boolean,
   connection: Connection | null,
 ): boolean {
-  return saasMode && connection?.status !== "reconnect_required";
+  return guidedAvailable && connection?.status !== "reconnect_required";
 }
 
-export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
+export function WhatsappWizard({
+  saasMode = false,
+  guidedAvailable = false,
+}: {
+  saasMode?: boolean;
+  guidedAvailable?: boolean;
+}) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -107,7 +113,7 @@ export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
           })}
         </ol>
       </header>
-      {saasMode && (
+      {guidedAvailable && (
         <Card className="overflow-hidden border-brand-soft bg-brand-tint">
           <CardHeader>
             <div className="flex items-start gap-3">
@@ -140,7 +146,7 @@ export function WhatsappWizard({ saasMode = false }: { saasMode?: boolean }) {
             </Button>
             {connectError && <p className="mt-3 text-sm text-destructive">{connectError}</p>}
             <p className="mt-3 text-xs text-text-3">Se abrirá una ventana segura y volverás aquí cuando el número esté conectado.</p>
-            {shouldShowHandoverRecovery(saasMode, connection) && (
+            {shouldShowHandoverRecovery(guidedAvailable, connection) && (
               <div className="mt-4 border-t border-brand-soft pt-4">
                 {/* El alta puede caerse DESPUÉS de conectar el número en Meta: ahí
                     el número ya es suyo y reconectarlo es justo lo que no hay que

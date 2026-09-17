@@ -92,6 +92,7 @@ export async function POST(req: Request): Promise<Response> {
       `/api/webhooks/wa/${env.META_WEBHOOK_VERIFY_TOKEN}`,
       env.APP_BASE_URL
     ).toString(),
+    smoke_test_url: new URL("/api/provision/smoke-test", env.APP_BASE_URL).toString(),
   });
 }
 

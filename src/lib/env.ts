@@ -64,6 +64,7 @@ const envSchema = z.object({
   // Secreto compartido con allok para `POST /api/provision`: allok entrega ahí
   // las credenciales de un número recién conectado. Sin ella, la ruta responde 401.
   PROVISION_API_KEY: z.string().min(16).optional(),
+  WHATSAPP_SMOKE_TEST_TO: z.string().trim().optional(),
   WAHA_API_URL: z.string().url().optional(),
   WAHA_API_KEY: z.string().min(16).optional(),
   WAHA_SESSION: z.string().min(1).default("vocero-test"),

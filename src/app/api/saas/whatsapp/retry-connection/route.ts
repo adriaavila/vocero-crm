@@ -14,8 +14,8 @@ export const dynamic = "force-dynamic";
  * apuntar a sitios distintos y no enterarse.
  */
 export const POST = withOwner(async (session) => {
-  if (!isAllokSaaSMode()) return apiError(404, "not_found", "SaaS no está habilitado");
-  if (!(await canAutomate(session.organizationId))) {
+  const saasMode = isAllokSaaSMode();
+  if (saasMode && !(await canAutomate(session.organizationId))) {
     return apiError(402, "billing_inactive", "Activa tu plan para conectar un número de WhatsApp");
   }
 
@@ -24,6 +24,7 @@ export const POST = withOwner(async (session) => {
   if (!linkUrl || !secret) {
     return apiError(503, "not_configured", "La conexión guiada de WhatsApp todavía no está configurada");
   }
+  const destination = process.env.ALLOK_ONBOARDING_DESTINATION?.trim().toLowerCase() || "vocero";
 
   let endpoint: string;
   try {
@@ -38,7 +39,11 @@ export const POST = withOwner(async (session) => {
       authorization: `Bearer ${secret}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ workspace: session.organizationId }),
+    body: JSON.stringify({
+      workspace: session.organizationId,
+      destination,
+      external_ref: saasMode ? session.organizationId : null,
+    }),
     signal: AbortSignal.timeout(20_000),
   }).catch(() => null);
 

@@ -8,12 +8,12 @@ import { canAutomate } from "@/server/agencia/entitlements";
 export const dynamic = "force-dynamic";
 
 export const POST = withOwner(async (session, request: Request) => {
-  if (!isAllokSaaSMode()) return apiError(404, "not_found", "SaaS no está habilitado");
+  const saasMode = isAllokSaaSMode();
 
   // Un número conectado sin suscripción sigue consumiendo la app de Meta de
   // Allok y su cuota de conversaciones: el enlace de alta se entrega solo a
   // quien ya paga.
-  if (!(await canAutomate(session.organizationId))) {
+  if (saasMode && !(await canAutomate(session.organizationId))) {
     return apiError(402, "billing_inactive", "Activa tu plan para conectar un número de WhatsApp");
   }
 
@@ -22,6 +22,7 @@ export const POST = withOwner(async (session, request: Request) => {
   if (!endpoint || !secret) {
     return apiError(503, "not_configured", "La conexión guiada de WhatsApp todavía no está configurada");
   }
+  const destination = process.env.ALLOK_ONBOARDING_DESTINATION?.trim().toLowerCase() || "vocero";
 
   const organization = await getDb()
     .select({ slug: schema.organization.slug })
@@ -38,7 +39,13 @@ export const POST = withOwner(async (session, request: Request) => {
       authorization: `Bearer ${secret}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ workspace: session.organizationId, mode: "coexistence", return_url: returnUrl }),
+    body: JSON.stringify({
+      workspace: session.organizationId,
+      mode: "coexistence",
+      destination,
+      external_ref: saasMode ? session.organizationId : null,
+      return_url: returnUrl,
+    }),
     signal: AbortSignal.timeout(10_000),
   }).catch(() => null);
 
