@@ -1,5 +1,6 @@
 import type { z } from "zod";
-import { getEnv, isAiConfigured, type Env } from "@/lib/env";
+import { AI_DEFAULT_MODELS, type AiProvider, type AiProviderSettings } from "@/lib/ai/config";
+import { getEnv, type Env } from "@/lib/env";
 
 /**
  * Adaptador LLM OpenAI-compatible — ÚNICA frontera con el proveedor de IA
@@ -21,7 +22,7 @@ export type ChatJsonResult<T> =
   | { ok: true; data: T; raw: string }
   | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
 
-export type AiProvider = "openai" | "openrouter";
+export type { AiProvider, AiProviderSettings } from "@/lib/ai/config";
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
@@ -32,16 +33,22 @@ function resolveProvider(
   name: AiProvider,
   judge: boolean,
   modelOverride: string | undefined,
-  env: Env
+  env: Env,
+  credentials: Partial<Record<AiProvider, AiProviderSettings>> | undefined,
 ): ResolvedProvider | null {
+  const configured = credentials?.[name];
   if (name === "openrouter") {
-    const token = env.OPENROUTER_API_TOKEN;
-    const model = modelOverride ?? env.OPENROUTER_MODEL;
+    const token = configured?.token ?? env.OPENROUTER_API_TOKEN;
+    const model = modelOverride ?? (judge ? configured?.judgeModel : configured?.model) ?? configured?.model ??
+      (judge ? (env.OPENROUTER_JUDGE_MODEL ?? env.OPENROUTER_MODEL) : env.OPENROUTER_MODEL) ??
+      AI_DEFAULT_MODELS.openrouter;
     if (!token || !model?.trim()) return null;
     return { name, baseUrl: env.OPENROUTER_BASE_URL, token, model };
   }
-  const token = env.OPENAI_API_KEY;
-  const model = modelOverride ?? (judge ? (env.OPENAI_JUDGE_MODEL ?? env.OPENAI_MODEL) : env.OPENAI_MODEL);
+  const token = configured?.token ?? env.OPENAI_API_KEY;
+  const model = modelOverride ?? (judge ? configured?.judgeModel : configured?.model) ?? configured?.model ??
+    (judge ? (env.OPENAI_JUDGE_MODEL ?? env.OPENAI_MODEL) : env.OPENAI_MODEL) ??
+    AI_DEFAULT_MODELS.openai;
   if (!token || !model?.trim()) return null;
   return { name, baseUrl: env.OPENAI_BASE_URL, token, model };
 }
@@ -54,19 +61,18 @@ function providerOrder(preferred: AiProvider): AiProvider[] {
 export async function chatJson<T>(
   schema: z.ZodType<T>,
   messages: ChatMessage[],
-  opts?: { model?: string; judge?: boolean; timeoutMs?: number; provider?: AiProvider }
-): Promise<ChatJsonResult<T>> {
-  if (!isAiConfigured()) {
-    return {
-      ok: false,
-      error: "not_configured",
-      detail: "Sin proveedor de IA configurado (OPENAI_API_KEY u OPENROUTER_API_TOKEN)",
-    };
+  opts?: {
+    model?: string;
+    judge?: boolean;
+    timeoutMs?: number;
+    provider?: AiProvider;
+    credentials?: Partial<Record<AiProvider, AiProviderSettings>>;
   }
+): Promise<ChatJsonResult<T>> {
   const env = getEnv();
   const order = providerOrder(opts?.provider ?? "openai");
   const candidates = order
-    .map((name) => resolveProvider(name, opts?.judge ?? false, opts?.model, env))
+    .map((name) => resolveProvider(name, opts?.judge ?? false, opts?.model, env, opts?.credentials))
     .filter((p): p is ResolvedProvider => p !== null);
   if (candidates.length === 0) {
     return {
@@ -83,6 +89,29 @@ export async function chatJson<T>(
     lastResult = result;
   }
   return lastResult!;
+}
+
+/** Valida una clave y un modelo con una llamada mínima antes de guardarlos. */
+export async function probeAiProvider(
+  name: AiProvider,
+  settings: AiProviderSettings,
+  timeoutMs = 15_000,
+): Promise<{ ok: true } | { ok: false }> {
+  const env = getEnv();
+  const baseUrl = name === "openrouter" ? env.OPENROUTER_BASE_URL : env.OPENAI_BASE_URL;
+  try {
+    await callProvider(
+      baseUrl,
+      settings.token,
+      settings.model,
+      [{ role: "user", content: "Responde únicamente: OK" }],
+      timeoutMs,
+    );
+    return { ok: true };
+  } catch {
+    // El error del proveedor puede incluir datos sensibles o payloads externos.
+    return { ok: false };
+  }
 }
 
 async function attemptProvider<T>(

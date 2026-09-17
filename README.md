@@ -363,19 +363,29 @@ webhook vive en `/api/webhooks/ig/<token>`. El detalle está en
 
 ## Configuración de la IA
 
-En las variables de la instancia:
+En un despliegue headless SaaS, configura una vez las claves de plataforma en
+las variables de entorno:
 
 ```bash
 OPENROUTER_API_TOKEN=sk-or-...        # tu key
-OPENROUTER_MODEL=anthropic/claude-sonnet-4.5
+OPENROUTER_MODEL=z-ai/glm-5.3-flash
 OPENROUTER_JUDGE_MODEL=               # opcional: modelo distinto para el juez del Laboratorio
 OPENROUTER_BASE_URL=https://openrouter.ai/api   # o tu proveedor OpenAI-compatible
 ```
 
-Sin token, todo lo demás funciona; Agente y Laboratorio muestran cómo
-activarlos. Después configura el comportamiento y el conocimiento en la
-pestaña **Agente** y corre el **Laboratorio** antes de encender el agente con
-clientes reales.
+`OPENROUTER_MODEL` es opcional: si se omite, el adaptador usa
+`z-ai/glm-5.3-flash`; OpenAI usa `gpt-4o-mini` por defecto. También puedes
+configurar ambos proveedores y elegir el preferido en **Agente**.
+
+Cada organización nueva recibe automáticamente el agente **Rei**, activo,
+sin allowlist y sin mensaje activador. Solo necesita completar los datos del
+negocio y su knowledge base. En **Agente → Claves de IA** el propietario puede
+pegar una clave propia, probarla y guardarla; esa clave queda cifrada y solo
+reemplaza la clave de plataforma para esa organización. Si no hay ninguna
+clave disponible, Agente y Laboratorio muestran que falta el proveedor.
+
+El adaptador intenta primero el proveedor elegido y cae al otro si está
+configurado. Las claves nunca se devuelven completas ni se escriben en logs.
 
 ## Cumplimiento con las políticas de Meta
 

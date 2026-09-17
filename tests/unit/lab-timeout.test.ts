@@ -82,6 +82,7 @@ describe("timeout del Laboratorio", () => {
       [{ id: "case_1", persona: "comprador_decidido", createdAt: new Date() }],
       [],
       [{ name: "Agente", tone: null, instructions: null, escalationRules: null }],
+      [],
       [{ handoffAt: new Date() }],
       [{ direction: "in", text: "hola", createdAt: new Date() }],
       [{ status: "done", veredicto: "verde" }]

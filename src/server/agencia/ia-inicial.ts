@@ -6,10 +6,10 @@ import { isExternalBrainConfigured } from "@/lib/env";
 /**
  * Capa de agencia — ¿la IA nace encendida en una conversación nueva?
  *
- * Upstream dice que sí, siempre: allá una instancia es de su propio dueño, que
- * la configuró él. Este fork la ponía en NO, siempre, porque aquí la instancia
- * se ENTREGA a un cliente y un agente a medio configurar contestándole a un
- * lead real es un incidente con el cliente final.
+ * Una instancia SaaS nueva nace con la plantilla Rei activa: el dueño solo
+ * completa los datos del negocio y la knowledge base. Las claves de plataforma
+ * o propias se resuelven en el adaptador; si no existe ninguna, el turno no
+ * puede responder.
  *
  * Las dos respuestas fijas están mal, y la segunda peor: con la IA apagada en
  * cada conversación nueva y sin nada que la encienda, un cliente que YA activó
@@ -20,12 +20,13 @@ import { isExternalBrainConfigured } from "@/lib/env";
  * La pregunta correcta no es "¿esta conversación?" sino "¿este negocio ya
  * encendió su agente?":
  *
- *   sin ningún cerebro            → NO. La instancia recién entregada calla.
+ *   sin ningún cerebro            → NO puede responder, aunque la conversación
+ *                                  nazca habilitada.
  *   agente interno encendido      → SÍ. Es lo que el dueño pidió.
  *   cerebro externo conectado     → SÍ. `BOT_API_KEY` configurada significa
  *                                   que hay un bot al mando; que hable o no
  *                                   lo decide él (allowlist, calificación).
- *                                   Sin esto, una instancia con Nea al frente
+ *                                   Sin esto, una instancia con Rei al frente
  *                                   —que es el caso normal de la agencia— y
  *                                   el agente interno apagado dejaba a TODOS
  *                                   los leads sin respuesta.
@@ -48,7 +49,7 @@ export async function iaInicialPara(organizationId: string): Promise<boolean> {
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .limit(1);
   const perfil = rows[0];
-  // Sin perfil todavía (instancia recién registrada): manda el cerebro externo.
+  // Sin perfil todavía: solo un cerebro externo puede decidir si responde.
   if (!perfil) return isExternalBrainConfigured();
   if (perfil.activationEnabled) return false;
   return perfil.enabled || isExternalBrainConfigured();

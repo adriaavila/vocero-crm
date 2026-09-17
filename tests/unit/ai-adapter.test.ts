@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { chatJson, extractJson } from "@/lib/ai";
+import { chatJson, extractJson, probeAiProvider } from "@/lib/ai";
 import { isAgentConfigured, resetEnvCacheForTests, shouldRunInternalAgent } from "@/lib/env";
 
 describe("isAgentConfigured", () => {
@@ -194,6 +194,57 @@ describe("chatJson (reintentos y errores tipados)", () => {
     expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
     const requestBody = JSON.parse(init!.body as string);
     expect(requestBody.model).toBe("modelo-openrouter-test");
+  });
+
+  it("credencial de la organización sobreescribe la clave y modelo de plataforma", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      providerResponse('{"action":"reply","text":"ok"}')
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(
+      schema,
+      [{ role: "user", content: "hola" }],
+      {
+        provider: "openrouter",
+        credentials: {
+          openrouter: { token: "token-de-org", model: "modelo-de-org" },
+        },
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(init!.headers).toMatchObject({ Authorization: "Bearer token-de-org" });
+    expect(JSON.parse(init!.body as string).model).toBe("modelo-de-org");
+  });
+
+  it("usa GLM 5.3 Flash si OpenRouter no trae modelo", async () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "token-openrouter-test");
+    vi.stubEnv("OPENROUTER_MODEL", "");
+    const fetchMock = vi.fn().mockResolvedValue(
+      providerResponse('{"action":"reply","text":"ok"}')
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(
+      schema,
+      [{ role: "user", content: "hola" }],
+      { provider: "openrouter" }
+    );
+
+    expect(result.ok).toBe(true);
+    expect(JSON.parse(fetchMock.mock.calls[0]![1]!.body as string).model).toBe(
+      "z-ai/glm-5.3-flash"
+    );
+  });
+
+  it("probeAiProvider solo devuelve éxito y no propaga errores del proveedor", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse("OK")));
+    await expect(
+      probeAiProvider("openrouter", { token: "token-test", model: "modelo-test" })
+    ).resolves.toEqual({ ok: true });
   });
 
   it("preferido sin token configurado → cae directo al otro proveedor", async () => {

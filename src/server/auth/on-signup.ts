@@ -2,6 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isAllokSaaSMode, isLegacyAppHost, isSaaSAppHost, slugifyTenantName, tenantSlugFromHost } from "@/lib/tenant-host";
+import { defaultAgentProfile } from "@/server/agent/default-profile";
 
 /** Etapas sembradas del pipeline (US2). */
 const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
@@ -84,6 +85,7 @@ export async function onUserCreated(
     await tx.insert(schema.agentProfile).values({
       id: newId("agentProfile"),
       organizationId: orgId,
+      ...defaultAgentProfile(),
     });
   });
 }

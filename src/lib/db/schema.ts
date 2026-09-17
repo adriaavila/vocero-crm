@@ -653,7 +653,7 @@ export const agentProfile = pgTable(
       .notNull()
       .references(() => organization.id, { onDelete: "cascade" }),
     enabled: boolean("enabled").notNull().default(false),
-    name: text("name").notNull().default("Asistente"),
+    name: text("name").notNull().default("Rei"),
     tone: text("tone"),
     instructions: text("instructions"),
     escalationRules: text("escalation_rules"),
@@ -691,6 +691,32 @@ export const agentProfile = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("agent_profile_org_uq").on(t.organizationId)]
+);
+
+/** Claves propias de IA por organización. Nunca se devuelve el secreto en la API. */
+export const aiCredentials = pgTable(
+  "ai_credentials",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    provider: text("provider", { enum: ["openai", "openrouter"] }).notNull(),
+    model: text("model").notNull(),
+    keyCipher: text("key_cipher").notNull(),
+    keyIv: text("key_iv").notNull(),
+    keyTag: text("key_tag").notNull(),
+    keyLast4: text("key_last4").notNull(),
+    lastValidatedAt: timestamp("last_validated_at").notNull().defaultNow(),
+    lastValidationStatus: text("last_validation_status", { enum: ["valid"] })
+      .notNull()
+      .default("valid"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ai_credentials_org_provider_uq").on(t.organizationId, t.provider),
+  ]
 );
 
 export const kbEntry = pgTable(

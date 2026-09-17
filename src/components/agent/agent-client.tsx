@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 // la próxima fusión con upstream no toque este archivo más que en esta línea.
 import {
   AgencyAgentCards,
+  type AgencyAiCredentials,
   type AgencyProfile,
 } from "@/components/agencia/agent-agency-cards";
 import { useActivationGate } from "@/components/agencia/activation-gate";
@@ -37,6 +38,7 @@ type KbEntry = {
 export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [aiConfigured, setAiConfigured] = useState(true);
+  const [aiCredentials, setAiCredentials] = useState<AgencyAiCredentials | null>(null);
   const [entries, setEntries] = useState<KbEntry[]>([]);
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
@@ -48,17 +50,19 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
   });
 
   const refetch = useCallback(async () => {
-    const [p, kb, size] = await Promise.all([
+    const [p, kb, size, credentials] = await Promise.all([
       fetch("/api/agent/profile").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/kb").then((r) => (r.ok ? r.json() : null)),
       fetch("/api/kb/size").then((r) => (r.ok ? r.json() : null)),
-    ]).catch(() => [null, null, null]);
+      fetch("/api/agent/credentials").then((r) => (r.ok ? r.json() : null)),
+    ]).catch(() => [null, null, null, null] as const);
     if (p) {
       setProfile(p.profile);
       setAiConfigured(p.aiConfigured);
     }
     if (kb) setEntries(kb.entries);
     if (size) setKbSize(size);
+    if (credentials?.credentials) setAiCredentials(credentials.credentials);
   }, []);
 
   useEffect(() => {
@@ -153,12 +157,11 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
       {!aiConfigured && (
         <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-5 text-center sm:mx-6 sm:mt-6 sm:p-6">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">Configura tu proveedor de IA para activar el agente</p>
+          <p className="font-medium">Configura tu proveedor de IA para que Rei pueda responder</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Agrega <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> y{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_MODEL</code> a las variables
-            de entorno de la instancia y reiníciala. Mientras tanto puedes dejar listo el
-            comportamiento y el conocimiento aquí abajo.
+            Pega una clave de OpenRouter u OpenAI en la tarjeta <strong>Claves de IA</strong>.
+            Si tu plataforma ya tiene una clave configurada, aparecerá automáticamente como
+            disponible.
           </p>
         </div>
       )}
@@ -166,7 +169,12 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
       <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
         <div className="space-y-4 sm:space-y-6">
           <ProfileSection profile={profile} onSave={saveProfile} />
-          <AgencyAgentCards profile={profile} onSave={saveProfile} />
+          <AgencyAgentCards
+            profile={profile}
+            onSave={saveProfile}
+            credentials={aiCredentials}
+            onCredentialsChanged={() => void refetch()}
+          />
           {saasMode && <BusinessHoursSection />}
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />

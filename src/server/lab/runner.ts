@@ -6,6 +6,7 @@ import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
 import { computeScore, judgeCase } from "@/server/lab/judge";
 import { PERSONAS, type Persona } from "@/server/lab/personas";
+import { getAiRuntimeConfig } from "@/server/ai/credentials";
 
 /**
  * Runner del Laboratorio (FR-030/FR-034): corrida en segundo plano DENTRO del
@@ -119,6 +120,7 @@ async function runAllCases(
         .filter(Boolean)
         .join("\n")
     : "";
+  const aiConfig = await getAiRuntimeConfig(organizationId);
 
   let done = 0;
   const total = cases.length;
@@ -145,6 +147,7 @@ async function runAllCases(
       transcript,
       kbText,
       behaviorText,
+      credentials: aiConfig.providers,
     });
     if (signal.aborted) return;
 

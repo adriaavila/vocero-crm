@@ -41,21 +41,174 @@ export type AgencyProfile = {
   aiProvider: "openai" | "openrouter";
 };
 
+export type AiCredentialStatus = {
+  provider: "openai" | "openrouter";
+  configured: boolean;
+  source: "organization" | "platform" | "none";
+  model: string;
+  last4: string | null;
+  lastValidatedAt: string | null;
+};
+
+export type AgencyAiCredentials = {
+  openai: AiCredentialStatus;
+  openrouter: AiCredentialStatus;
+};
+
 type Save = (patch: Partial<AgencyProfile>) => Promise<boolean>;
 
 export function AgencyAgentCards({
   profile,
   onSave,
+  credentials,
+  onCredentialsChanged,
 }: {
   profile: AgencyProfile;
   onSave: Save;
+  credentials: AgencyAiCredentials | null;
+  onCredentialsChanged: () => void;
 }) {
   return (
     <>
       <ActivationMessagesSection profile={profile} onSave={onSave} />
       <AllowedNumbersSection profile={profile} onSave={onSave} />
       <AiProviderSection profile={profile} onSave={onSave} />
+      <AiCredentialsSection
+        credentials={credentials}
+        onChanged={onCredentialsChanged}
+      />
     </>
+  );
+}
+
+function AiCredentialsSection({
+  credentials,
+  onChanged,
+}: {
+  credentials: AgencyAiCredentials | null;
+  onChanged: () => void;
+}) {
+  const [provider, setProvider] = useState<AiCredentialStatus["provider"]>("openrouter");
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState("z-ai/glm-5.3-flash");
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const status = credentials?.[provider] ?? null;
+
+  useEffect(() => {
+    setModel(status?.model ?? (provider === "openrouter" ? "z-ai/glm-5.3-flash" : "gpt-4o-mini"));
+    setApiKey("");
+    setError(null);
+  }, [provider, status?.model]);
+
+  async function save() {
+    if (!apiKey.trim() || !model.trim()) return;
+    setSaving(true);
+    setError(null);
+    const response = await fetch("/api/agent/credentials", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider, apiKey, model }),
+    }).catch(() => null);
+    const payload = (await response?.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    if (!response?.ok) {
+      setError(payload?.error?.message ?? "No se pudo validar la credencial.");
+      setSaving(false);
+      return;
+    }
+    setApiKey("");
+    setSaving(false);
+    onChanged();
+  }
+
+  async function remove() {
+    setRemoving(true);
+    setError(null);
+    const response = await fetch(`/api/agent/credentials?provider=${provider}`, {
+      method: "DELETE",
+    }).catch(() => null);
+    if (!response?.ok) {
+      const payload = (await response?.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      setError(payload?.error?.message ?? "No se pudo eliminar la credencial.");
+      setRemoving(false);
+      return;
+    }
+    setRemoving(false);
+    onChanged();
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Claves de IA</CardTitle>
+        <CardDescription>
+          Opcional: la instancia usa la clave de plataforma si no guardas un override.
+          La clave se prueba antes de cifrarse y guardarse.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="agent-credential-provider">Proveedor</Label>
+          <select
+            id="agent-credential-provider"
+            value={provider}
+            onChange={(event) => setProvider(event.target.value as AiCredentialStatus["provider"])}
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+        <div className="rounded-md border bg-subtle px-3 py-2 text-xs text-muted-foreground">
+          {status?.source === "organization"
+            ? `Override de esta organización: ••••${status.last4 ?? ""}`
+            : status?.source === "platform"
+              ? "Usando la clave de plataforma"
+              : "Sin clave configurada"}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="agent-api-key">API key</Label>
+          <Input
+            id="agent-api-key"
+            type="password"
+            autoComplete="new-password"
+            placeholder={status?.source === "organization" ? "Pega una nueva clave para reemplazarla" : "Pega tu API key"}
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="agent-ai-model">Modelo</Label>
+          <Input
+            id="agent-ai-model"
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            placeholder={provider === "openrouter" ? "z-ai/glm-5.3-flash" : "gpt-4o-mini"}
+          />
+        </div>
+        {status?.lastValidatedAt && (
+          <p className="text-xs text-muted-foreground">
+            Última validación: {new Date(status.lastValidatedAt).toLocaleString("es-MX")}
+          </p>
+        )}
+        {error && <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">{error}</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => void save()} disabled={saving || !apiKey.trim() || !model.trim()}>
+            {saving ? "Probando…" : "Probar y guardar"}
+          </Button>
+          {status?.source === "organization" && (
+            <Button variant="ghost" onClick={() => void remove()} disabled={removing}>
+              {removing ? "Eliminando…" : "Usar clave de plataforma"}
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -88,8 +241,8 @@ function AiProviderSection({
             onChange={(e) => setProvider(e.target.value as AgencyProfile["aiProvider"])}
             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
-            <option value="openai">OpenAI (recomendado)</option>
-            <option value="openrouter">OpenRouter — modelo gratuito</option>
+            <option value="openrouter">OpenRouter (recomendado)</option>
+            <option value="openai">OpenAI</option>
           </select>
         </div>
         <Button
@@ -279,4 +432,3 @@ function ActivationMessagesSection({
     </Card>
   );
 }
-

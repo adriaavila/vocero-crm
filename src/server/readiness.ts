@@ -2,11 +2,12 @@ import { and, count, desc, eq, max } from "drizzle-orm";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isAgentConfigured, isWahaConfigured } from "@/lib/env";
+import { isWahaConfigured } from "@/lib/env";
 import { getBranding } from "@/server/branding";
 import { pasoAgenda, type PasoAgenda } from "@/server/agencia/readiness-agenda";
 import { businessHoursFromProfile, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { isAiConfiguredForOrganization } from "@/server/ai/credentials";
 
 export type ReadinessStepId =
   | "whatsapp"
@@ -240,7 +241,7 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
     profile,
     whatsappConnected: credentials[0]?.status === "connected",
     whatsappStatus: credentials[0]?.status ?? null,
-    aiConfigured: isAgentConfigured(),
+    aiConfigured: await isAiConfiguredForOrganization(organizationId),
     liveTestAvailable: isWahaConfigured(),
     knowledgeCount: knowledge[0]?.count ?? 0,
     knowledgeUpdatedAt: knowledge[0]?.updatedAt ?? null,

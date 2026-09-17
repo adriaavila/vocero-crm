@@ -1,7 +1,7 @@
 import { withAuth } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isAgentConfigured } from "@/lib/env";
+import { isAiConfiguredForOrganization } from "@/server/ai/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +14,6 @@ export const GET = withAuth(async (session) => {
     .limit(1);
   return Response.json({
     enabled: Boolean(profile?.enabled),
-    aiConfigured: isAgentConfigured(),
+    aiConfigured: await isAiConfiguredForOrganization(session.organizationId),
   });
 });
