@@ -15,6 +15,8 @@ const RESERVED_SUBDOMAINS = new Set([
   "status",
   "crm",
   "whatsapp",
+  "preview",
+  "staging",
   "agent",
   "inmox",
   "waha",
