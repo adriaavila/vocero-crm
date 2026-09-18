@@ -101,11 +101,7 @@ export default async function RootLayout({
   const theme = normalizeThemePreference(
     (await cookies()).get(THEME_COOKIE)?.value
   );
-  // Allok gets its own product surface; the legacy Vocero CRM keeps the
-  // existing palette and white-label behavior untouched.
-  const accent = saasMode && branding.accent === DEFAULT_BRANDING.accent
-    ? "#147d52"
-    : branding.accent;
+  const accent = branding.accent;
   return (
     <html
       lang="es"
