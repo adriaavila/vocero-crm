@@ -46,18 +46,21 @@ describe("white-label: acento", () => {
     expect(lum).toBeLessThan(0xd0);
   });
 
-  it("hex inválido cae al azul por defecto", () => {
-    expect(resolveAccentSet("rojo")).toEqual(ACCENT_PRESETS["#0d5bff"]!.set);
+  it("hex inválido cae al acento por defecto", () => {
+    expect(resolveAccentSet("rojo")).toEqual(
+      ACCENT_PRESETS[DEFAULT_BRANDING.accent]!.set
+    );
   });
 
-  it("el azul por defecto trae los valores exactos del preset", () => {
-    expect(DEFAULT_BRANDING.accent).toBe("#0d5bff");
+  it("el acento por defecto trae los valores exactos del preset", () => {
+    // Magenta cielo, el acento de Dawn → Dusk sobre papel.
+    expect(DEFAULT_BRANDING.accent).toBe("#b41065");
     expect(resolveAccentSet(DEFAULT_BRANDING.accent)).toEqual({
-      accent: "#0d5bff",
-      hover: "#0a4de6",
-      soft: "#d3e2ff",
-      tint: "#ebf1ff",
-      text: "#0038d8",
+      accent: "#b41065",
+      hover: "#970d55",
+      soft: "#f2d4e3",
+      tint: "#fbf1f6",
+      text: "#820c49",
       fg: "#ffffff",
     });
   });
@@ -88,7 +91,7 @@ describe("white-label: acento en tema oscuro", () => {
 
   it("hex inválido en oscuro también cae al acento por defecto", () => {
     expect(resolveAccentSet("rojo", "dark")).toEqual(
-      resolveAccentSet("#0d5bff", "dark")
+      resolveAccentSet(DEFAULT_BRANDING.accent, "dark")
     );
   });
 
@@ -119,7 +122,9 @@ describe("white-label: normalización", () => {
   });
 
   it("acento inválido → default", () => {
-    expect(normalizeBranding({ accent: "azul" }).accent).toBe("#0d5bff");
+    expect(normalizeBranding({ accent: "azul" }).accent).toBe(
+      DEFAULT_BRANDING.accent
+    );
     expect(normalizeBranding({ accent: "#3F6B66" }).accent).toBe("#3f6b66");
   });
 });

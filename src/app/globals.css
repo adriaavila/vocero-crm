@@ -149,48 +149,191 @@
       0 8px 24px -12px rgba(0, 0, 0, 0.5);
   }
 
-  /* SaaS surface: warm, quiet and product-led. Scoped to Allok so the
-     existing Vocero instance remains visually unchanged. */
+  /*
+    ── allok SaaS · Dawn → Dusk ───────────────────────────────────────────────
+    Valores exactos de `design/tokens.json` (artifact Dawn → Dusk, v3).
+    Todo vive bajo [data-saas="true"] a propósito: la instancia Vocero
+    self-hosted conserva su papel frío y su azul, y no hereda nada de acá.
+
+    Dos capas, como el resto del archivo: primero los tokens del sistema con su
+    nombre propio (--ground, --ink, --sky-*), después los alias de la app
+    (--bg, --text, --border) apuntando a ellos. Ningún componente escribe un hex.
+
+    El acento NO se fija acá. Lo escribe el white-label en `:root` (ver
+    accentCssVariables en lib/branding), y este bloque tiene más especificidad:
+    si lo fijáramos, Configuración → Marca dejaría de funcionar. El default
+    del sistema —sky-magenta— vive en DEFAULT_BRANDING.
+  */
   :root[data-saas="true"] {
     color-scheme: light;
-    --bg: #fbfbf7;
-    --bg-subtle: #f3f5ef;
-    --bg-panel: #ffffff;
-    --bg-hover: #edf1e8;
-    --text: #161817;
-    --text-2: #5e635f;
-    --text-3: #7b837b;
-    --text-4: #a8afa7;
-    --border: #e4e8df;
-    --border-strong: #d5ddd2;
-    --chat-bg: #f7f8f3;
-    --bubble-in: #eaf6ec;
-    --bubble-in-border: #d5ead9;
-    --shadow-sm: 0 1px 2px rgba(22, 24, 23, 0.05);
-    --shadow-md: 0 14px 40px -16px rgba(22, 24, 23, 0.14);
-    --shadow-pop: 0 30px 80px -20px rgba(22, 24, 23, 0.18),
-      0 8px 24px -12px rgba(22, 24, 23, 0.1);
+
+    /* Tema papel */
+    --ground: #f5f4f0;
+    --ground-2: #f1efeb;
+    --ground-3: #eae8e3;
+    --ground-4: #dedbd4;
+    --ink: #101112;
+    --ink-60: #6b6d70;
+    --ink-40: #9a9c9f;
+    --hairline: rgba(16, 17, 18, 0.1);
+    --rule: rgba(10, 10, 10, 0.2);
+    --rule-hard: rgba(10, 10, 10, 0.85);
+
+    /* El cielo: mismo valor en los dos temas, es la marca */
+    --sky-night: #03123f;
+    --sky-cobalt: #1b3f96;
+    --sky-violet: #67277d;
+    --sky-magenta: #b41065;
+    --sky-ember: #8f4a58;
+    --lit-dawn: #ff9a3d;
+    --lit-dusk: #ffe3c2;
+    --on-sky: #f7f4ef;
+    --blur-glow: 42px;
+    --blur-bloom: 80px;
+
+    /* La voz del asistente. Nunca es texto sobre papel. */
+    --assist: #c5f04a;
+    --assist-dim: rgba(197, 240, 74, 0.14);
+
+    /* Dentro del teléfono, y solo ahí */
+    --wa-green: #008069;
+    --wa-screen: #ece5dd;
+    --wa-in: #ffffff;
+    --wa-out: #d9fdd3;
+    --wa-ink: #111b21;
+    --wa-ticks: #53bdeb;
+
+    /* Hilo y tablero */
+    --agent-out: #e7f3ec;
+    --stage-won: #e3efe7;
+    --stage-won-ink: #14663a;
+
+    /* ── Alias de la app ───────────────────────────────────────────────────
+       Jerarquía por escalón de superficie, no por color (design.md). */
+    --bg: var(--ground);
+    --bg-subtle: var(--ground-2);
+    --bg-panel: var(--ground-3);
+    --bg-hover: var(--ground-3);
+    --bg-active: var(--ground-4);
+    --text: var(--ink);
+    --text-2: var(--ink-60);
+    --text-3: var(--ink-40);
+    /* Dawn → Dusk tiene TRES tintas, no cuatro. Este cuarto escalón es
+       derivado y no es del sistema: solo para texto decorativo que ya era
+       --text-4 antes (never un párrafo). */
+    --text-4: #b7b9bb;
+    --border: var(--hairline);
+    --border-strong: var(--rule);
+
+    /* Hilo: el cliente entra en ground-2, el agente contesta en agent-out */
+    --chat-bg: var(--ground-2);
+    --bubble-in: var(--ground-2);
+    --bubble-in-border: var(--hairline);
+    --bubble-out: var(--agent-out);
+    --bubble-out-border: #cfe4d8;
+    --bubble-out-text: var(--ink);
+
+    /* Estado.
+       Los cinco --status-* son los valores exactos del sistema y se usan como
+       punto y como fondo al 15%. Su tinta sobre PAPEL se deriva: los valores
+       del sistema están afinados para el tema void y sobre papel no llegan a
+       4.5:1 (status-ok da 1.6:1). Se conserva el valor del sistema y se anota
+       la desviación, como pide el propio sistema. Verificados ≥ 6:1 sobre
+       --ground. */
+    --status-ok: #7ee0a8;
+    --status-info: #6cc7e8;
+    --status-warn: #f0c04a;
+    --status-risk: #f08a5a;
+    --status-lost: #e0687a;
+
+    --success: var(--status-ok);
+    --success-tint: rgba(126, 224, 168, 0.15);
+    --success-soft: rgba(126, 224, 168, 0.45);
+    --success-text: #14663a;
+
+    --warning: var(--status-warn);
+    --warning-tint: rgba(240, 192, 74, 0.15);
+    --warning-soft: rgba(240, 192, 74, 0.45);
+    --warning-text: #7a5600;
+
+    --danger: var(--status-lost);
+    --danger-tint: rgba(224, 104, 122, 0.15);
+    --danger-soft: rgba(224, 104, 122, 0.45);
+    --danger-text: #8f1f33;
+    --danger-fg: #ffffff;
+
+    --info: var(--status-info);
+    --info-tint: rgba(108, 199, 232, 0.15);
+    --info-soft: rgba(108, 199, 232, 0.45);
+    --info-text: #0b5f7a;
+
+    --overlay: rgba(16, 17, 18, 0.55);
+    --knob: #ffffff;
+
+    /* Radios del sistema */
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-btn: 14px;
+    --radius-lg: 16px;
+    --radius-card: 20px;
+    --radius-xl: 22px;
+    --radius-plate: 26px;
+    --radius-bubble: 13px;
+    --radius-pill: 999px;
+
+    /* Sobre papel la jerarquía la llevan los escalones y las reglas de pelo.
+       Solo existen dos sombras, y la grande es la de la tarjeta que rompe el
+       borde de la portada. */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md:
+      0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+    --shadow-pop: 0 30px 80px -34px rgba(0, 0, 0, 0.45);
+
+    /* Tres caras, un trabajo cada una. Comfortaa está retirada. */
+    --font-sans: var(--font-grotesk);
+    --font-mono: var(--font-jetbrains);
+    --font-serif: var(--font-poster);
+
+    /* Movimiento (motion.md): una curva, dos duraciones, una presión. */
+    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --dur-btn: 160ms;
+    --dur-card: 200ms;
+    --dur-base: 220ms;
+    --press: 0.96;
   }
 
   :root[data-theme="dark"][data-saas="true"] {
     color-scheme: dark;
-    --bg: #101311;
-    --bg-subtle: #0b0e0c;
-    --bg-panel: #171b18;
-    --bg-hover: #202720;
-    --text: #f2f4ee;
-    --text-2: #b0b8af;
-    --text-3: #7d887e;
-    --text-4: #5b665d;
-    --border: #263029;
-    --border-strong: #344338;
-    --chat-bg: #0b0e0c;
-    --bubble-in: #132619;
-    --bubble-in-border: #24442d;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.42);
-    --shadow-md: 0 14px 40px -16px rgba(0, 0, 0, 0.62);
-    --shadow-pop: 0 30px 80px -20px rgba(0, 0, 0, 0.75),
-      0 8px 24px -12px rgba(0, 0, 0, 0.5);
+
+    /* Tema void. El cielo, el asistente, WhatsApp y los estados no cambian:
+       son la marca, no el tema. */
+    --ground: #08090a;
+    --ground-2: #101214;
+    --ground-3: #141517;
+    --ground-4: #1b1c1f;
+    --ink: #f5f4f0;
+    --ink-60: #9a9a97;
+    --ink-40: #6c6c69;
+    --hairline: rgba(245, 244, 240, 0.12);
+    --rule: rgba(245, 244, 240, 0.2);
+    --rule-hard: rgba(245, 244, 240, 0.85);
+
+    --text-4: #4c4c4a;
+
+    /* Sobre negro sí hay sombras: tarjeta, popover, modal. */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);
+    --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.44);
+
+    /* Sobre void los estados ya cumplen con su propio color como tinta. */
+    --success-text: var(--status-ok);
+    --warning-text: var(--status-warn);
+    --danger-text: var(--status-lost);
+    --danger-fg: #101112;
+    --info-text: var(--status-info);
+
+    --overlay: rgba(2, 3, 4, 0.74);
+    --knob: #f5f4f0;
   }
 }
 

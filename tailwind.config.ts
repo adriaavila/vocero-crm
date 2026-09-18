@@ -98,6 +98,62 @@ const config: Config = {
           soft: "var(--info-soft)",
           text: "var(--info-text)",
         },
+        /* ── Dawn → Dusk ────────────────────────────────────────────────
+           Nombres del sistema, disponibles en toda la app. Solo tienen valor
+           propio bajo [data-saas="true"] (ver globals.css); en la instancia
+           Vocero los alias de arriba siguen mandando y estos no se usan. */
+        ground: {
+          DEFAULT: "var(--ground)",
+          2: "var(--ground-2)",
+          3: "var(--ground-3)",
+          4: "var(--ground-4)",
+        },
+        ink: {
+          DEFAULT: "var(--ink)",
+          60: "var(--ink-60)",
+          40: "var(--ink-40)",
+        },
+        hairline: "var(--hairline)",
+        rule: {
+          DEFAULT: "var(--rule)",
+          hard: "var(--rule-hard)",
+        },
+        sky: {
+          night: "var(--sky-night)",
+          cobalt: "var(--sky-cobalt)",
+          violet: "var(--sky-violet)",
+          magenta: "var(--sky-magenta)",
+          ember: "var(--sky-ember)",
+        },
+        lit: {
+          dawn: "var(--lit-dawn)",
+          dusk: "var(--lit-dusk)",
+        },
+        "on-sky": "var(--on-sky)",
+        assist: {
+          DEFAULT: "var(--assist)",
+          dim: "var(--assist-dim)",
+        },
+        "agent-out": "var(--agent-out)",
+        "stage-won": {
+          DEFAULT: "var(--stage-won)",
+          ink: "var(--stage-won-ink)",
+        },
+        wa: {
+          green: "var(--wa-green)",
+          screen: "var(--wa-screen)",
+          in: "var(--wa-in)",
+          out: "var(--wa-out)",
+          ink: "var(--wa-ink)",
+          ticks: "var(--wa-ticks)",
+        },
+        status: {
+          ok: "var(--status-ok)",
+          info: "var(--status-info)",
+          warn: "var(--status-warn)",
+          risk: "var(--status-risk)",
+          lost: "var(--status-lost)",
+        },
         overlay: "var(--overlay)",
         knob: "var(--knob)",
       },
@@ -105,6 +161,12 @@ const config: Config = {
         sm: "var(--radius-sm)",
         md: "var(--radius)",
         lg: "var(--radius-lg)",
+        btn: "var(--radius-btn)",
+        card: "var(--radius-card)",
+        xl: "var(--radius-xl)",
+        plate: "var(--radius-plate)",
+        bubble: "var(--radius-bubble)",
+        pill: "var(--radius-pill)",
       },
       boxShadow: {
         sm: "var(--shadow-sm)",
@@ -117,6 +179,16 @@ const config: Config = {
         sans: ["var(--font-sans)", "Archivo", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         serif: ["var(--font-serif)", "Instrument Serif", "Georgia", "serif"],
         mono: ["var(--font-mono)", "IBM Plex Mono", "ui-monospace", "Cascadia Code", "monospace"],
+        // Solo para `macro` (pie y cartel). Nunca un párrafo.
+        poster: ["var(--font-poster)", "Archivo Black", "Helvetica Neue", "Impact", "sans-serif"],
+      },
+      // motion.md: una curva para todo, y la propiedad SIEMPRE nombrada.
+      transitionTimingFunction: {
+        dd: "var(--ease-out)",
+      },
+      transitionDuration: {
+        btn: "var(--dur-btn)",
+        card: "var(--dur-card)",
       },
     },
   },

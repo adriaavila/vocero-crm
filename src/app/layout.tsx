@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { Archivo, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
+import {
+  Archivo,
+  Archivo_Black,
+  Geist,
+  IBM_Plex_Mono,
+  Instrument_Serif,
+  JetBrains_Mono,
+} from "next/font/google";
 import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
 import { faviconHref } from "@/lib/favicon";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
@@ -27,6 +34,28 @@ const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-mono",
+  display: "swap",
+});
+
+// Las tres voces de Dawn → Dusk, para la superficie allok SaaS. Se declaran
+// siempre pero solo se descargan cuando algo las usa, y globals.css las
+// engancha a --font-sans/--font-mono/--font-serif únicamente bajo
+// [data-saas="true"]: la instancia Vocero sigue en Archivo + Plex Mono.
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-grotesk",
+  display: "swap",
+});
+const archivoBlack = Archivo_Black({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-poster",
+  display: "swap",
+});
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-jetbrains",
   display: "swap",
 });
 
@@ -80,7 +109,14 @@ export default async function RootLayout({
   return (
     <html
       lang="es"
-      className={`${archivo.variable} ${instrumentSerif.variable} ${plexMono.variable}`}
+      className={[
+        archivo.variable,
+        instrumentSerif.variable,
+        plexMono.variable,
+        geist.variable,
+        archivoBlack.variable,
+        jetbrainsMono.variable,
+      ].join(" ")}
       // La preferencia siempre es explícita: el tema viaja resuelto en el HTML
       // del servidor, así que no hay divergencia con el cliente ni parpadeo.
       data-theme={theme}

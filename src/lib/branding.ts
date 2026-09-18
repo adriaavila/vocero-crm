@@ -46,17 +46,39 @@ export type Branding = {
 
 export const DEFAULT_BRANDING: Branding = {
   name: "allok",
-  // Azul eléctrico neutro por defecto; una agencia lo cambia en
-  // Configuración → Marca junto con el nombre del negocio.
-  accent: "#0d5bff",
+  // Magenta cielo: el acento de Dawn → Dusk sobre papel (design/design.md).
+  // Una agencia lo cambia en Configuración → Marca junto con el nombre del
+  // negocio; la marca neutra se conserva porque nada de esto está hardcodeado
+  // en la UI.
+  accent: "#b41065",
   currency: DEFAULT_CURRENCY,
   favicon: null,
 };
 
 /**
- * Presets. Tonos sobrios del handoff Atlas para quien quiera un CRM discreto.
+ * Presets: valores exactos, no derivados.
+ *
+ * Los dos primeros son del sistema Dawn → Dusk; el resto son los tonos sobrios
+ * del handoff Atlas, para quien quiera un CRM discreto.
+ *
+ * Contraste comprobado sobre `--ground` papel (#f5f4f0) y contra la tinta que
+ * va ENCIMA del acento, ambos ≥ 4.5:1:
+ *   magenta cielo  blanco sobre acento 6.6:1 · texto sobre papel 6.0:1
+ *   ámbar amanecer tinta sobre acento 9.0:1 · texto sobre papel 5.6:1
+ *
+ * Ojo con el ámbar: es el acento del tema VOID, donde el magenta se queda en
+ * 3.0:1 y no se puede usar. Su `fg` es tinta, no blanco — blanco sobre ámbar
+ * da 2.1:1.
  */
 export const ACCENT_PRESETS: Record<string, { label: string; set: AccentSet }> = {
+  "#b41065": {
+    label: "Magenta cielo",
+    set: { accent: "#b41065", hover: "#970d55", soft: "#f2d4e3", tint: "#fbf1f6", text: "#820c49", fg: "#ffffff" },
+  },
+  "#ff9a3d": {
+    label: "Ámbar amanecer",
+    set: { accent: "#ff9a3d", hover: "#d68133", soft: "#ffeddc", tint: "#fff9f3", text: "#8c5522", fg: "#101112" },
+  },
   "#0d5bff": {
     label: "Azul",
     set: { accent: "#0d5bff", hover: "#0a4de6", soft: "#d3e2ff", tint: "#ebf1ff", text: "#0038d8", fg: "#ffffff" },
