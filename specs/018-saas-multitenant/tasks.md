@@ -46,24 +46,51 @@ por estar en verde local.
       arreglo `new-app.sh --deploy` —y por tanto `alta-vocero.sh`— moría en el
       último paso.
 
-## Bloqueado — necesita a Adrian
+## Aterrizado (2026-09-18)
 
-- [ ] **Token de Cloudflare** `Zone:DNS:Edit` sobre `allok.fun` en
-      `~/CreativOS/_secrets/cloudflare.env`. No existe ninguno en la máquina ni
-      en el llavero, así que `whatsapp`, `admin` y `*.allok.fun` no se pueden
-      crear. **Esto bloquea todo lo demás.**
+- [x] **Token de Cloudflare** resuelto. `~/CreativOS/_secrets/cloudflare.env`
+      (chmod 600) verifica contra la API y ve la zona `allok.fun` activa. Con
+      él se crearon los tres registros A proxied que faltaban:
+      `whatsapp.allok.fun`, `admin.allok.fun` y `*.allok.fun` → 168.231.71.46.
+      `crm.allok.fun` y `allok.fun` comprobados intactos después.
+- [x] Stripe en **modo prueba**, cuenta `allok LLC` (`acct_1UDsQAQssTDjutCk`):
+      precios Básico USD 49/mes (`price_1UH1v0QssTDjutCkvzEHBp2p`) y Pro
+      USD 99/mes (`price_1UH1v2QssTDjutCkz7XyPXiT`), producto y precio de
+      Implementación USD 499 pago único (`price_1UH1vIQssTDjutCkEydrB7yk`), y
+      el endpoint de webhook (`we_1UH1vPQssTDjutCkRK6X9Z7z`) apuntando a
+      `https://whatsapp.allok.fun/api/saas/billing/webhook` con los seis
+      eventos que la ruta acepta. Los ids y el `whsec` quedaron en
+      `~/CreativOS/_secrets/allok-saas-stripe-test.env` (chmod 600).
+- [x] Precio decidido: Básico pasa de 29 a **49**; Pro se queda en 99; la
+      implementación a medida se vende aparte a **499** de pago único. En vivo
+      todavía está el precio de 29 — se archiva al pasar a producción, porque
+      los precios de Stripe son inmutables.
+- [x] La oferta ya no está incoherente entre el producto y `allok.fun`: la
+      landing vende exactamente los dos planes que la app conoce (`basic`,
+      `pro`) y su copia sale de lo que `hasSaaSPlan(org, "pro")` cierra de
+      verdad. El botón de cada plan lleva a `/register?plan=…` de la app, no al
+      Stripe del sitio, así que ya no existe el camino "paga y no recibe nada".
+
+## Bloqueado — necesita a Adrian
 - [ ] Certificado Origin CA `*.allok.fun` cargado en Coolify, con Cloudflare en
-      Full (strict).
+      Full (strict). El token de zona que tenemos es `Zone:DNS:Edit` y no puede
+      ni leer el modo SSL ni emitir un Origin CA (eso usa
+      `X-Auth-User-Service-Key`), así que este paso se hace en el panel. Hoy el
+      origen sirve Let's Encrypt para `crm.allok.fun` y `TRAEFIK DEFAULT CERT`
+      + 503 para cualquier subdominio no configurado — comprobado contra
+      168.231.71.46 directo.
 - [ ] `ALLOK_SAAS_WEBHOOK_VERIFY_TOKEN` en Vercel = el
       `META_WEBHOOK_VERIFY_TOKEN` de la instancia. La API de Coolify **no
       devuelve valores** de variables (bien por ella), así que hay que copiarlo
       desde su panel. Rotarlo no vale: el token es el path del webhook y
       cambiarlo deja el número actual sin recibir nada hasta rehacer el override
       en Meta.
-- [ ] Stripe: sólo hay una clave **restringida y de producción** (`rk_live_`).
-      Para probar el embudo sin dinero real hace falta una de prueba
-      (`sk_test_`), y para estrenar en vivo, la decisión suya. Crear los precios
-      Básico USD 29/mes y Pro USD 99/mes y el endpoint de webhook.
+- [ ] **Clave secreta de prueba de Stripe** (`sk_test_`) de la cuenta
+      `allok LLC`. Stripe no la expone por API y no hay ninguna en la máquina:
+      se copia de `dashboard.stripe.com/test/apikeys` con esa cuenta
+      seleccionada y se pega en la línea vacía de
+      `~/CreativOS/_secrets/allok-saas-stripe-test.env`. Sin ella el embudo no
+      se puede probar sin dinero real. Los precios y el webhook ya están.
 - [x] Decidir si Pro lleva prueba gratuita: sí, 7 días. `trialDaysForPlan`
       en `src/server/saas/billing.ts`, wireado al checkout (2026-09-15).
 - [ ] Encender: añadir los dominios `whatsapp.` + `admin.` + `*.allok.fun` al
@@ -103,6 +130,6 @@ por estar en verde local.
       productos de la raíz. Aislarla cuesta USD 10/mes de Advanced Certificate
       Manager y cambiar `ALLOK_ROOT_DOMAIN`. Hoy se mitiga reservando cada
       subdominio de producto.
-- [ ] Hay cuatro escalas de precio incoherentes entre el producto, `/desk` de
-      allok.fun, la oferta del wiki y `src/lib/pricing.ts`. Desplegar con 29/99
-      deja las otras tres en evidencia.
+- [x] Las escalas de precio incoherentes: resueltas entre el producto y
+      `allok.fun` (49/99 + 499). Quedan `/desk` —retirado y `noindex`— y la
+      oferta del wiki, que no son superficie de venta viva.
