@@ -440,6 +440,36 @@
     );
   }
 
+  /*
+    Un trozo de void dentro de una página de papel: la portada del login, el
+    encabezado de la guía de inicio. Redefine los MISMOS tokens, así que lo de
+    adentro se sigue escribiendo con bg-ground / text-ink / border-hairline y
+    no necesita saber en qué tema está.
+
+    El acento no se toca a propósito. Sobre negro, el acento del negocio puede
+    no llegar a contraste, así que acá se usa la paleta de marca —que vale
+    igual en los dos temas— y no --accent: `assist` para el asistente y
+    `lit-dawn` para una acción encendida.
+  */
+  :root[data-saas="true"] .dd-void {
+    --ground: #08090a;
+    --ground-2: #101214;
+    --ground-3: #141517;
+    --ground-4: #1b1c1f;
+    --ink: #f5f4f0;
+    --ink-60: #9a9a97;
+    --ink-40: #6c6c69;
+    --hairline: rgba(245, 244, 240, 0.12);
+    --rule: rgba(245, 244, 240, 0.2);
+    --bg: var(--ground);
+    --text: var(--ink);
+    --text-2: var(--ink-60);
+    --text-3: var(--ink-40);
+    --border: var(--hairline);
+    background-color: var(--ground);
+    color: var(--ink);
+  }
+
   /* Etiqueta editorial en mono: "01 · BANDEJA", "ETAPA", "NOTAS" */
   .kicker {
     @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-text-3;

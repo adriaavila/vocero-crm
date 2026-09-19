@@ -43,27 +43,27 @@ export default async function AuthLayout({
         <div className="brand-glow brand-glow-a" aria-hidden />
         <div className="brand-glow brand-glow-b" aria-hidden />
 
-        <div className="relative grid w-full max-w-5xl overflow-hidden rounded-[1.75rem] border bg-background shadow-pop lg:grid-cols-[0.9fr_1.1fr]">
-          <aside className="relative hidden overflow-hidden bg-[#161817] p-9 text-[#f4f4ef] lg:flex lg:flex-col">
-            <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-[#c5f04a22] blur-3xl" aria-hidden="true" />
+        <div className="relative grid w-full max-w-5xl overflow-hidden rounded-plate border bg-background shadow-pop lg:grid-cols-[0.9fr_1.1fr]">
+          <aside className="dd-void relative hidden overflow-hidden p-9 lg:flex lg:flex-col">
+            <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-assist-dim blur-3xl" aria-hidden="true" />
             <div className="relative">
-              <BrandLogo branding={branding} size="lg" className="[&>span:last-child]:text-[#f4f4ef]" />
+              <BrandLogo branding={branding} size="lg" className="[&>span:last-child]:text-ink" />
               <p className="mt-10 max-w-sm text-4xl font-semibold leading-[0.98] tracking-[-0.06em]">
                 Tu negocio sigue presente, incluso cuando tú no estás.
               </p>
-              <p className="mt-5 max-w-sm text-sm leading-6 text-[#b8c0b6]">
+              <p className="mt-5 max-w-sm text-sm leading-6 text-ink-60">
                 Configura una vez. Responde con la información real de tu negocio. Retoma cada conversación con contexto.
               </p>
               <div className="mt-10 grid gap-4 text-sm">
                 {benefits.map(({ icon: Icon, label }) => (
-                  <div key={label} className="flex items-center gap-3 text-[#e1e7dc]">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-[#c5f04a] text-[#161817]"><Icon className="size-4" aria-hidden="true" /></span>
+                  <div key={label} className="flex items-center gap-3 text-ink">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-assist text-ground"><Icon className="size-4" aria-hidden="true" /></span>
                     <span>{label}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="relative mt-auto flex items-center gap-2 pt-12 text-xs text-[#aeb5ad]"><Check className="size-3.5 text-[#c5f04a]" /> Sin mensajes enviados durante la configuración</div>
+            <div className="relative mt-auto flex items-center gap-2 pt-12 text-xs text-ink-60"><Check className="size-3.5 text-assist" /> Sin mensajes enviados durante la configuración</div>
           </aside>
 
           <div className="relative p-5 sm:p-9">
