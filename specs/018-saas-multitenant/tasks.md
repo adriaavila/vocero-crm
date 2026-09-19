@@ -165,10 +165,12 @@ resultaron ser dos resueltos y uno caduco.
 - [x] **El gate de plan dejó mudo al número que ya funcionaba.** Con
       `ALLOK_SAAS_MODE=true`, `canAutomate()` exige `active`/`trialing`, y
       ninguna organización existente tenía `metadata.allok.billing`. Entre las
-      15:11 y las 15:21 UTC el agente no contestó en `crm.allok.fun`. Los
-      mensajes **sí** se recibieron y se guardaron —no se perdió ninguno—; sólo
-      faltó la respuesta automática, y sólo en las 12 conversaciones de 184 que
-      tienen la IA encendida. Resuelto concediendo `pro`/`active` a mano a
+      15:11 y las 15:21 UTC la respuesta automática estuvo cerrada en
+      `crm.allok.fun`. **No llegó a costar nada:** los mensajes de esa ventana
+      se recibieron y se guardaron todos, y caían en una conversación con la IA
+      ya apagada — de las 184, sólo 12 la tienen encendida y ninguna recibió
+      nada en esos diez minutos. El agujero era real aunque nadie se cayera
+      dentro. Resuelto concediendo `pro`/`active` a mano a
       `principal` y a `mistica`, con `source: manual_grant_2026_09_19` para que
       nunca se confunda con una suscripción real.
       **Al runbook:** conceder el plan a las organizaciones existentes **antes**
