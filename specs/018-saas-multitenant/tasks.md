@@ -205,3 +205,39 @@ resultaron ser dos resueltos y uno caduco.
       → 404.
 - [ ] Apagar la instancia dedicada, sólo después de ver un ida y vuelta real en
       el inquilino nuevo.
+
+## Comprobado en vivo con un inquilino real (2026-09-19)
+
+FR-3 y FR-10 sólo tenían evidencia local. Ahora la tienen en producción, con la
+sesión de Mística —un inquilino de verdad, no un arnés—:
+
+- [x] **El host no da acceso; lo da la organización de la sesión.** Con su
+      sesión, `crm.allok.fun/api/conversations` devuelve `[]` (lo suyo), no las
+      184 conversaciones del inquilino legacy. Lo mismo salió antes con una
+      cuenta de prueba desechable.
+- [x] **El panel interno está cerrado y no se delata.** Mística no está en
+      `ALLOK_ADMIN_EMAILS` y recibe `404` en `/admin` desde los tres hosts
+      (`admin.`, `crm.` y el suyo) — `notFound()`, no un login que confirme que
+      la pantalla existe.
+- [x] **El alta está cerrada fuera de su host.** `crm.allok.fun` responde `403`
+      con "El registro de Allok empieza en whatsapp.allok.fun". El formulario se
+      pinta en todos los hosts a propósito: la pantalla reconoce ese error y lo
+      enseña en vez de fallar mudo. Por eso mirar el HTML engaña, y por eso
+      `ssh-c001/scripts/check-saas.sh` comprueba la respuesta de la API.
+- [x] **Ningún otro producto de la raíz acepta la sesión.** `inmox.allok.fun`
+      recibe la cookie —viaja a todo `.allok.fun`— y responde `401`, porque
+      tiene otro `BETTER_AUTH_SECRET` y otra base de datos. El riesgo que queda
+      no es suplantación sino transmisión: el valor de la cookie llega a todos
+      esos orígenes.
+- [x] **El embudo de cobro crea checkout de los dos planes**: Básico cobra 49
+      el mismo día, Pro cobra 0 sobre 99/mes, que son los 7 días de prueba.
+      (`subscription_data` no se devuelve al leer una sesión de Stripe; el dato
+      que lo demuestra es `amount_total`.) Todo en sandbox, y el cliente de
+      prueba y las sesiones quedaron borrados.
+
+### Lo que no se pudo correr
+
+- [ ] `scripts/saas-isolation-check.mjs` contra producción. El arnés resuelve el
+      inquilino mandando `x-forwarded-host` a mano, y detrás de Traefik esa
+      cabecera la pone el proxy. Sirve en local, no en vivo; lo de arriba es su
+      sustituto en producción.
