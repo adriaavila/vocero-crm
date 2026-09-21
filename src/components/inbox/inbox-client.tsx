@@ -271,12 +271,12 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="allok-inbox flex h-full">
       {/* Móvil: una columna a la vez. La lista cede la pantalla completa al
           hilo en cuanto hay conversación elegida (patrón maestro-detalle). */}
       <section
         className={cn(
-          "w-full shrink-0 overflow-hidden border-r md:w-[300px] lg:w-[360px]",
+          "allok-conversation-list w-full shrink-0 overflow-hidden border-r md:w-[300px] lg:w-[360px]",
           selected && "max-md:hidden"
         )}
       >

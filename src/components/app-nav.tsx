@@ -31,6 +31,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { AllokWordmark } from "@/components/agencia/allok-ui/wordmark";
+import { activeNavigationHref } from "@/components/agencia/allok-ui/navigation";
 import { APP_VERSION, BUILD_COMMIT, versionLabel } from "@/lib/version";
 
 type NavItem = {
@@ -66,6 +68,7 @@ const NAV: NavItem[] = [
 const ALLOK_NAV: NavItem[] = [
   { href: "/overview", label: "Inicio", icon: Gauge },
   { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
+  { href: "/agent", label: "Agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Probar Allok", icon: FlaskConical, owner: true },
   { href: "/settings", label: "Configuración", icon: Settings, owner: true },
 ];
@@ -169,6 +172,8 @@ export function AppNav({
     : sourceNav
   ).filter((item) => !item.owner || esPropietario);
 
+  const activeHref = activeNavigationHref(pathname, items.map(item => item.href));
+
   return (
     <aside
       // Móvil: cajón que se desliza desde la izquierda (siempre montado, así
@@ -176,6 +181,8 @@ export function AppNav({
       // `visibility` va en la transición a propósito: al cerrar mantiene el
       // cajón visible mientras se desliza y recién entonces lo oculta, que es
       // lo que lo saca del orden de tabulación en móvil.
+      aria-label="Navegación de la aplicación"
+      data-allok-nav={saasMode || undefined}
       className={cn(
         "fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 transition-[transform,visibility] duration-200",
         "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
@@ -194,15 +201,15 @@ export function AppNav({
           <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </button>
         <div className="min-w-0">
-          <BrandLogo branding={branding} />
-          <span className="kicker mt-2 block">CRM · WhatsApp</span>
+          {saasMode ? <AllokWordmark branding={branding} /> : <BrandLogo branding={branding} />}
+          <span className="kicker mt-2 block">{saasMode ? "Tu espacio de trabajo" : "CRM · WhatsApp"}</span>
         </div>
       </div>
 
-      <nav className="flex flex-col gap-0.5">
+      <nav aria-label="Principal" className="flex flex-col gap-0.5">
         {items.map((item) => {
           const active =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+            activeHref === item.href;
           return (
             <Link
               key={item.href}
@@ -250,7 +257,7 @@ export function AppNav({
       </Link>
       )}
 
-      <div className="mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
+      <div className="allok-user-menu mt-1 flex items-center gap-2.5 rounded-sm px-2.5 py-2 hover:bg-accent">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-xs font-bold text-brand-text">
           {initials(userName)}
         </span>

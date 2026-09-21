@@ -16,6 +16,7 @@ import {
   type AgencyAiCredentials,
   type AgencyProfile,
 } from "@/components/agencia/agent-agency-cards";
+import { AllokAgentWorkspace } from "@/components/agencia/allok-ui/agent-workspace";
 import { useActivationGate } from "@/components/agencia/activation-gate";
 
 type Profile = {
@@ -157,7 +158,7 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
       {!aiConfigured && (
         <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-5 text-center sm:mx-6 sm:mt-6 sm:p-6">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">Configura tu proveedor de IA para que Rei pueda responder</p>
+          <p className="font-medium">Configura tu proveedor de IA para que tu agente pueda responder</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             Pega una clave de OpenRouter u OpenAI en la tarjeta <strong>Claves de IA</strong>.
             Si tu plataforma ya tiene una clave configurada, aparecerá automáticamente como
@@ -166,7 +167,12 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
         </div>
       )}
 
-      <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
+      {saasMode ? <AllokAgentWorkspace
+        behavior={<ProfileSection profile={profile} onSave={saveProfile} />}
+        knowledge={<KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />}
+        hours={<BusinessHoursSection />}
+        connections={<AgencyAgentCards profile={profile} onSave={saveProfile} credentials={aiCredentials} onCredentialsChanged={() => void refetch()} />}
+      /> : <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
         <div className="space-y-4 sm:space-y-6">
           <ProfileSection profile={profile} onSave={saveProfile} />
           <AgencyAgentCards
@@ -178,7 +184,7 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
           {saasMode && <BusinessHoursSection />}
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
-      </div>
+      </div>}
       {gate}
     </div>
   );

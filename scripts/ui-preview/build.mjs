@@ -1,0 +1,11 @@
+import { build } from 'esbuild';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+const out=resolve(process.argv[2] || '/tmp/allok-ui-preview');
+await mkdir(out,{recursive:true});
+const root=process.cwd();
+await build({entryPoints:['scripts/ui-preview/preview.tsx'],bundle:true,minify:true,platform:'browser',format:'esm',jsx:'automatic',outfile:resolve(out,'ui.js'),define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},alias:{'next/navigation':resolve(root,'scripts/ui-preview/navigation.tsx'),'next/link':resolve(root,'scripts/ui-preview/navigation.tsx'),'@/components/use-events':resolve(root,'scripts/ui-preview/stubs.ts'),'@/lib/auth/client':resolve(root,'scripts/ui-preview/stubs.ts')}});
+execFileSync(process.execPath,['node_modules/tailwindcss/lib/cli.js','-i','src/app/globals.css','-o',resolve(out,'ui.css'),'--minify'],{stdio:'inherit'});
+await writeFile(resolve(out,'ui.css'),(await readFile(resolve(out,'ui.css'),'utf8'))+'\n'+await readFile('src/components/agencia/allok-ui/theme.css','utf8')+'\nbody{margin:0;font-family:Arial,Helvetica,sans-serif}.preview-notice{height:34px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 18px;background:#e6efe9;color:#375943;font-size:11px;border-bottom:1px solid #c5d6ca}[data-allok-shell=true]{height:calc(100dvh - 34px)}@media(max-width:700px){.preview-notice>span:last-child{display:none}}');
+await writeFile(resolve(out,'index.html'),'<!doctype html><html lang="es" data-saas="true" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Allok · App UI</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="./ui.css"></head><body><div id="preview-root"></div><script type="module" src="./ui.js"></script></body></html>');

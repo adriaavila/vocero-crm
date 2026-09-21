@@ -33,7 +33,7 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
   const automationActive = data.summary.agentEnabled && billingActive;
   const firstPending = readiness?.steps.find((step) => step.status === "pending" || step.status === "stale");
   const completeSteps = readiness?.steps.filter((step) => step.status === "complete").length ?? 0;
-  const progress = readiness ? Math.round((completeSteps / readiness.steps.length) * 100) : null;
+  const progress = readiness && readiness.steps.length > 0 ? Math.round((completeSteps / readiness.steps.length) * 100) : null;
   const whatsappReady = readiness?.steps.find((step) => step.id === "whatsapp")?.status === "complete";
   const knowledgeReady = readiness?.steps.find((step) => step.id === "knowledge")?.status === "complete";
   const businessHoursReady = readiness?.steps.find((step) => step.id === "business_hours")?.status === "complete";
@@ -50,16 +50,23 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
           ? { href: "/lab", label: "Probar una conversación" }
           : { href: "/inbox", label: "Ver conversaciones" };
   return (
-    <div className="h-full overflow-y-auto bg-subtle">
+    <div className="allok-overview h-full overflow-y-auto bg-subtle">
       <header className="border-b bg-background px-4 py-4 md:px-6">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between">
           <div className="min-w-0"><p className="kicker">Centro de atención</p><h1 className="mt-1 truncate text-xl font-[680] tracking-tight">Inicio</h1></div>
           <Badge variant={automationActive ? "success" : billing && !billingActive ? "warning" : "secondary"}>{automationActive ? "Agente activo" : billing && !billingActive ? "Facturación pendiente" : "Agente en pausa"}</Badge>
         </div>
       </header>
-      <main className="mx-auto max-w-[1500px] space-y-5 p-4 md:p-6">
+      <div className="allok-overview-content mx-auto max-w-[1500px] space-y-5 p-4 md:p-6">
         {billingNotice && <p role="status" className="rounded-lg border border-brand-soft bg-brand-tint px-4 py-3 text-sm text-brand-text">{billingNotice}</p>}
-        <section className="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+        <section aria-label="Señales de operación" className="allok-signals grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SignalCard label="Sin leer" value={data.summary.unreadConversations} helper={data.summary.unreadConversations ? "Abrir bandeja" : "Todo al día"} icon={Inbox} href="/inbox" warning={data.summary.unreadConversations > 0} />
+          <SignalCard label="Atención humana" value={data.summary.pendingHandoffs} helper={data.summary.pendingHandoffs ? "Tomar conversación" : "Ninguna pendiente"} icon={MessageSquareWarning} href="/inbox" warning={data.summary.pendingHandoffs > 0} />
+          <SignalCard label="Ventanas activas" value={data.summary.activeWindows} helper="Conversaciones abiertas" icon={Clock3} href="/inbox" />
+          <SignalCard label="Última prueba" value={data.latestLab ? `${data.latestLab.score}/100` : "—"} helper={data.latestLab ? (data.latestLab.redCount ? "Revisar hallazgos" : "Sin hallazgos críticos") : "Haz tu primera prueba"} icon={Sparkles} href={owner ? "/lab" : "/overview"} warning={Boolean(data.latestLab?.redCount)} />
+        </section>
+
+        <section className="allok-briefing grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
           <div className="relative overflow-hidden rounded-lg border bg-background p-5 shadow-sm md:p-7">
             <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-brand-tint blur-3xl" />
             <div className="relative">
@@ -67,8 +74,8 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
                 <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${automationActive ? "border-success-soft bg-success-tint text-success-text" : billing && !billingActive ? "border-warning-soft bg-warning-tint text-warning-text" : "border-border-strong bg-secondary text-text-2"}`}><span className={`h-2 w-2 rounded-full ${automationActive ? "bg-success" : billing && !billingActive ? "bg-warning" : "bg-border-strong"}`} />{automationActive ? "Tu WhatsApp está cubierto" : billing && !billingActive ? "Automatización pausada por facturación" : "Tu agente está en pausa"}</span>
                 {data.summary.pendingHandoffs > 0 && <Badge variant="warning">{data.summary.pendingHandoffs} requiere atención</Badge>}
               </div>
-              <p className="mt-5 text-3xl font-[720] tracking-[-0.04em] md:text-4xl">Hola{userName ? `, ${userName.split(" ")[0]}` : ""}.</p>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">Mira qué está pasando y deja listo el siguiente paso. Allok responde cuando tu equipo no está disponible.</p>
+              <h2 className="mt-5 text-3xl font-[720] tracking-[-0.04em] md:text-4xl">Tu operación, de un vistazo.</h2>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">Hola{userName ? `, ${userName.split(" ")[0]}` : ""}. Revisa las conversaciones que necesitan atención y prepara el siguiente paso.</p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <Link href={primaryAction.href} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-hover"><WandSparkles className="h-4 w-4" /> {primaryAction.label}</Link>
                 {primaryAction.href !== "/inbox" && <Link href="/inbox" className="inline-flex h-10 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-semibold transition-colors hover:bg-accent">Abrir bandeja <ArrowUpRight className="h-4 w-4" /></Link>}
@@ -90,14 +97,14 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
         </section>
 
         {owner && readiness && (
-          <section className="overflow-hidden rounded-lg border bg-background shadow-sm">
-            <div className="border-b px-4 py-4 md:px-5">
+          <details className="allok-readiness overflow-hidden rounded-lg border bg-background shadow-sm">
+            <summary className="cursor-pointer px-4 py-4 md:px-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">Puesta en marcha</h2>
                 <span className="text-xs text-text-3">{completeSteps}/{readiness.steps.length} completos</span>
               </div>
-              <p className="mt-1 text-xs leading-5 text-text-3">{firstPending ? `Siguiente: ${firstPending.label}.` : "Todo listo para atender."} El playground nunca envía mensajes a tus clientes.</p>
-            </div>
+              <p className="mt-1 text-xs leading-5 text-text-3">{firstPending ? `Siguiente: ${firstPending.label}.` : "Todo listo para atender."} Las simulaciones no envían mensajes a tus clientes.</p>
+            </summary>
             <div className="grid gap-px bg-border md:grid-cols-3">
               {readiness.steps.map((step) => (
                 <Link key={step.id} href={step.href} aria-current={firstPending?.id === step.id ? "step" : undefined} className={`group flex min-h-24 gap-3 bg-background p-4 transition-colors hover:bg-subtle ${firstPending?.id === step.id ? "bg-brand-tint/35 ring-1 ring-inset ring-brand-soft" : ""}`}>
@@ -113,20 +120,15 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
               <Link href="/settings/branding" className="hover:text-foreground">{readiness.optional.brandingCustomized ? "✓ Marca personalizada" : "Personalizar marca"}</Link>
               <Link href="/settings/team" className="hover:text-foreground">{readiness.optional.teamMemberCount > 1 ? `✓ ${readiness.optional.teamMemberCount} personas en el equipo` : "Invitar al equipo"}</Link>
             </div>
-          </section>
+          </details>
         )}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SignalCard label="Sin leer" value={data.summary.unreadConversations} helper={data.summary.unreadConversations ? "Abrir bandeja" : "Todo al día"} icon={Inbox} href="/inbox" warning={data.summary.unreadConversations > 0} />
-          <SignalCard label="Atención humana" value={data.summary.pendingHandoffs} helper={data.summary.pendingHandoffs ? "Tomar conversación" : "Ninguna pendiente"} icon={MessageSquareWarning} href="/inbox" warning={data.summary.pendingHandoffs > 0} />
-          <SignalCard label="Ventanas activas" value={data.summary.activeWindows} helper="Conversaciones abiertas" icon={Clock3} href="/inbox" />
-          <SignalCard label="Última prueba" value={data.latestLab ? `${data.latestLab.score}/100` : "—"} helper={data.latestLab ? (data.latestLab.redCount ? "Revisar hallazgos" : "Sin hallazgos críticos") : "Haz tu primera prueba"} icon={Sparkles} href={owner ? "/lab" : "/overview"} warning={Boolean(data.latestLab?.redCount)} />
-        </section>
+
 
         <section className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
           <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
             <ModuleTitle title="Mensajes entrantes" right={<span className="text-xs text-text-3">Últimos 7 días</span>} />
-            <div className="flex h-64 items-end gap-2 p-5" role="img" aria-label="Mensajes entrantes durante los últimos siete días">
+            <div className="allok-trend flex h-64 items-end gap-2 p-5" role="img" aria-label="Mensajes entrantes durante los últimos siete días">
               {data.inboundTrend.map((point) => (
                 <div key={point.date} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-2 text-center">
                   <span className="text-xs font-semibold text-text-2">{point.count}</span>
@@ -156,7 +158,7 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
             <QuickAction href="/agent" icon={Activity} title="Ajustar el agente" detail="Actualiza horarios, tono e información del negocio." />
           </>}
         </section>
-      </main>
+      </div>
     </div>
   );
 }
