@@ -8,6 +8,8 @@ import { getBranding } from "@/server/branding";
 import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import "./globals.css";
+// Allok visual layer lives in the fork, after the shared design tokens.
+import "@/components/agencia/allok-ui/theme.css";
 
 // Las tres voces de la marca, las mismas de vocerocrm.com. next/font las
 // descarga en BUILD y las sirve self-hosted (sin CDN en runtime: soberanía).

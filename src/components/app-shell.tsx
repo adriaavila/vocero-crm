@@ -6,6 +6,7 @@ import { Menu } from "lucide-react";
 import type { Branding } from "@/lib/branding";
 import type { ThemePreference } from "@/lib/theme";
 import { AppNav } from "@/components/app-nav";
+import { AllokWordmark } from "@/components/agencia/allok-ui/wordmark";
 import { BrandLogo } from "@/components/brand-mark";
 import type { SaaSPlan } from "@/server/saas/billing";
 
@@ -74,12 +75,14 @@ export function AppShell({
             ? "Agenda"
             : pathname.startsWith("/settings")
               ? "Configuración"
+              : pathname.startsWith("/agent")
+                ? "Agente"
               : pathname.startsWith("/lab")
                 ? "Probar Allok"
                 : "Allok";
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-background">
+    <div data-allok-shell={saasMode || undefined} className="flex h-dvh overflow-hidden bg-background">
       <a
         href="#main-content"
         className="sr-only fixed left-3 top-3 z-[70] rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground shadow-pop focus:not-sr-only"
@@ -118,7 +121,7 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
-          <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />
+          {saasMode ? <AllokWordmark branding={branding} /> : <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />}
           <span className="ml-auto border-l pl-3 text-sm font-semibold text-text-2">{pageLabel}</span>
         </header>
 
