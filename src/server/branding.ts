@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import {
   DEFAULT_BRANDING,
   normalizeBranding,
+  SAAS_BRANDING,
   type Branding,
 } from "@/lib/branding";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
@@ -45,15 +46,19 @@ export async function getBrandingContext(
         .select({ id: schema.organization.id, name: schema.organization.name, metadata: schema.organization.metadata })
         .from(schema.organization)
         .limit(1);
-  if (!rows[0]) return { organizationId: null, branding: DEFAULT_BRANDING };
+  if (!rows[0]) {
+    return { organizationId: null, branding: isAllokSaaSMode() ? SAAS_BRANDING : DEFAULT_BRANDING };
+  }
   const meta = parseMetadata(rows[0].metadata);
   const customBranding = meta.branding as Partial<Branding> | undefined;
   const branding = normalizeBranding(customBranding ?? null);
   return {
     organizationId: rows[0].id,
+    // Un negocio del SaaS que no tocó su marca lleva su nombre y el acento de
+    // allok; una instancia Vocero, la marca por defecto de siempre.
     branding: customBranding || !isAllokSaaSMode()
       ? branding
-      : { ...branding, name: rows[0].name },
+      : { ...branding, name: rows[0].name, accent: SAAS_BRANDING.accent },
   };
 }
 

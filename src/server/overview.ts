@@ -2,15 +2,17 @@ import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { listConversations } from "@/server/inbox/queries";
+import type { ConversationDto } from "@/lib/types";
 
-export async function getOverview(organizationId: string) {
+/** `conversationList`: la lista ya cargada, si quien llama también la usa (Inicio del SaaS). */
+export async function getOverview(organizationId: string, conversationList?: ConversationDto[]) {
   const db = getDb();
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
   since.setUTCDate(since.getUTCDate() - 6);
 
   const [conversations, trendRows, pipelineRows, profileRows, runRows] = await Promise.all([
-    listConversations(organizationId),
+    conversationList ?? listConversations(organizationId),
     db.select({
       date: sql<string>`to_char(date_trunc('day', ${schema.message.createdAt} at time zone 'UTC'), 'YYYY-MM-DD')`,
       count: count(),

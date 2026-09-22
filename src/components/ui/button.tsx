@@ -9,17 +9,21 @@ import { cn } from "@/lib/utils";
  *
  * Sin modificadores de opacidad (`bg-primary/90`): Tailwind 3 no sabe
  * aplicarlos a un color `var(--x)` y descarta la regla en silencio.
+ *
+ * Radio, levantamiento y presión leen `--btn-*`: el SaaS allok los fija en
+ * globals.css (esquina de 10px, sin levantar, presión 0.97); sin ellos quedan
+ * los valores de Vocero de siempre.
  */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-semibold tracking-[-0.01em] transition-[color,background-color,border-color,transform,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--btn-radius,9999px)] text-sm font-semibold tracking-[-0.01em] transition-[color,background-color,border-color,transform,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[var(--btn-press,1)] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:-translate-y-px hover:bg-brand-hover active:translate-y-0",
+          "bg-primary text-primary-foreground shadow-sm hover:-translate-y-[var(--btn-lift,1px)] hover:bg-brand-hover active:translate-y-0",
         secondary: "bg-secondary text-secondary-foreground hover:bg-accent",
         outline:
-          "border border-border-strong bg-transparent text-foreground hover:-translate-y-px hover:border-foreground active:translate-y-0",
+          "border border-border-strong bg-transparent text-foreground hover:-translate-y-[var(--btn-lift,1px)] hover:border-foreground active:translate-y-0",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         destructive:
           "bg-destructive text-destructive-foreground shadow-sm hover:opacity-90",

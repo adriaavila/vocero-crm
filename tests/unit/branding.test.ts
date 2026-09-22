@@ -5,6 +5,7 @@ import {
   accentCssVariables,
   DEFAULT_BRANDING,
   isValidHex,
+  SAAS_BRANDING,
   normalizeBranding,
   resolveAccentSet,
 } from "@/lib/branding";
@@ -46,20 +47,28 @@ describe("white-label: acento", () => {
     expect(lum).toBeLessThan(0xd0);
   });
 
-  it("hex inválido cae al azul por defecto", () => {
-    expect(resolveAccentSet("rojo")).toEqual(ACCENT_PRESETS["#0d5bff"]!.set);
+  it("hex inválido cae al acento por defecto", () => {
+    expect(resolveAccentSet("rojo")).toEqual(
+      ACCENT_PRESETS[DEFAULT_BRANDING.accent]!.set
+    );
   });
 
-  it("el azul por defecto trae los valores exactos del preset", () => {
+  it("el acento por defecto trae los valores exactos del preset", () => {
+    // Una instancia Vocero conserva su azul: el default del SaaS no se presta.
     expect(DEFAULT_BRANDING.accent).toBe("#0d5bff");
-    expect(resolveAccentSet(DEFAULT_BRANDING.accent)).toEqual({
-      accent: "#0d5bff",
-      hover: "#0a4de6",
-      soft: "#d3e2ff",
-      tint: "#ebf1ff",
-      text: "#0038d8",
-      fg: "#ffffff",
-    });
+    expect(resolveAccentSet(DEFAULT_BRANDING.accent)).toEqual(ACCENT_PRESETS["#0d5bff"]!.set);
+  });
+
+  it("el SaaS allok arranca en tinta, y en oscuro se invierte a Cloud", () => {
+    expect(SAAS_BRANDING.accent).toBe("#0b0d0e");
+    const claro = resolveAccentSet(SAAS_BRANDING.accent, "light");
+    const oscuro = resolveAccentSet(SAAS_BRANDING.accent, "dark");
+    expect(claro).toEqual(ACCENT_PRESETS["#0b0d0e"]!.set);
+    // Aclarar la tinta daría un gris sin dueño: sobre negro, el botón es Cloud.
+    expect(oscuro.accent).toBe("#f7f8f8");
+    expect(oscuro.fg).toBe("#0b0d0e");
+    expect(contrast(claro.fg, claro.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(oscuro.fg, oscuro.accent)).toBeGreaterThanOrEqual(4.5);
   });
 });
 
@@ -88,7 +97,7 @@ describe("white-label: acento en tema oscuro", () => {
 
   it("hex inválido en oscuro también cae al acento por defecto", () => {
     expect(resolveAccentSet("rojo", "dark")).toEqual(
-      resolveAccentSet("#0d5bff", "dark")
+      resolveAccentSet(DEFAULT_BRANDING.accent, "dark")
     );
   });
 
@@ -119,7 +128,9 @@ describe("white-label: normalización", () => {
   });
 
   it("acento inválido → default", () => {
-    expect(normalizeBranding({ accent: "azul" }).accent).toBe("#0d5bff");
+    expect(normalizeBranding({ accent: "azul" }).accent).toBe(
+      DEFAULT_BRANDING.accent
+    );
     expect(normalizeBranding({ accent: "#3F6B66" }).accent).toBe("#3f6b66");
   });
 });

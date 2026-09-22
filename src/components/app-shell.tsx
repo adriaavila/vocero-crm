@@ -8,6 +8,10 @@ import type { ThemePreference } from "@/lib/theme";
 import { AppNav } from "@/components/app-nav";
 import { BrandLogo } from "@/components/brand-mark";
 import type { SaaSPlan } from "@/server/saas/billing";
+import type { SystemSnapshot } from "@/lib/estado";
+// Capa de agencia: el estado de la operación vive en todo el cascarón del SaaS.
+import { SystemStateProvider } from "@/components/agencia/allok/system-state";
+import { AllokShellBrand } from "@/components/agencia/allok/nav-head";
 
 /**
  * Cascarón de la app en dos modos:
@@ -30,6 +34,7 @@ export function AppShell({
   agenda = false,
   saasMode = false,
   saasPlan = null,
+  systemState = null,
   children,
 }: {
   branding: Branding;
@@ -43,6 +48,8 @@ export function AppShell({
   /** La navegación Allok reduce el CRM a las cuatro acciones principales. */
   saasMode?: boolean;
   saasPlan?: SaaSPlan | null;
+  /** Capa de agencia: el estado resuelto en el servidor; null fuera del SaaS. */
+  systemState?: SystemSnapshot | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -75,10 +82,12 @@ export function AppShell({
             : pathname.startsWith("/settings")
               ? "Configuración"
               : pathname.startsWith("/lab")
-                ? "Probar Allok"
-                : "Allok";
+                ? "Probar allok"
+                : pathname.startsWith("/agent")
+                  ? "Agente"
+                  : "allok";
 
-  return (
+  const shell = (
     <div className="flex h-dvh overflow-hidden bg-background">
       <a
         href="#main-content"
@@ -118,12 +127,20 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
-          <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />
+          {systemState ? <AllokShellBrand /> : <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />}
           <span className="ml-auto border-l pl-3 text-sm font-semibold text-text-2">{pageLabel}</span>
         </header>
 
         <main id="main-content" tabIndex={-1} className="min-h-0 min-w-0 flex-1 overflow-hidden">{children}</main>
       </div>
     </div>
+  );
+
+  return systemState ? (
+    <SystemStateProvider initial={systemState} customFavicon={Boolean(branding.favicon)}>
+      {shell}
+    </SystemStateProvider>
+  ) : (
+    shell
   );
 }

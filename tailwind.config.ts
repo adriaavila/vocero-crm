@@ -98,6 +98,36 @@ const config: Config = {
           soft: "var(--info-soft)",
           text: "var(--info-text)",
         },
+        /* ── allok ───────────────────────────────────────────────────────
+           Nombres de la marca allok (allok.fun), disponibles en toda la app.
+           Solo tienen valor propio bajo [data-saas="true"] (ver globals.css);
+           en la instancia Vocero los alias de arriba siguen mandando y estos
+           no se usan. */
+        ground: {
+          DEFAULT: "var(--ground)",
+          2: "var(--ground-2)",
+          3: "var(--ground-3)",
+          4: "var(--ground-4)",
+        },
+        ink: {
+          DEFAULT: "var(--ink)",
+          60: "var(--ink-60)",
+          40: "var(--ink-40)",
+        },
+        cloud: "var(--cloud)",
+        hairline: "var(--hairline)",
+        rule: {
+          DEFAULT: "var(--rule)",
+          hard: "var(--rule-hard)",
+        },
+        ok: {
+          DEFAULT: "var(--ok)",
+          ink: "var(--ok-ink)",
+        },
+        signal: {
+          DEFAULT: "var(--signal)",
+          ink: "var(--signal-ink)",
+        },
         overlay: "var(--overlay)",
         knob: "var(--knob)",
       },
@@ -111,8 +141,8 @@ const config: Config = {
         md: "var(--shadow-md)",
         pop: "var(--shadow-pop)",
       },
-      // Las tres voces de la marca (ver src/app/layout.tsx, donde next/font
-      // las descarga en build y las sirve self-hosted, sin CDN en runtime).
+      // Las voces de la marca (ver src/app/layout.tsx, donde next/font las
+      // descarga en build y las sirve self-hosted, sin CDN en runtime).
       fontFamily: {
         sans: ["var(--font-sans)", "Archivo", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
         serif: ["var(--font-serif)", "Instrument Serif", "Georgia", "serif"],

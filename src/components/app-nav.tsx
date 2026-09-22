@@ -25,6 +25,8 @@ import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo } from "@/components/brand-mark";
+// Capa de agencia: la cabecera del SaaS (all ● k + estado + número).
+import { AllokNavHead } from "@/components/agencia/allok/nav-head";
 import {
   Tooltip,
   TooltipContent,
@@ -66,7 +68,7 @@ const NAV: NavItem[] = [
 const ALLOK_NAV: NavItem[] = [
   { href: "/overview", label: "Inicio", icon: Gauge },
   { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
-  { href: "/lab", label: "Probar Allok", icon: FlaskConical, owner: true },
+  { href: "/lab", label: "Probar allok", icon: FlaskConical, owner: true },
   { href: "/settings", label: "Configuración", icon: Settings, owner: true },
 ];
 
@@ -168,6 +170,12 @@ export function AppNav({
     ? [...sourceNav.slice(0, 2), AGENDA_ITEM, ...sourceNav.slice(2)]
     : sourceNav
   ).filter((item) => !item.owner || esPropietario);
+  // Gana la ruta más específica: en /settings/team no se encienden a la vez
+  // Configuración y Equipo.
+  const activeHref = items
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <aside
@@ -176,6 +184,8 @@ export function AppNav({
       // `visibility` va en la transición a propósito: al cerrar mantiene el
       // cajón visible mientras se desliza y recién entonces lo oculta, que es
       // lo que lo saca del orden de tabulación en móvil.
+      // Capa de agencia: en el SaaS la barra es de tinta en los dos temas.
+      data-allok-nav={saasMode || undefined}
       className={cn(
         "fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 transition-[transform,visibility] duration-200",
         "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
@@ -193,16 +203,19 @@ export function AppNav({
         >
           <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </button>
-        <div className="min-w-0">
-          <BrandLogo branding={branding} />
-          <span className="kicker mt-2 block">CRM · WhatsApp</span>
-        </div>
+        {saasMode ? (
+          <AllokNavHead businessName={branding.name} />
+        ) : (
+          <div className="min-w-0">
+            <BrandLogo branding={branding} />
+            <span className="kicker mt-2 block">CRM · WhatsApp</span>
+          </div>
+        )}
       </div>
 
       <nav className="flex flex-col gap-0.5">
         {items.map((item) => {
-          const active =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = item.href === activeHref;
           return (
             <Link
               key={item.href}

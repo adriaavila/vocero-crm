@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import { Archivo, IBM_Plex_Mono, Instrument_Serif } from "next/font/google";
-import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
+import {
+  Archivo,
+  Geist,
+  IBM_Plex_Mono,
+  Instrument_Serif,
+  JetBrains_Mono,
+} from "next/font/google";
+import { accentCssVariables, DEFAULT_BRANDING, SAAS_BRANDING } from "@/lib/branding";
 import { faviconHref } from "@/lib/favicon";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
@@ -30,6 +36,23 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+// Las dos voces de allok (allok.fun): Geist para cada palabra, JetBrains Mono
+// para etiquetas, horas y cifras. Se declaran siempre pero solo se descargan
+// cuando algo las usa, y globals.css las engancha a --font-sans/--font-mono
+// únicamente bajo [data-saas="true"]: la instancia Vocero sigue en Archivo +
+// Plex Mono.
+const geist = Geist({
+  subsets: ["latin"],
+  variable: "--font-grotesk",
+  display: "swap",
+});
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-jetbrains",
+  display: "swap",
+});
+
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -39,10 +62,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const organizationId = saasMode
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : null;
+  const fallback = saasMode ? SAAS_BRANDING : DEFAULT_BRANDING;
   const branding = await Promise.resolve(saasMode
-    ? organizationId ? getBranding(organizationId) : DEFAULT_BRANDING
+    ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
-  ).catch(() => DEFAULT_BRANDING);
+  ).catch(() => fallback);
   return {
     title: saasMode
       ? `${branding.name} — Tu WhatsApp responde aunque estés cerrado`
@@ -65,22 +89,25 @@ export default async function RootLayout({
   const organizationId = saasMode
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : null;
+  const fallback = saasMode ? SAAS_BRANDING : DEFAULT_BRANDING;
   const branding = await Promise.resolve(saasMode
-    ? organizationId ? getBranding(organizationId) : DEFAULT_BRANDING
+    ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
-  ).catch(() => DEFAULT_BRANDING);
+  ).catch(() => fallback);
   const theme = normalizeThemePreference(
     (await cookies()).get(THEME_COOKIE)?.value
   );
-  // Allok gets its own product surface; the legacy Vocero CRM keeps the
-  // existing palette and white-label behavior untouched.
-  const accent = saasMode && branding.accent === DEFAULT_BRANDING.accent
-    ? "#147d52"
-    : branding.accent;
+  const accent = branding.accent;
   return (
     <html
       lang="es"
-      className={`${archivo.variable} ${instrumentSerif.variable} ${plexMono.variable}`}
+      className={[
+        archivo.variable,
+        instrumentSerif.variable,
+        plexMono.variable,
+        geist.variable,
+        jetbrainsMono.variable,
+      ].join(" ")}
       // La preferencia siempre es explícita: el tema viaja resuelto en el HTML
       // del servidor, así que no hay divergencia con el cliente ni parpadeo.
       data-theme={theme}

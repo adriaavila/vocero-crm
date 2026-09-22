@@ -1,7 +1,7 @@
 import { readMediaFile } from "@/server/whatsapp/media";
 import { getBrandingContext } from "@/server/branding";
 import { DEFAULT_BRANDING } from "@/lib/branding";
-import { FAVICON_ASSET, generatedFaviconSvg } from "@/lib/favicon";
+import { allokFaviconSvg, FAVICON_ASSET, generatedFaviconSvg } from "@/lib/favicon";
 import { isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
@@ -26,6 +26,11 @@ function cabeceras(mime: string, cacheable: boolean): HeadersInit {
       ? "public, max-age=31536000, immutable"
       : "public, max-age=60",
   };
+}
+
+/** Sin icono subido, el SaaS firma con el punto de allok; Vocero, con la inicial. */
+function generated(branding: Parameters<typeof generatedFaviconSvg>[0]): string {
+  return isAllokSaaSMode() ? allokFaviconSvg() : generatedFaviconSvg(branding);
 }
 
 /**
@@ -57,12 +62,12 @@ export async function GET(req: Request) {
         // El archivo puede desaparecer al restaurar el volumen.
       }
     }
-    return new Response(generatedFaviconSvg(branding), {
+    return new Response(generated(branding), {
       headers: cabeceras("image/svg+xml", cacheable),
     });
   }
   if (isAllokSaaSMode() && !isLegacyAppHost(host)) {
-    return new Response(generatedFaviconSvg(DEFAULT_BRANDING), {
+    return new Response(generated(DEFAULT_BRANDING), {
       headers: cabeceras("image/svg+xml", cacheable),
     });
   }
@@ -89,7 +94,7 @@ export async function GET(req: Request) {
     }
   }
 
-  return new Response(generatedFaviconSvg(branding), {
+  return new Response(generated(branding), {
     headers: cabeceras("image/svg+xml", cacheable),
   });
 }
