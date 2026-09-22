@@ -1,5 +1,10 @@
 # Tareas — 018 SaaS multi-tenant
 
+> **Estado real: el modo SaaS está ENCENDIDO en producción desde el
+> 2026-09-19.** Las secciones "Bloqueado" y "Pendiente" de más abajo son de
+> antes y han quedado atrás; la rama `feat/dawn-dusk-saas` las actualizó el
+> 2026-09-18 y sigue sin fusionar. Lo de hoy está al final, en "Encendido".
+
 Lo que queda sin marcar está **bloqueado por acceso, dinero o una decisión**, y
 ésa es la definición de hecho de este repo: no se marca por estar desplegado ni
 por estar en verde local.
@@ -133,3 +138,133 @@ por estar en verde local.
 - [x] Las escalas de precio incoherentes: resueltas entre el producto y
       `allok.fun` (49/99 + 499). Quedan `/desk` —retirado y `noindex`— y la
       oferta del wiki, que no son superficie de venta viva.
+
+## Encendido (2026-09-19)
+
+Vivo en `crm.allok.fun` + `whatsapp.allok.fun` + `admin.allok.fun` +
+`*.allok.fun`, commit `330b925`. Los tres bloqueadores que quedaban escritos
+resultaron ser dos resueltos y uno caduco.
+
+- [x] Reservar `preview` y `staging` en `main` (`330b925`, escogido de
+      `feat/dawn-dusk-saas`; el resto de esa rama sigue sin fusionar). Sin esto,
+      con el comodín vivo, un negocio podía registrarse como `preview` y
+      quedarse con un host que ya usamos.
+- [x] Dominios `whatsapp.` y `admin.` añadidos a la app, con certificado Let's
+      Encrypt emitido por HTTP-01 **a través del proxy de Cloudflare**
+      (comprobado contra el origen: `CN=whatsapp.allok.fun`, `CN=admin.allok.fun`).
+- [x] **El comodín no lo puede generar Coolify.** Su versión (4.3.19) sólo
+      emite una regla `Host()` por FQDN — no tiene comodines, y en un SaaS
+      el subdominio aparece cuando el cliente se registra. Resuelto con un
+      router `HostRegexp` en el file-provider de Traefik
+      (`/data/coolify/proxy/dynamic/allok-saas-tenants.yaml`, versionado en
+      `ssh-c001/deploy/traefik/` con su README). `priority: 1` para que
+      cualquier `Host()` concreto le gane. Sin `certResolver` a propósito: LE no
+      emite comodines por HTTP-01 y Cloudflare, en modo Full, acepta el
+      certificado por defecto de Traefik. Comprobado en vivo:
+      `<cualquiera>.allok.fun` devuelve **404 de la app**, no 503 de Traefik.
+- [x] **El Origin CA no era bloqueador para funcionar.** Cloudflare está en
+      Full (no strict) — se comprobó viendo que deja pasar el 503 del origen en
+      vez de devolver un 526. Pasar a Full (strict) sigue pendiente y sigue
+      siendo del panel, pero es endurecimiento.
+- [x] Stripe cargado desde la cuenta **sandbox** `acct_1UDsQhJ9ye9C94el`, con
+      endpoint de webhook nuevo `we_1UHPosJ9ye9C94elgSSFf29C` →
+      `https://whatsapp.allok.fun/api/saas/billing/webhook`. El `whsec` en
+      `~/CreativOS/_secrets/allok-saas-stripe-whatsapp.env`.
+- [x] Webhook de cobro comprobado de verdad, no por inspección: firma válida →
+      `200 {"received":true,"ignored":true}`; firma falsa → `400
+      invalid_signature`. Nota para el futuro: Cloudflare responde 1010 a
+      user-agents como el de `python-urllib`; el de Stripe pasa.
+- [x] Alta real de punta a punta por HTTP: registro en `whatsapp.allok.fun` →
+      subdominio propio → panel en su host con la cookie compartida de
+      `.allok.fun` → host de inquilino inexistente 404. **Aislamiento
+      comprobado en vivo:** con la sesión del inquilino de prueba,
+      `crm.allok.fun/api/conversations` devuelve `[]`, no los 184 chats del
+      legacy — el host no da acceso, lo da la organización de la sesión. El
+      inquilino de prueba se borró al terminar.
+- [x] `ALLOK_SAAS_WEBHOOK_VERIFY_TOKEN` puesto en Vercel — **pero el bloqueador
+      estaba caduco.** Ese valor sólo alimenta el destino *builtin* `vocero`,
+      que ya no se usa: el SaaS pide el de `ALLOK_ONBOARDING_DESTINATION`
+      (= `crm-principal`), que es una fila en `handover_destinations` y
+      responde 200 con un enlace de Embedded Signup válido.
+
+### Lo que se rompió al encender
+
+- [x] **El gate de plan dejó mudo al número que ya funcionaba.** Con
+      `ALLOK_SAAS_MODE=true`, `canAutomate()` exige `active`/`trialing`, y
+      ninguna organización existente tenía `metadata.allok.billing`. Entre las
+      15:11 y las 15:21 UTC la respuesta automática estuvo cerrada en
+      `crm.allok.fun`. **No llegó a costar nada:** los mensajes de esa ventana
+      se recibieron y se guardaron todos, y caían en una conversación con la IA
+      ya apagada — de las 184, sólo 12 la tienen encendida y ninguna recibió
+      nada en esos diez minutos. El agujero era real aunque nadie se cayera
+      dentro. Resuelto concediendo `pro`/`active` a mano a
+      `principal` y a `mistica`, con `source: manual_grant_2026_09_19` para que
+      nunca se confunda con una suscripción real.
+      **Al runbook:** conceder el plan a las organizaciones existentes **antes**
+      del deploy que enciende la bandera, no después.
+
+### Deuda que esto deja
+
+- [ ] Los dos inquilinos de hoy viven de una concesión manual en la base de
+      datos, no de Stripe. Mientras el cobro esté en sandbox eso es lo correcto;
+      en cuanto pase a producción, hay que decidir qué pasa con ellos.
+- [ ] El `META_WEBHOOK_VERIFY_TOKEN` de la instancia salió impreso en la sesión
+      de Claude del 2026-09-19 (lo devuelve `/api/provision` dentro de
+      `webhook_url`). No abre nada por sí solo —`META_APP_SECRET` sigue
+      verificando la firma de todo evento real— pero rotarlo obliga a rehacer
+      el override en Meta de **los dos** números. Decisión tuya.
+
+## Mudanza de Mística al SaaS — a medias (2026-09-19)
+
+- [x] Inquilino `mistica` creado (`org_b8s70n4fy48mzx2x90dc`);
+      `mistica.allok.fun` responde 200.
+- [x] Credencial de WhatsApp entregada por `/api/provision` (200, organización
+      "Mística"). El token se descifró dentro del contenedor de la instancia
+      dedicada y viajó por la API oficial: no pasó por ninguna máquina de por
+      medio ni se imprimió.
+- [x] Plan concedido a mano; contraseña temporal en
+      `~/CreativOS/_secrets/mistica-saas.env`.
+- [ ] **El corte.** Redirigir el `override_callback_uri` de la WABA
+      `245315565329406` en Meta. Es irreversible y es lo que mueve los mensajes;
+      hasta entonces siguen llegando a `mistica.frontia.app`, que es donde deben
+      estar mientras tanto. `retry-connection` **no vale**: busca la conexión
+      por `workspace`, y en allok el número está bajo el de la instancia vieja
+      → 404.
+- [ ] Apagar la instancia dedicada, sólo después de ver un ida y vuelta real en
+      el inquilino nuevo.
+
+## Comprobado en vivo con un inquilino real (2026-09-19)
+
+FR-3 y FR-10 sólo tenían evidencia local. Ahora la tienen en producción, con la
+sesión de Mística —un inquilino de verdad, no un arnés—:
+
+- [x] **El host no da acceso; lo da la organización de la sesión.** Con su
+      sesión, `crm.allok.fun/api/conversations` devuelve `[]` (lo suyo), no las
+      184 conversaciones del inquilino legacy. Lo mismo salió antes con una
+      cuenta de prueba desechable.
+- [x] **El panel interno está cerrado y no se delata.** Mística no está en
+      `ALLOK_ADMIN_EMAILS` y recibe `404` en `/admin` desde los tres hosts
+      (`admin.`, `crm.` y el suyo) — `notFound()`, no un login que confirme que
+      la pantalla existe.
+- [x] **El alta está cerrada fuera de su host.** `crm.allok.fun` responde `403`
+      con "El registro de Allok empieza en whatsapp.allok.fun". El formulario se
+      pinta en todos los hosts a propósito: la pantalla reconoce ese error y lo
+      enseña en vez de fallar mudo. Por eso mirar el HTML engaña, y por eso
+      `ssh-c001/scripts/check-saas.sh` comprueba la respuesta de la API.
+- [x] **Ningún otro producto de la raíz acepta la sesión.** `inmox.allok.fun`
+      recibe la cookie —viaja a todo `.allok.fun`— y responde `401`, porque
+      tiene otro `BETTER_AUTH_SECRET` y otra base de datos. El riesgo que queda
+      no es suplantación sino transmisión: el valor de la cookie llega a todos
+      esos orígenes.
+- [x] **El embudo de cobro crea checkout de los dos planes**: Básico cobra 49
+      el mismo día, Pro cobra 0 sobre 99/mes, que son los 7 días de prueba.
+      (`subscription_data` no se devuelve al leer una sesión de Stripe; el dato
+      que lo demuestra es `amount_total`.) Todo en sandbox, y el cliente de
+      prueba y las sesiones quedaron borrados.
+
+### Lo que no se pudo correr
+
+- [ ] `scripts/saas-isolation-check.mjs` contra producción. El arnés resuelve el
+      inquilino mandando `x-forwarded-host` a mano, y detrás de Traefik esa
+      cabecera la pone el proxy. Sirve en local, no en vivo; lo de arriba es su
+      sustituto en producción.
