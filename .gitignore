@@ -11,7 +11,7 @@
 # .mcp.json
 
 # --- Dependencias / build (cuando el starter ya tenga app encima) ---
-node_modules/
+node_modules
 .next/
 out/
 dist/
