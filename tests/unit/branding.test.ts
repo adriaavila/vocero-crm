@@ -5,6 +5,7 @@ import {
   accentCssVariables,
   DEFAULT_BRANDING,
   isValidHex,
+  SAAS_BRANDING,
   normalizeBranding,
   resolveAccentSet,
 } from "@/lib/branding";
@@ -53,16 +54,21 @@ describe("white-label: acento", () => {
   });
 
   it("el acento por defecto trae los valores exactos del preset", () => {
-    // Magenta cielo, el acento de Dawn → Dusk sobre papel.
-    expect(DEFAULT_BRANDING.accent).toBe("#b41065");
-    expect(resolveAccentSet(DEFAULT_BRANDING.accent)).toEqual({
-      accent: "#b41065",
-      hover: "#970d55",
-      soft: "#f2d4e3",
-      tint: "#fbf1f6",
-      text: "#820c49",
-      fg: "#ffffff",
-    });
+    // Una instancia Vocero conserva su azul: el default del SaaS no se presta.
+    expect(DEFAULT_BRANDING.accent).toBe("#0d5bff");
+    expect(resolveAccentSet(DEFAULT_BRANDING.accent)).toEqual(ACCENT_PRESETS["#0d5bff"]!.set);
+  });
+
+  it("el SaaS allok arranca en tinta, y en oscuro se invierte a Cloud", () => {
+    expect(SAAS_BRANDING.accent).toBe("#0b0d0e");
+    const claro = resolveAccentSet(SAAS_BRANDING.accent, "light");
+    const oscuro = resolveAccentSet(SAAS_BRANDING.accent, "dark");
+    expect(claro).toEqual(ACCENT_PRESETS["#0b0d0e"]!.set);
+    // Aclarar la tinta daría un gris sin dueño: sobre negro, el botón es Cloud.
+    expect(oscuro.accent).toBe("#f7f8f8");
+    expect(oscuro.fg).toBe("#0b0d0e");
+    expect(contrast(claro.fg, claro.accent)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(oscuro.fg, oscuro.accent)).toBeGreaterThanOrEqual(4.5);
   });
 });
 

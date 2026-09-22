@@ -18,6 +18,8 @@ export function ContactAvatar({
   } as const;
   return (
     <div
+      // Capa de agencia: el SaaS allok los pinta neutros (globals.css).
+      data-avatar
       className={cn(
         "flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
         sizes[size],

@@ -2,13 +2,12 @@ import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import {
   Archivo,
-  Archivo_Black,
   Geist,
   IBM_Plex_Mono,
   Instrument_Serif,
   JetBrains_Mono,
 } from "next/font/google";
-import { accentCssVariables, DEFAULT_BRANDING } from "@/lib/branding";
+import { accentCssVariables, DEFAULT_BRANDING, SAAS_BRANDING } from "@/lib/branding";
 import { faviconHref } from "@/lib/favicon";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
@@ -37,19 +36,14 @@ const plexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
-// Las tres voces de Dawn → Dusk, para la superficie allok SaaS. Se declaran
-// siempre pero solo se descargan cuando algo las usa, y globals.css las
-// engancha a --font-sans/--font-mono/--font-serif únicamente bajo
-// [data-saas="true"]: la instancia Vocero sigue en Archivo + Plex Mono.
+// Las dos voces de allok (allok.fun): Geist para cada palabra, JetBrains Mono
+// para etiquetas, horas y cifras. Se declaran siempre pero solo se descargan
+// cuando algo las usa, y globals.css las engancha a --font-sans/--font-mono
+// únicamente bajo [data-saas="true"]: la instancia Vocero sigue en Archivo +
+// Plex Mono.
 const geist = Geist({
   subsets: ["latin"],
   variable: "--font-grotesk",
-  display: "swap",
-});
-const archivoBlack = Archivo_Black({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-poster",
   display: "swap",
 });
 const jetbrainsMono = JetBrains_Mono({
@@ -68,10 +62,11 @@ export async function generateMetadata(): Promise<Metadata> {
   const organizationId = saasMode
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : null;
+  const fallback = saasMode ? SAAS_BRANDING : DEFAULT_BRANDING;
   const branding = await Promise.resolve(saasMode
-    ? organizationId ? getBranding(organizationId) : DEFAULT_BRANDING
+    ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
-  ).catch(() => DEFAULT_BRANDING);
+  ).catch(() => fallback);
   return {
     title: saasMode
       ? `${branding.name} — Tu WhatsApp responde aunque estés cerrado`
@@ -94,10 +89,11 @@ export default async function RootLayout({
   const organizationId = saasMode
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : null;
+  const fallback = saasMode ? SAAS_BRANDING : DEFAULT_BRANDING;
   const branding = await Promise.resolve(saasMode
-    ? organizationId ? getBranding(organizationId) : DEFAULT_BRANDING
+    ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
-  ).catch(() => DEFAULT_BRANDING);
+  ).catch(() => fallback);
   const theme = normalizeThemePreference(
     (await cookies()).get(THEME_COOKIE)?.value
   );
@@ -110,7 +106,6 @@ export default async function RootLayout({
         instrumentSerif.variable,
         plexMono.variable,
         geist.variable,
-        archivoBlack.variable,
         jetbrainsMono.variable,
       ].join(" ")}
       // La preferencia siempre es explícita: el tema viaja resuelto en el HTML

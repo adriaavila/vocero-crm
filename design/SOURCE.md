@@ -1,15 +1,19 @@
-# Sistema de diseño Dawn → Dusk
+# De dónde sale el sistema
 
-Copia literal del artifact `Dawn → Dusk` (Design System), versión
-`1789698614-cbe8`, traída el 2026-09-18.
+La marca vive en **allok-fun** (allok.fun), rediseñada el 2026-09-20 sobre el
+concepto «status-driven» del brand board: `all ● k`, Cloud y tinta, y el color
+como estado de la operación. Las fuentes de verdad:
 
-`design.md` es la versión legible por agentes: si le pedís a un asistente
-"construí esta pantalla en el lenguaje de allok", ése es el archivo que tiene
-que leer. `tokens.json` tiene los valores exactos y es la fuente de
-`src/app/globals.css`. `motion.md` manda sobre cualquier transición nueva.
+- `allok-fun/src/lib/brand.ts` — paleta y los cuatro estados (punto, tinta, suave).
+- `allok-fun/src/app/globals.css`, bloque `.allok` — tipografía, botones, superficies.
+- `allok-fun/src/components/brand/AllokLogo.tsx` — construcción del logotipo.
 
-**No editar a mano.** Si el sistema cambia, se vuelve a traer entero desde el
-artifact y se regeneran los tokens del CSS.
+Acá se refleja en:
 
-Lo que vive acá describe la superficie **allok SaaS** (`data-saas="true"`).
-La instancia Vocero self-hosted conserva su marca azul y no lo usa.
+- `src/app/globals.css`, bloque `[data-saas="true"]` — los tokens.
+- `src/lib/estado.ts` — los estados y sus reglas; `STATE_DOT` repite los puntos
+  para el icono de la pestaña.
+- `src/lib/branding.ts` — `SAAS_BRANDING` (acento tinta) y su inversión en oscuro.
+
+Si la marca cambia allá, se cambian estos tres y `design.md`. Reemplaza al
+sistema Dawn → Dusk (cielo magenta), que quedó retirado.

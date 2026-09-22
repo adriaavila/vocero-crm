@@ -46,38 +46,46 @@ export type Branding = {
 
 export const DEFAULT_BRANDING: Branding = {
   name: "allok",
-  // Magenta cielo: el acento de Dawn → Dusk sobre papel (design/design.md).
-  // Una agencia lo cambia en Configuración → Marca junto con el nombre del
-  // negocio; la marca neutra se conserva porque nada de esto está hardcodeado
-  // en la UI.
-  accent: "#b41065",
+  // Azul eléctrico neutro por defecto; una agencia lo cambia en
+  // Configuración → Marca junto con el nombre del negocio. Es el de toda
+  // instancia Vocero: el SaaS tiene el suyo (SAAS_BRANDING) y no se lo presta.
+  accent: "#0d5bff",
   currency: DEFAULT_CURRENCY,
   favicon: null,
 };
 
 /**
+ * El default de la superficie allok SaaS (`ALLOK_SAAS_MODE`): Tinta.
+ *
+ * La marca allok es casi monocromática — el color que queda es el que
+ * significa algo (verde = all ok, azul = trabajando, ámbar = te toca). Un
+ * acento de color en cada botón competiría con el estado, así que la acción
+ * principal va en tinta sobre Cloud y en Cloud sobre tinta, como en allok.fun.
+ * Solo se aplica en modo SaaS (ver `server/branding`): una instancia Vocero
+ * conserva su azul.
+ */
+export const SAAS_BRANDING: Branding = { ...DEFAULT_BRANDING, accent: "#0b0d0e" };
+
+/**
  * Presets: valores exactos, no derivados.
  *
- * Los dos primeros son del sistema Dawn → Dusk; el resto son los tonos sobrios
- * del handoff Atlas, para quien quiera un CRM discreto.
+ * Los dos primeros son de la marca allok (Tinta y Signal Blue); el resto son
+ * los tonos sobrios del handoff Atlas, para quien quiera un CRM discreto.
  *
- * Contraste comprobado sobre `--ground` papel (#f5f4f0) y contra la tinta que
- * va ENCIMA del acento, ambos ≥ 4.5:1:
- *   magenta cielo  blanco sobre acento 6.6:1 · texto sobre papel 6.0:1
- *   ámbar amanecer tinta sobre acento 9.0:1 · texto sobre papel 5.6:1
- *
- * Ojo con el ámbar: es el acento del tema VOID, donde el magenta se queda en
- * 3.0:1 y no se puede usar. Su `fg` es tinta, no blanco — blanco sobre ámbar
- * da 2.1:1.
+ * Contraste comprobado sobre Cloud (#f7f8f8) y contra la tinta que va ENCIMA
+ * del acento, ambos ≥ 4.5:1:
+ *   tinta         cloud sobre acento 18.3:1 · texto sobre Cloud 18.3:1
+ *   azul señal    blanco sobre acento 5.1:1 · texto (#2348cc) sobre Cloud 6.9:1
  */
 export const ACCENT_PRESETS: Record<string, { label: string; set: AccentSet }> = {
-  "#b41065": {
-    label: "Magenta cielo",
-    set: { accent: "#b41065", hover: "#970d55", soft: "#f2d4e3", tint: "#fbf1f6", text: "#820c49", fg: "#ffffff" },
+  "#0b0d0e": {
+    label: "Tinta",
+    // El hover se aclara: más oscuro que la tinta no hay.
+    set: { accent: "#0b0d0e", hover: "#262a2d", soft: "#e3e5e6", tint: "#f1f2f2", text: "#0b0d0e", fg: "#f7f8f8" },
   },
-  "#ff9a3d": {
-    label: "Ámbar amanecer",
-    set: { accent: "#ff9a3d", hover: "#d68133", soft: "#ffeddc", tint: "#fff9f3", text: "#8c5522", fg: "#101112" },
+  "#315cff": {
+    label: "Azul señal",
+    set: { accent: "#315cff", hover: "#2348cc", soft: "#d6e0ff", tint: "#eef2ff", text: "#2348cc", fg: "#ffffff" },
   },
   "#0d5bff": {
     label: "Azul",
@@ -155,6 +163,15 @@ function contrast(a: Rgb, b: Rgb): number {
 const DARK_BG: Rgb = { r: 0x0b, g: 0x13, b: 0x27 };
 
 /**
+ * Acentos que en oscuro no se aclaran: se INVIERTEN. Aclarar la tinta hasta
+ * despegarla del fondo da un gris sin dueño; lo que la marca hace sobre negro
+ * es el botón en Cloud con letra en tinta (allok.fun, sección oscura).
+ */
+const DARK_INVERSE: Record<string, AccentSet> = {
+  "#0b0d0e": { accent: "#f7f8f8", hover: "#ffffff", soft: "#2b3034", tint: "#1a1e21", text: "#f7f8f8", fg: "#0b0d0e" },
+};
+
+/**
  * Set completo para cualquier acento, según el tema.
  *
  * Claro: preset exacto si existe; si no se deriva mezclando hacia blanco, y un
@@ -189,9 +206,10 @@ export function resolveAccentSet(
     };
   }
 
-  let base = hexToRgb(
-    isValidHex(accentHex) ? accentHex.toLowerCase() : DEFAULT_BRANDING.accent
-  );
+  const key = isValidHex(accentHex) ? accentHex.toLowerCase() : DEFAULT_BRANDING.accent;
+  const inverted = DARK_INVERSE[key];
+  if (inverted) return inverted;
+  let base = hexToRgb(key);
   while (contrast(base, DARK_BG) < 3.5 && luminance(base) < 0.95) {
     base = mix(base, WHITE, 0.1);
   }

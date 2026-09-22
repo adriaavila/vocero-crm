@@ -150,191 +150,327 @@
   }
 
   /*
-    ── allok SaaS · Dawn → Dusk ───────────────────────────────────────────────
-    Valores exactos de `design/tokens.json` (artifact Dawn → Dusk, v3).
-    Todo vive bajo [data-saas="true"] a propósito: la instancia Vocero
-    self-hosted conserva su papel frío y su azul, y no hereda nada de acá.
+    ── allok SaaS · all ● k ───────────────────────────────────────────────────
+    La marca de allok.fun dentro del producto. Espejo de `src/lib/brand.ts` y
+    del bloque `.allok` de allok-fun: si la marca cambia allá, cambia acá.
 
-    Dos capas, como el resto del archivo: primero los tokens del sistema con su
-    nombre propio (--ground, --ink, --sky-*), después los alias de la app
+    Casi monocromática a propósito: Cloud y tinta, y el color que queda es el
+    que SIGNIFICA algo — el estado de la operación:
+      verde  all ok       atendido, todo en orden
+      azul   atendiendo   el agente está trabajando ahora
+      ámbar  te toca      algo espera por una persona
+      gris   pausado      apagado a propósito
+    El verde de marca da 1,56:1 sobre Cloud: es RELLENO (el punto), nunca letra.
+    Cada estado trae su `dot` (pinta, y se lee sobre tinta), su `ink` (el mismo
+    estado como texto sobre Cloud) y su `soft` (fondo de píldora).
+
+    Todo vive bajo [data-saas="true"]: la instancia Vocero self-hosted conserva
+    su papel frío y su azul, y no hereda nada de acá.
+
+    Dos capas, como el resto del archivo: primero los tokens de la marca con su
+    nombre propio (--cloud, --ink, --ok, --st-*), después los alias de la app
     (--bg, --text, --border) apuntando a ellos. Ningún componente escribe un hex.
 
-    El acento NO se fija acá. Lo escribe el white-label en `:root` (ver
-    accentCssVariables en lib/branding), y este bloque tiene más especificidad:
-    si lo fijáramos, Configuración → Marca dejaría de funcionar. El default
-    del sistema —sky-magenta— vive en DEFAULT_BRANDING.
+    El acento NO se fija acá: lo escribe el white-label en `:root` (ver
+    accentCssVariables en lib/branding). El default del SaaS —tinta— vive en
+    SAAS_BRANDING.
   */
   :root[data-saas="true"] {
     color-scheme: light;
 
-    /* Tema papel */
-    --ground: #f5f4f0;
-    --ground-2: #f1efeb;
-    --ground-3: #eae8e3;
-    --ground-4: #dedbd4;
-    --ink: #101112;
-    --ink-60: #6b6d70;
-    --ink-40: #9a9c9f;
-    --hairline: rgba(16, 17, 18, 0.1);
-    --rule: rgba(10, 10, 10, 0.2);
-    --rule-hard: rgba(10, 10, 10, 0.85);
+    /* La marca */
+    --cloud: #f7f8f8;
+    --ok: #20e58d;
+    --ok-ink: #0a7a48;
+    --signal: #315cff;
+    --signal-ink: #2348cc;
 
-    /* El cielo: mismo valor en los dos temas, es la marca */
-    --sky-night: #03123f;
-    --sky-cobalt: #1b3f96;
-    --sky-violet: #67277d;
-    --sky-magenta: #b41065;
-    --sky-ember: #8f4a58;
-    --lit-dawn: #ff9a3d;
-    --lit-dusk: #ffe3c2;
-    --on-sky: #f7f4ef;
-    --blur-glow: 42px;
-    --blur-bloom: 80px;
+    /* Los cuatro estados, con los valores de allok-fun/src/lib/brand.ts */
+    --st-activo: #20e58d;
+    --st-activo-ink: #0a7a48;
+    --st-activo-soft: #e2f9ee;
+    --st-atendiendo: #5b8cff;
+    --st-atendiendo-ink: #2348cc;
+    --st-atendiendo-soft: #e7edff;
+    --st-atencion: #ffb020;
+    --st-atencion-ink: #7a5600;
+    --st-atencion-soft: #fdf0db;
+    --st-pausado: #8a9097;
+    --st-pausado-ink: #5a6066;
+    --st-pausado-soft: #ededee;
 
-    /* La voz del asistente. Nunca es texto sobre papel. */
-    --assist: #c5f04a;
-    --assist-dim: rgba(197, 240, 74, 0.14);
+    /* Superficies: Cloud de página, blanco de tarjeta, escalones hacia abajo */
+    --ground: #f7f8f8;
+    --ground-2: #f1f2f2;
+    --ground-3: #eceeef;
+    --ground-4: #e4e6e8;
+    --ink: #0b0d0e;
+    --ink-60: #5b6167;
+    --ink-40: #8a9097;
+    --hairline: rgba(11, 13, 14, 0.09);
+    --rule: rgba(11, 13, 14, 0.15);
+    --rule-hard: rgba(11, 13, 14, 0.85);
 
-    /* Dentro del teléfono, y solo ahí */
-    --wa-green: #008069;
-    --wa-screen: #ece5dd;
-    --wa-in: #ffffff;
-    --wa-out: #d9fdd3;
-    --wa-ink: #111b21;
-    --wa-ticks: #53bdeb;
-
-    /* Hilo y tablero */
-    --agent-out: #e7f3ec;
-    --stage-won: #e3efe7;
-    --stage-won-ink: #14663a;
-
-    /* ── Alias de la app ───────────────────────────────────────────────────
-       Jerarquía por escalón de superficie, no por color (design.md). */
-    --bg: var(--ground);
-    --bg-subtle: var(--ground-2);
-    --bg-panel: var(--ground-3);
-    --bg-hover: var(--ground-3);
-    --bg-active: var(--ground-4);
+    /* ── Alias de la app ─────────────────────────────────────────────────── */
+    --bg: #ffffff;
+    --bg-subtle: var(--ground);
+    --bg-panel: var(--ground-2);
+    --bg-hover: var(--ground-2);
+    --bg-active: var(--ground-3);
     --text: var(--ink);
     --text-2: var(--ink-60);
-    --text-3: var(--ink-40);
-    /* Dawn → Dusk tiene TRES tintas, no cuatro. Este cuarto escalón es
-       derivado y no es del sistema: solo para texto decorativo que ya era
-       --text-4 antes (never un párrafo). */
-    --text-4: #b7b9bb;
+    /* --ink-40 da 3,0:1 sobre Cloud: sirve para una etiqueta, no para el texto
+       chico de ayuda que la app escribe en --text-3. Este escalón pasa AA
+       (4,9:1 sobre blanco, 4,6:1 sobre Cloud); --ink-40 baja a --text-4, que
+       es solo decorativo (marcadores de posición, separadores). */
+    --text-3: #676d73;
+    --text-4: var(--ink-40);
     --border: var(--hairline);
     --border-strong: var(--rule);
 
-    /* Hilo: el cliente entra en ground-2, el agente contesta en agent-out */
-    --chat-bg: var(--ground-2);
-    --bubble-in: var(--ground-2);
+    /* El hilo: el cliente en blanco, la respuesta en el verde de WhatsApp.
+       Ese verde NO es de la marca (142° contra los 149° de allok): allok pinta
+       estado, WhatsApp pinta burbujas. Nunca al revés. */
+    --chat-bg: var(--ground);
+    --bubble-in: #ffffff;
     --bubble-in-border: var(--hairline);
-    --bubble-out: var(--agent-out);
-    --bubble-out-border: #cfe4d8;
+    --bubble-out: #d9fdd3;
+    --bubble-out-border: #c2efba;
     --bubble-out-text: var(--ink);
 
-    /* Estado.
-       Los cinco --status-* son los valores exactos del sistema y se usan como
-       punto y como fondo al 15%. Su tinta sobre PAPEL se deriva: los valores
-       del sistema están afinados para el tema void y sobre papel no llegan a
-       4.5:1 (status-ok da 1.6:1). Se conserva el valor del sistema y se anota
-       la desviación, como pide el propio sistema. Verificados ≥ 6:1 sobre
-       --ground. */
-    --status-ok: #7ee0a8;
-    --status-info: #6cc7e8;
-    --status-warn: #f0c04a;
-    --status-risk: #f08a5a;
-    --status-lost: #e0687a;
+    /* Los estados de la app son los de la marca */
+    --success: var(--st-activo);
+    --success-tint: var(--st-activo-soft);
+    --success-soft: #b9f0d4;
+    --success-text: var(--st-activo-ink);
 
-    --success: var(--status-ok);
-    --success-tint: rgba(126, 224, 168, 0.15);
-    --success-soft: rgba(126, 224, 168, 0.45);
-    --success-text: #14663a;
+    --warning: var(--st-atencion);
+    --warning-tint: var(--st-atencion-soft);
+    --warning-soft: #f6d9a3;
+    --warning-text: var(--st-atencion-ink);
 
-    --warning: var(--status-warn);
-    --warning-tint: rgba(240, 192, 74, 0.15);
-    --warning-soft: rgba(240, 192, 74, 0.45);
-    --warning-text: #7a5600;
+    --info: var(--st-atendiendo);
+    --info-tint: var(--st-atendiendo-soft);
+    --info-soft: #c8d6ff;
+    --info-text: var(--st-atendiendo-ink);
 
-    --danger: var(--status-lost);
-    --danger-tint: rgba(224, 104, 122, 0.15);
-    --danger-soft: rgba(224, 104, 122, 0.45);
-    --danger-text: #8f1f33;
+    /* Un error no es un estado de la marca: es algo que falló (un envío que no
+       salió) o que se borra. Rojo sobrio, y solo ahí. */
+    --danger: #e5484d;
+    --danger-tint: #fdecec;
+    --danger-soft: #f6c6c7;
+    --danger-text: #b42318;
     --danger-fg: #ffffff;
 
-    --info: var(--status-info);
-    --info-tint: rgba(108, 199, 232, 0.15);
-    --info-soft: rgba(108, 199, 232, 0.45);
-    --info-text: #0b5f7a;
-
-    --overlay: rgba(16, 17, 18, 0.55);
+    --overlay: rgba(11, 13, 14, 0.48);
     --knob: #ffffff;
 
-    /* Radios del sistema */
-    --radius-sm: 8px;
-    --radius: 12px;
-    --radius-btn: 14px;
-    --radius-lg: 16px;
-    --radius-card: 20px;
-    --radius-xl: 22px;
-    --radius-plate: 26px;
-    --radius-bubble: 13px;
-    --radius-pill: 999px;
+    --radius-sm: 7px;
+    --radius: 10px;
+    --radius-lg: 14px;
 
-    /* Sobre papel la jerarquía la llevan los escalones y las reglas de pelo.
-       Solo existen dos sombras, y la grande es la de la tarjeta que rompe el
-       borde de la portada. */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-    --shadow-md:
-      0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
-    --shadow-pop: 0 30px 80px -34px rgba(0, 0, 0, 0.45);
+    /* Sobre Cloud la jerarquía la llevan los escalones y las reglas de pelo.
+       Sombra de verdad, solo en lo que flota: menús, diálogos, el cajón. */
+    --shadow-sm: 0 1px 2px rgba(11, 13, 14, 0.05);
+    --shadow-md: 0 1px 2px rgba(11, 13, 14, 0.04),
+      0 10px 28px -14px rgba(11, 13, 14, 0.16);
+    --shadow-pop: 0 1px 3px rgba(11, 13, 14, 0.06),
+      0 28px 64px -24px rgba(11, 13, 14, 0.3);
 
-    /* Tres caras, un trabajo cada una. Comfortaa está retirada. */
+    /* Una grotesca para cada palabra; la mono para etiquetas, horas y cifras. */
     --font-sans: var(--font-grotesk);
     --font-mono: var(--font-jetbrains);
-    --font-serif: var(--font-poster);
+    --font-serif: var(--font-grotesk);
 
-    /* Movimiento (motion.md): una curva, dos duraciones, una presión. */
+    /* Movimiento (allok.fun): una curva, y la presión es la única respuesta
+       táctil de un botón. Nada sube al pasar el cursor. */
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --dur-btn: 160ms;
-    --dur-card: 200ms;
-    --dur-base: 220ms;
-    --press: 0.96;
+    --btn-radius: 10px;
+    --btn-lift: 0px;
+    --btn-press: 0.97;
+    /* La pista de un interruptor apagado: tiene que verse sobre blanco. */
+    --switch-off: #c9ced3;
   }
 
   :root[data-theme="dark"][data-saas="true"] {
     color-scheme: dark;
 
-    /* Tema void. El cielo, el asistente, WhatsApp y los estados no cambian:
-       son la marca, no el tema. */
-    --ground: #08090a;
-    --ground-2: #101214;
-    --ground-3: #141517;
-    --ground-4: #1b1c1f;
-    --ink: #f5f4f0;
-    --ink-60: #9a9a97;
-    --ink-40: #6c6c69;
-    --hairline: rgba(245, 244, 240, 0.12);
-    --rule: rgba(245, 244, 240, 0.2);
-    --rule-hard: rgba(245, 244, 240, 0.85);
+    /* Tinta. Los estados conservan su punto —es justo el valor que se lee
+       sobre negro— y su tinta pasa a ser ese mismo punto. */
+    --ground: #0b0d0e;
+    --ground-2: #111416;
+    --ground-3: #171b1e;
+    --ground-4: #1d2225;
+    --ink: #f7f8f8;
+    --ink-60: #a7adb2;
+    --ink-40: #6c7278;
+    --hairline: rgba(247, 248, 248, 0.09);
+    --rule: rgba(247, 248, 248, 0.15);
+    --rule-hard: rgba(247, 248, 248, 0.85);
 
-    --text-4: #4c4c4a;
+    --st-activo-ink: var(--st-activo);
+    --st-atendiendo-ink: #6b95ff;
+    --st-atencion-ink: var(--st-atencion);
+    --st-pausado-ink: #a7adb2;
+    --st-activo-soft: rgba(32, 229, 141, 0.12);
+    --st-atendiendo-soft: rgba(91, 140, 255, 0.14);
+    --st-atencion-soft: rgba(255, 176, 32, 0.12);
+    --st-pausado-soft: rgba(138, 144, 151, 0.16);
 
-    /* Sobre negro sí hay sombras: tarjeta, popover, modal. */
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
-    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.36);
-    --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.44);
+    --bg: var(--ground-2);
+    --bg-subtle: var(--ground);
+    --bg-panel: var(--ground-3);
+    --bg-hover: var(--ground-3);
+    --bg-active: var(--ground-4);
+    --text-3: #868c92;
+    --text-4: #5d6368;
 
-    /* Sobre void los estados ya cumplen con su propio color como tinta. */
-    --success-text: var(--status-ok);
-    --warning-text: var(--status-warn);
-    --danger-text: var(--status-lost);
-    --danger-fg: #101112;
-    --info-text: var(--status-info);
+    --bubble-in: var(--ground-3);
+    --bubble-out: #12483a;
+    --bubble-out-border: #1a5c4a;
+    --bubble-out-text: #e9f6ef;
 
-    --overlay: rgba(2, 3, 4, 0.74);
-    --knob: #f5f4f0;
+    --success-soft: rgba(32, 229, 141, 0.32);
+    --warning-soft: rgba(255, 176, 32, 0.32);
+    --info-soft: rgba(91, 140, 255, 0.34);
+
+    --danger: #ff6369;
+    --danger-tint: rgba(229, 72, 77, 0.14);
+    --danger-soft: rgba(229, 72, 77, 0.36);
+    --danger-text: #ff6369;
+    --danger-fg: #0b0d0e;
+
+    --overlay: rgba(0, 0, 0, 0.66);
+    --knob: #f7f8f8;
+    --switch-off: #3a4046;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4),
+      0 12px 32px -16px rgba(0, 0, 0, 0.7);
+    --shadow-pop: 0 1px 3px rgba(0, 0, 0, 0.5),
+      0 32px 72px -24px rgba(0, 0, 0, 0.8);
   }
+
+}
+
+/*
+  Fuera de @layer a propósito: Tailwind poda de sus capas las reglas cuyas
+  clases no encuentra en el código, y estos ámbitos se usan desde componentes
+  que pueden no estar montados todavía.
+*/
+/*
+  Un trozo de tinta en cualquier tema: la barra lateral, la tarjeta de estado
+  de Inicio, la portada del login. Es la sección negra de allok.fun, donde el
+  punto de estado se lee mejor. Redefine los MISMOS tokens (y sus alias, que
+  se resuelven donde se declaran), así que lo de adentro se sigue escribiendo
+  con bg-background / text-text-2 / border y no necesita saber dónde está.
+
+  El acento se invierte acá adentro: sobre tinta, la acción va en Cloud. El
+  white-label del negocio manda en el contenido, no en el cromo de allok.
+*/
+:root[data-saas="true"] :is([data-allok-nav], .ak-ink) {
+  color-scheme: dark;
+  --ground: #0b0d0e;
+  --ground-2: #111416;
+  --ground-3: #171b1e;
+  --ground-4: #1d2225;
+  --ink: #f7f8f8;
+  --ink-60: #a7adb2;
+  --ink-40: #6c7278;
+  --hairline: rgba(247, 248, 248, 0.09);
+  --rule: rgba(247, 248, 248, 0.15);
+
+  --bg: var(--ground-2);
+  --bg-subtle: var(--ground);
+  --bg-panel: var(--ground-3);
+  --bg-hover: rgba(247, 248, 248, 0.06);
+  --bg-active: rgba(247, 248, 248, 0.09);
+  --text: var(--ink);
+  --text-2: var(--ink-60);
+  --text-3: #868c92;
+  --text-4: #5d6368;
+  --border: var(--hairline);
+  --border-strong: var(--rule);
+
+  --st-activo-ink: var(--st-activo);
+  --st-atendiendo-ink: #6b95ff;
+  --st-atencion-ink: var(--st-atencion);
+  --st-pausado-ink: #a7adb2;
+  --st-activo-soft: rgba(32, 229, 141, 0.12);
+  --st-atendiendo-soft: rgba(91, 140, 255, 0.14);
+  --st-atencion-soft: rgba(255, 176, 32, 0.12);
+  --st-pausado-soft: rgba(138, 144, 151, 0.16);
+
+  --accent: #f7f8f8;
+  --accent-hover: #ffffff;
+  --accent-soft: rgba(247, 248, 248, 0.14);
+  --accent-tint: rgba(247, 248, 248, 0.08);
+  --accent-text: #f7f8f8;
+  --accent-fg: #0b0d0e;
+
+  --shadow-pop: 0 1px 3px rgba(0, 0, 0, 0.5),
+    0 32px 72px -24px rgba(0, 0, 0, 0.8);
+  color: var(--text);
+}
+/* En oscuro la barra baja un escalón más que la página, para separarse. */
+:root[data-theme="dark"][data-saas="true"] [data-allok-nav] {
+  --bg-subtle: #08090a;
+}
+
+/* Avatares neutros: en allok el color significa estado, no quién es quién.
+   Un arcoíris de iniciales competía con el punto ámbar que sí importa. */
+:root[data-saas="true"] [data-avatar] {
+  background: var(--bg-panel);
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-weight: 600;
+}
+
+/* Un interruptor encendido es algo funcionando: verde de estado con la perilla
+   en tinta, como el botón verde de allok.fun. Con el acento (tinta en claro,
+   Cloud en oscuro) la perilla clara desaparecía sobre la pista en oscuro. */
+:root[data-saas="true"] [role="switch"][aria-checked="false"] {
+  background-color: var(--switch-off);
+}
+:root[data-saas="true"] [role="switch"][aria-checked="true"] {
+  background-color: var(--st-activo);
+}
+:root[data-saas="true"] [role="switch"][aria-checked="true"] > span {
+  background-color: #0b0d0e;
+}
+
+/* Foco de teclado visible en enlaces y resúmenes, con el color de la acción:
+   tinta sobre Cloud, Cloud dentro del cromo de tinta. */
+:root[data-saas="true"] :is(a, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/*
+  Un estado de la marca en cualquier elemento: `data-state` fija --st (el
+  punto), --st-ink (el texto) y --st-soft (el fondo). Se resuelven donde se
+  declaran, así que dentro de un trozo de tinta ya salen en su versión oscura.
+*/
+:root[data-saas="true"] [data-state="activo"] {
+  --st: var(--st-activo);
+  --st-ink: var(--st-activo-ink);
+  --st-soft: var(--st-activo-soft);
+}
+:root[data-saas="true"] [data-state="atendiendo"] {
+  --st: var(--st-atendiendo);
+  --st-ink: var(--st-atendiendo-ink);
+  --st-soft: var(--st-atendiendo-soft);
+}
+:root[data-saas="true"] [data-state="atencion"] {
+  --st: var(--st-atencion);
+  --st-ink: var(--st-atencion-ink);
+  --st-soft: var(--st-atencion-soft);
+}
+:root[data-saas="true"] [data-state="pausado"] {
+  --st: var(--st-pausado);
+  --st-ink: var(--st-pausado-ink);
+  --st-soft: var(--st-pausado-soft);
 }
 
 @layer base {
@@ -352,8 +488,16 @@
     -webkit-tap-highlight-color: transparent;
   }
 
-  :root[data-saas="true"] button:not([aria-hidden="true"]) {
-    min-height: 44px;
+  /* Blanco táctil de 44px donde hay dedo. Con ratón no hace falta, y forzarlo
+     en todo botón inflaba las listas densas (filtros, chips) en escritorio. */
+  @media (pointer: coarse) {
+    :root[data-saas="true"] button:not([aria-hidden="true"]) {
+      min-height: 44px;
+    }
+  }
+  /* Cifras y horas que no bailan al cambiar (allok.fun: tabular-nums). */
+  :root[data-saas="true"] .font-mono {
+    font-variant-numeric: tabular-nums;
   }
   ::selection {
     background: var(--accent);
@@ -440,34 +584,37 @@
     );
   }
 
-  /*
-    Un trozo de void dentro de una página de papel: la portada del login, el
-    encabezado de la guía de inicio. Redefine los MISMOS tokens, así que lo de
-    adentro se sigue escribiendo con bg-ground / text-ink / border-hairline y
-    no necesita saber en qué tema está.
+  /* El hilo del SaaS es plano: sin resplandor del acento en la esquina. */
+  :root[data-saas="true"] .thread-bg {
+    background-image: none;
+  }
+  /* La serif itálica es de Vocero. En allok la voz de display es la misma
+     grotesca, por peso y tracking (allok.fun: `.display-sm`). */
+  :root[data-saas="true"] .font-serif {
+    font-style: normal;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
 
-    El acento no se toca a propósito. Sobre negro, el acento del negocio puede
-    no llegar a contraste, así que acá se usa la paleta de marca —que vale
-    igual en los dos temas— y no --accent: `assist` para el asistente y
-    `lit-dawn` para una acción encendida.
-  */
-  :root[data-saas="true"] .dd-void {
-    --ground: #08090a;
-    --ground-2: #101214;
-    --ground-3: #141517;
-    --ground-4: #1b1c1f;
-    --ink: #f5f4f0;
-    --ink-60: #9a9a97;
-    --ink-40: #6c6c69;
-    --hairline: rgba(245, 244, 240, 0.12);
-    --rule: rgba(245, 244, 240, 0.2);
-    --bg: var(--ground);
-    --text: var(--ink);
-    --text-2: var(--ink-60);
-    --text-3: var(--ink-40);
-    --border: var(--hairline);
-    background-color: var(--ground);
-    color: var(--ink);
+  /* El punto de estado. Late SOLO mientras algo está en vuelo (atendiendo):
+     un punto que late siempre deja de decir nada. */
+  .ak-dot {
+    display: inline-block;
+    flex-shrink: 0;
+    border-radius: 999px;
+    background: var(--st);
+  }
+  .ak-dot[data-live] {
+    animation: ak-pulse 1.6s var(--ease-out) infinite;
+  }
+  @keyframes ak-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--st) 55%, transparent);
+    }
+    80%,
+    100% {
+      box-shadow: 0 0 0 7px transparent;
+    }
   }
 
   /* Etiqueta editorial en mono: "01 · BANDEJA", "ETAPA", "NOTAS" */
