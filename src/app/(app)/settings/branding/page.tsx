@@ -2,6 +2,7 @@ import { BrandingClient } from "@/components/settings/branding-client";
 import { FaviconCard } from "@/components/settings/favicon-card";
 import { getBranding } from "@/server/branding";
 import { getSessionOrNull } from "@/lib/auth/session";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,14 @@ export default async function BrandingSettingsPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <BrandingClient />
-      <FaviconCard branding={branding} />
+      <FaviconCard
+        branding={branding}
+        generatedHint={
+          isAllokSaaSMode()
+            ? "El punto de allok: en la pestaña cambia de color con el estado de tu negocio. Sube un logo para reemplazarlo."
+            : undefined
+        }
+      />
     </div>
   );
 }

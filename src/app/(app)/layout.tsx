@@ -12,6 +12,8 @@ import { agendaEnabled } from "@/server/agenda/flag";
 import { isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import { getOrganizationBilling } from "@/server/saas/billing";
+// Capa de agencia: el estado de la operación (el punto de all ● k).
+import { getSystemState } from "@/server/agencia/estado";
 
 export default async function AppLayout({
   children,
@@ -32,7 +34,12 @@ export default async function AppLayout({
   }
   if (!session) redirect("/login");
   const branding = await getBranding(session.organizationId);
-  const billing = saasMode ? await getOrganizationBilling(session.organizationId) : null;
+  const [billing, systemState] = saasMode
+    ? await Promise.all([
+        getOrganizationBilling(session.organizationId),
+        getSystemState(session.organizationId, session.role === "owner"),
+      ])
+    : [null, null];
   const authSession = await getAuth().api.getSession({
     headers: requestHeaders,
   });
@@ -54,6 +61,7 @@ export default async function AppLayout({
       agenda={agendaEnabled()}
       saasMode={saasMode}
       saasPlan={billing?.status === "active" || billing?.status === "trialing" ? billing.plan : null}
+      systemState={systemState}
     >
       <ToastProvider>{children}</ToastProvider>
     </AppShell>

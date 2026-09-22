@@ -108,6 +108,21 @@ export function generatedFaviconSvg(branding: Branding): string {
 
 
 /**
+ * El icono del SaaS allok: el punto solo, sobre tinta (allok.fun/icon.svg).
+ * A 16px el logotipo `all ● k` no se lee y lo único que tiene que sobrevivir
+ * es el estado. Un negocio que sube su icono lo reemplaza; si no, en la
+ * pestaña el punto cambia de color con el estado de la operación.
+ */
+export function allokFaviconSvg(dot = "#20e58d"): string {
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">`,
+    `<rect width="64" height="64" rx="17" fill="#0b0d0e"/>`,
+    `<circle cx="32" cy="32" r="14" fill="${dot}"/>`,
+    `</svg>`,
+  ].join("");
+}
+
+/**
  * Sufijo de caché del icono.
  *
  * Los navegadores guardan el favicon con una insistencia notable: sin que la

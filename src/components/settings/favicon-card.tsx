@@ -19,7 +19,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  * con la inicial y el acento. Así queda claro que la instancia ya tiene uno y
  * que subir algo es reemplazarlo, no estrenarlo.
  */
-export function FaviconCard({ branding }: { branding: Branding }) {
+export function FaviconCard({
+  branding,
+  generatedHint = "La inicial sobre tu color de acento. Sube un logo para reemplazarlo.",
+}: {
+  branding: Branding;
+  /** Capa de agencia: el SaaS genera el punto de allok, no la inicial. */
+  generatedHint?: string;
+}) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [subiendo, setSubiendo] = useState(false);
@@ -99,7 +106,7 @@ export function FaviconCard({ branding }: { branding: Branding }) {
             <p className="mt-0.5 text-xs text-text-3">
               {actual
                 ? "Reemplaza al generado. Puedes quitarlo para volver a él."
-                : "La inicial sobre tu color de acento. Sube un logo para reemplazarlo."}
+                : generatedHint}
             </p>
           </div>
         </div>
