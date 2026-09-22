@@ -13,6 +13,12 @@ import {
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed } from "@/server/auth/registration";
 import {
+  emailEnabled,
+  resetPasswordEmail,
+  sendEmail,
+  verifyEmailEmail,
+} from "@/server/agencia/email";
+import {
   isAllokSaaSMode,
   isKnownAllokHost,
   isSaaSAppHost,
@@ -47,7 +53,13 @@ function isInternalSignup(): boolean {
   return internalSignupContext().getStore() === true;
 }
 
-const RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
+// El pedido de recuperación también: sin límite, es una forma de mandarle
+// correos a cualquiera en nuestro nombre.
+const RATE_LIMITED_PATHS = new Set([
+  "/sign-in/email",
+  "/sign-up/email",
+  "/request-password-reset",
+]);
 
 function createAuth() {
   const env = getEnv();
@@ -82,8 +94,24 @@ function createAuth() {
     }),
     emailAndPassword: {
       enabled: true,
+      // No bloquea el login: el registro pasa directo a Stripe con la sesión
+      // recién creada. La verificación llega por correo y queda en
+      // `user.email_verified`; exigirla es otra decisión, no un interruptor.
       requireEmailVerification: false,
       minPasswordLength: 8,
+      resetPasswordTokenExpiresIn: 60 * 60,
+      sendResetPassword: async ({ user, url }) => {
+        // Sin await: el tiempo de respuesta no debe delatar si el correo existe.
+        void sendEmail(resetPasswordEmail(user.email, url));
+      },
+      revokeSessionsOnPasswordReset: true,
+    },
+    emailVerification: {
+      sendOnSignUp: emailEnabled(),
+      autoSignInAfterVerification: true,
+      sendVerificationEmail: async ({ user, url }) => {
+        void sendEmail(verifyEmailEmail(user.email, url));
+      },
     },
     plugins: [organization({ creatorRole: "owner" })],
     hooks: {

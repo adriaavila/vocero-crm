@@ -75,7 +75,9 @@ export default function LoginPage() {
             {loading ? "Entrando…" : "Entrar"}
           </Button>
           <p className="text-center text-xs text-muted-foreground">
-            ¿Perdiste el acceso? Pide al propietario que restablezca tu contraseña.
+            <Link href="/forgot-password" className="hover:underline">
+              ¿Olvidaste tu contraseña?
+            </Link>
           </p>
           <p className="text-center text-sm text-muted-foreground">
             ¿Primera vez aquí?{" "}

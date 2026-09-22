@@ -17,6 +17,7 @@ vi.mock("@/lib/ai", () => ({
     ok: true,
     data: { action: "reply", text: "respuesta simulada" },
     raw: "{}",
+    usage: { provider: "openai", model: "m", calls: 1, promptTokens: 1, completionTokens: 1 },
   }),
 }));
 
