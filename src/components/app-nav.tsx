@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3,
   CalendarDays,
+  ChartColumn,
   CircleUserRound,
   Gauge,
   FlaskConical,
@@ -59,10 +59,11 @@ const NAV: NavItem[] = [
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/agent", label: "Agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical, owner: true },
-  // Capa de agencia: muestra ingresos, igual que Agente y Laboratorio — solo
-  // el propietario. Pantalla propia (`src/server/agencia/analitica.ts`),
-  // `/overview` sigue siendo el tablero de puesta en marcha.
-  { href: "/analytics", label: "Analítica", icon: BarChart3, owner: true },
+  // 019 (upstream) — Resultados reemplaza a Analítica: mide lo mismo que le
+  // importaba a esa pantalla (y más — origen, ventas, agente) sin la capa de
+  // agencia. `src/server/agencia/analitica.ts` y su cliente NO se borran
+  // (puede volver), pero `/analytics` redirige aquí (ver esa page.tsx).
+  { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
 ];
 
 const ALLOK_NAV: NavItem[] = [
@@ -77,6 +78,12 @@ const ALLOK_NAV: NavItem[] = [
 
 const ALLOK_PRO_NAV: NavItem[] = [
   { href: "/pipeline", label: "Ventas", icon: Kanban },
+  // 019 (upstream) — "primero se atiende y se organiza [Ventas], luego se
+  // mide": no hay una entrada "Contactos" en el nav allok (va dentro de
+  // Ventas), así que Resultados va justo después de Ventas y antes de la
+  // logística (Agenda, Equipo). Solo dueño, y solo Pro: ya lo filtra
+  // `saasPlan === "pro"` más abajo.
+  { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
   { href: "/bookings", label: "Agenda", icon: CalendarDays },
   { href: "/settings/team", label: "Equipo", icon: Users, owner: true },
 ];
