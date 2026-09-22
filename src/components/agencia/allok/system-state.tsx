@@ -41,13 +41,18 @@ export function SystemStateProvider({
   const [{ snapshot, revision }, setValue] = useState({ snapshot: initial, revision: 0 });
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const seq = useRef(0);
+
   function refresh() {
     // Un mensaje trae dos eventos (mensaje + conversación): una sola lectura.
     if (pending.current) clearTimeout(pending.current);
     pending.current = setTimeout(async () => {
+      // Una respuesta vieja que llega tarde no pisa a una más nueva.
+      const mine = ++seq.current;
       const res = await fetch("/api/estado").catch(() => null);
       if (!res?.ok) return;
       const next = (await res.json()) as SystemSnapshot;
+      if (mine !== seq.current) return;
       setValue((v) => ({ snapshot: next, revision: v.revision + 1 }));
     }, 400);
   }
@@ -77,7 +82,11 @@ export function SystemStateProvider({
   // mantiene al final del <head> aunque Next agregue otro después.
   const state = snapshot.state;
   useEffect(() => {
-    if (customFavicon) return;
+    if (customFavicon) {
+      // Acaban de subir su icono: el nuestro, último en el <head>, lo taparía.
+      document.getElementById(ICON_ID)?.remove();
+      return;
+    }
     let link = document.getElementById(ICON_ID) as HTMLLinkElement | null;
     if (!link) {
       link = document.createElement("link");

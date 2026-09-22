@@ -55,8 +55,8 @@ const ms = (v: string | Date | null) => (v === null ? null : new Date(v).getTime
 /**
  * El estado de UNA conversación.
  *
- * - Traspasada a una persona → te toca.
- * - La última palabra fue del negocio → all ok.
+ * - La última palabra fue del negocio → all ok (aunque haya un traspaso).
+ * - Traspasada a una persona, el cliente esperando, ventana abierta → te toca.
  * - La última palabra es del cliente y no pasó mucho → el agente la atiende,
  *   si la tiene. Si no la tiene (o pasaron más de 10 minutos sin respuesta),
  *   y nadie la abrió, dentro de la ventana de 24 h → te toca.
@@ -72,12 +72,15 @@ export function conversationState(
   agentOn: boolean,
   now = Date.now(),
 ): SystemState {
-  if (c.handoffAt) return "atencion";
   const inbound = ms(c.lastInboundAt);
   const last = ms(c.lastMessageAt);
   if (inbound === null || (last !== null && last > inbound)) return "activo";
   const age = now - inbound;
-  if (agentOn && c.aiEnabled && age < LIVE_MS) return "atendiendo";
+  // Un traspaso espera por una persona mientras el cliente tenga la última
+  // palabra y la ventana siga abierta. Contestado (también desde el teléfono)
+  // o frío, deja de avisar: si no, el ámbar no se iría nunca.
+  if (c.handoffAt && age < WINDOW_MS) return "atencion";
+  if (agentOn && c.aiEnabled && !c.handoffAt && age < LIVE_MS) return "atendiendo";
   if (c.unreadCount > 0 && age < WINDOW_MS) return "atencion";
   return "pausado";
 }

@@ -20,8 +20,14 @@ const unanswered = (ms: number, over: Partial<ConversationSignals> = {}) =>
   conv({ lastInboundAt: ago(ms), lastMessageAt: ago(ms), unreadCount: 1, ...over });
 
 describe("estado de una conversación", () => {
-  it("traspasada a una persona: te toca, aunque ya se haya contestado", () => {
-    expect(conversationState(conv({ handoffAt: ago(1000), lastMessageAt: ago(10) }), true, NOW)).toBe("atencion");
+  it("traspasada con el cliente esperando: te toca, aunque ya esté leída", () => {
+    expect(conversationState(unanswered(60_000, { handoffAt: ago(60_000), unreadCount: 0 }), true, NOW)).toBe("atencion");
+  });
+
+  it("traspasada pero ya contestada (p. ej. desde el teléfono), o fría: deja de avisar", () => {
+    const replied = conv({ handoffAt: ago(120_000), lastInboundAt: ago(120_000), lastMessageAt: ago(60_000) });
+    expect(conversationState(replied, true, NOW)).toBe("activo");
+    expect(conversationState(unanswered(WINDOW_MS + 1, { handoffAt: ago(WINDOW_MS + 1) }), true, NOW)).toBe("pausado");
   });
 
   it("la última palabra fue del negocio: all ok", () => {

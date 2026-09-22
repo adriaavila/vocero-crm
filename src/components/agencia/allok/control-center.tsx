@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
@@ -63,10 +63,19 @@ export function ControlCenter({
   const revision = useSystemRevision();
   const router = useRouter();
 
-  // Cada vez que el estado se relee (llegó un mensaje, pasó un minuto), lo del
-  // día también: una sola fuente de eventos para toda la pantalla.
+  // Cuando el estado se relee (llegó un mensaje, pasó un minuto), lo del día
+  // también: una sola fuente de eventos para toda la pantalla. Refrescar
+  // re-arma la página entera, así que va como mucho una vez cada 20 s.
+  // ponytail: con cuentas grandes, un endpoint solo para el feed y los números.
+  const lastRefresh = useRef(0);
   useEffect(() => {
-    if (revision > 0) router.refresh();
+    if (revision === 0) return;
+    const wait = Math.max(0, lastRefresh.current + 20_000 - Date.now());
+    const timer = setTimeout(() => {
+      lastRefresh.current = Date.now();
+      router.refresh();
+    }, wait);
+    return () => clearTimeout(timer);
   }, [revision, router]);
 
   if (!snapshot) return null;
@@ -94,7 +103,7 @@ export function ControlCenter({
 
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
-            <p className="kicker">{today}</p>
+            <p className="kicker" suppressHydrationWarning>{today}</p>
             <h1 className="mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] text-balance md:text-[38px]">
               {firstName ? `Hola, ${firstName}.` : "Hola."}
             </h1>
@@ -181,7 +190,7 @@ export function ControlCenter({
                         <span data-state={row.state} className="text-[var(--st-ink)]">{row.note}</span>
                         {row.preview && <span className="text-text-3"> · {previewText(row.preview)}</span>}
                       </span>
-                      <span className="col-start-3 row-start-1 font-mono text-[11px] text-text-3 md:col-start-auto md:row-start-auto">
+                      <span suppressHydrationWarning className="col-start-3 row-start-1 font-mono text-[11px] text-text-3 md:col-start-auto md:row-start-auto">
                         {when(row.at, tz)}
                       </span>
                     </Link>

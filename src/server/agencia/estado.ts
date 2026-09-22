@@ -1,4 +1,4 @@
-import { count, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { count, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
@@ -11,6 +11,7 @@ import {
   type WhatsAppLink,
 } from "@/lib/estado";
 import { canAutomate } from "@/server/agencia/entitlements";
+import { isExternalBrainConfigured } from "@/lib/env";
 import type { ConversationDto } from "@/lib/types";
 
 /**
@@ -25,13 +26,14 @@ async function agentOn(organizationId: string): Promise<{ on: boolean; timezone:
     .from(schema.agentProfile)
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .limit(1);
-  return { on: Boolean(rows[0]?.enabled), timezone: rows[0]?.timezone ?? "UTC" };
+  // Un cerebro externo (BOT_API_KEY) también contesta: no es «apagado».
+  return { on: Boolean(rows[0]?.enabled) || isExternalBrainConfigured(), timezone: rows[0]?.timezone ?? "UTC" };
 }
 
 export async function getSystemState(organizationId: string, owner: boolean): Promise<SystemSnapshot> {
   const db = getDb();
-  // Solo pueden no estar en `activo` las traspasadas y las que tuvieron un
-  // entrante dentro de la ventana: el resto ni se trae.
+  // Solo puede no estar en `activo` lo que tuvo un entrante dentro de la
+  // ventana (traspasos incluidos): el resto ni se trae.
   const windowStart = new Date(Date.now() - WINDOW_MS);
   const [creds, agent, rows, jobs, billingActive] = await Promise.all([
     db
@@ -54,10 +56,7 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
           schema.conversation.organizationId,
           organizationId,
           eq(schema.conversation.isTest, false),
-          or(
-            isNotNull(schema.conversation.handoffAt),
-            gte(schema.conversation.lastInboundAt, windowStart),
-          ),
+          gte(schema.conversation.lastInboundAt, windowStart),
         ),
       ),
     db
@@ -184,7 +183,9 @@ export async function getCentro(organizationId: string, conversations: Conversat
       contactId: c.contact.id,
       name: c.contact.name,
       preview: c.preview,
-      note: c.handoffAt ? HANDOFF_NOTE[c.handoffReason ?? ""] ?? "Espera por ti" : conversationNote(c, state, now),
+      note: c.handoffAt && state === "atencion"
+        ? HANDOFF_NOTE[c.handoffReason ?? ""] ?? "Espera por ti"
+        : conversationNote(c, state, now),
       state,
       at: c.lastMessageAt,
     }));
