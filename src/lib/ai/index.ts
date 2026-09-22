@@ -18,9 +18,27 @@ export type ChatMessage = {
   content: string;
 };
 
+/**
+ * Consumo de una llamada a `chatJson`, sumando reintentos y fallback: cada
+ * intento que llegó al proveedor se paga, aunque su salida se descartara.
+ * `provider`/`model` son los del último intento que respondió.
+ */
+export type AiUsage = {
+  provider: AiProvider | null;
+  model: string | null;
+  calls: number;
+  promptTokens: number;
+  completionTokens: number;
+};
+
 export type ChatJsonResult<T> =
-  | { ok: true; data: T; raw: string }
-  | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
+  | { ok: true; data: T; raw: string; usage: AiUsage }
+  | {
+      ok: false;
+      error: "not_configured" | "provider_error" | "invalid_output";
+      detail: string;
+      usage: AiUsage;
+    };
 
 export type { AiProvider, AiProviderSettings } from "@/lib/ai/config";
 
@@ -53,6 +71,10 @@ function resolveProvider(
   return { name, baseUrl: env.OPENAI_BASE_URL, token, model };
 }
 
+function emptyUsage(): AiUsage {
+  return { provider: null, model: null, calls: 0, promptTokens: 0, completionTokens: 0 };
+}
+
 /** Preferido primero; el otro queda como fallback si el preferido no sirve. */
 function providerOrder(preferred: AiProvider): AiProvider[] {
   return preferred === "openrouter" ? ["openrouter", "openai"] : ["openai", "openrouter"];
@@ -79,12 +101,14 @@ export async function chatJson<T>(
       ok: false,
       error: "not_configured",
       detail: "Ningún proveedor tiene token + modelo configurados",
+      usage: emptyUsage(),
     };
   }
 
+  const usage = emptyUsage();
   let lastResult: ChatJsonResult<T> | null = null;
   for (const provider of candidates) {
-    const result = await attemptProvider(schema, messages, provider, opts?.timeoutMs);
+    const result = await attemptProvider(schema, messages, provider, opts?.timeoutMs, usage);
     if (result.ok) return result;
     lastResult = result;
   }
@@ -118,7 +142,8 @@ async function attemptProvider<T>(
   schema: z.ZodType<T>,
   messages: ChatMessage[],
   provider: ResolvedProvider,
-  timeoutMs: number | undefined
+  timeoutMs: number | undefined,
+  usage: AiUsage
 ): Promise<ChatJsonResult<T>> {
   let lastDetail = "";
   let lastIssues = "";
@@ -134,13 +159,18 @@ async function attemptProvider<T>(
             },
           ];
     try {
-      const raw = await callProvider(
+      const { content: raw, promptTokens, completionTokens } = await callProvider(
         provider.baseUrl,
         provider.token,
         provider.model,
         attemptMessages,
         timeoutMs
       );
+      usage.provider = provider.name;
+      usage.model = provider.model;
+      usage.calls += 1;
+      usage.promptTokens += promptTokens;
+      usage.completionTokens += completionTokens;
       const extracted = extractJson(raw);
       if (extracted === null) {
         lastIssues = "sin JSON extraíble";
@@ -155,7 +185,7 @@ async function attemptProvider<T>(
         lastDetail = `[${provider.name}] no cumple el esquema: ${lastIssues} (raw=${truncate(raw)})`;
         continue;
       }
-      return { ok: true, data: parsed.data, raw };
+      return { ok: true, data: parsed.data, raw, usage };
     } catch (err) {
       lastDetail = `[${provider.name}] ${err instanceof Error ? err.message : String(err)}`;
       if (attempt < MAX_ATTEMPTS) {
@@ -170,6 +200,7 @@ async function attemptProvider<T>(
       ? "invalid_output"
       : "provider_error",
     detail: lastDetail,
+    usage,
   };
 }
 
@@ -179,7 +210,7 @@ async function callProvider(
   model: string,
   messages: ChatMessage[],
   timeoutMs = 60_000
-): Promise<string> {
+): Promise<{ content: string; promptTokens: number; completionTokens: number }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -199,12 +230,19 @@ async function callProvider(
     }
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== "string" || content.length === 0) {
       throw new Error("respuesta del proveedor sin contenido");
     }
-    return content;
+    return {
+      content,
+      // Un proveedor que no reporta uso cuenta la llamada con 0 tokens: se
+      // sabe que hubo turno aunque no cuánto costó.
+      promptTokens: tokenCount(json.usage?.prompt_tokens),
+      completionTokens: tokenCount(json.usage?.completion_tokens),
+    };
   } finally {
     clearTimeout(timer);
   }
@@ -233,6 +271,10 @@ export function extractJson(raw: string): unknown | null {
     }
   }
   return null;
+}
+
+function tokenCount(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
 }
 
 function truncate(s: string, n = 300): string {

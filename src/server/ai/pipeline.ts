@@ -23,6 +23,7 @@ import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { hasSaaSPlan } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAgentRespondNow } from "@/server/business-hours";
+import { recordAiUsage } from "@/server/agencia/usage";
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -223,6 +224,13 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   const result = await chatJson(agentActionSchema(agenda), messages, {
     provider: profile.aiProvider,
     credentials: aiConfig.providers,
+  });
+  await recordAiUsage({
+    organizationId,
+    conversationId,
+    kind: "agent",
+    ok: result.ok,
+    usage: result.usage,
   });
   if (!result.ok) {
     if (result.error === "not_configured") return;

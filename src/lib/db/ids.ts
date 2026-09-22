@@ -33,6 +33,7 @@ const prefixes = {
   saasAdminAudit: "saa",
   agentJob: "aj",
   aiCredential: "aic",
+  usageEvent: "use",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

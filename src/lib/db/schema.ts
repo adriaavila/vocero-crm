@@ -105,6 +105,33 @@ export const saasAdminAudit = pgTable(
   (t) => [index("saas_admin_audit_created_idx").on(t.createdAt)]
 );
 
+/**
+ * Consumo de IA, una fila por llamada a `chatJson` que llegó al proveedor.
+ * Sin esto no hay límite por plan ni forma de saber qué cliente da pérdida.
+ * No guarda texto: solo cuántos tokens, de qué modelo y para qué.
+ */
+export const usageEvent = pgTable(
+  "usage_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind", { enum: ["agent"] }).notNull(),
+    provider: text("provider"),
+    model: text("model"),
+    calls: integer("calls").notNull(),
+    promptTokens: integer("prompt_tokens").notNull(),
+    completionTokens: integer("completion_tokens").notNull(),
+    ok: boolean("ok").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("usage_event_org_created_idx").on(t.organizationId, t.createdAt)]
+);
+
 /** Trabajos durables del agente SaaS: una conversación, como máximo, en vuelo. */
 export const agentJob = pgTable(
   "agent_job",

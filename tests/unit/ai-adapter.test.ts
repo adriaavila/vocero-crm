@@ -86,6 +86,44 @@ describe("chatJson (reintentos y errores tipados)", () => {
     expect(JSON.stringify(secondBody.messages)).toContain("STRICT");
   });
 
+  it("suma el uso de cada intento que llegó al proveedor, incluido el descartado", async () => {
+    const withUsage = (content: string, prompt: number, completion: number) =>
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content } }],
+          usage: { prompt_tokens: prompt, completion_tokens: completion },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(withUsage("no soy json", 100, 7))
+        .mockResolvedValueOnce(withUsage('{"action":"reply","text":"ok"}', 120, 9))
+    );
+
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+
+    expect(result.ok).toBe(true);
+    expect(result.usage).toEqual({
+      provider: "openai",
+      model: "modelo-test",
+      calls: 2,
+      promptTokens: 220,
+      completionTokens: 16,
+    });
+  });
+
+  it("sin proveedor configurado → uso vacío (no hay fila que escribir)", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubGlobal("fetch", vi.fn());
+
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+
+    expect(result.usage.calls).toBe(0);
+  });
+
   it("proveedor caído (500 persistente) → error tipado, jamás excepción", async () => {
     const fetchMock = vi
       .fn()
