@@ -84,7 +84,7 @@ export function AppShell({
               : pathname.startsWith("/lab")
                 ? "Probar allok"
                 : pathname.startsWith("/agent")
-                  ? "Agente"
+                  ? "Tu agente"
                   : "allok";
 
   const shell = (

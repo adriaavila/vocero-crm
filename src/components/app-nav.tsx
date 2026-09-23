@@ -68,6 +68,9 @@ const NAV: NavItem[] = [
 const ALLOK_NAV: NavItem[] = [
   { href: "/overview", label: "Inicio", icon: Gauge },
   { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
+  // 019 §4: "Tu agente" contesta "¿qué sabe y cómo contesta?" (conocimiento y
+  // horario). Sin esta entrada, /agent solo se alcanzaba escribiendo la URL.
+  { href: "/agent", label: "Tu agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Probar allok", icon: FlaskConical, owner: true },
   { href: "/settings", label: "Configuración", icon: Settings, owner: true },
 ];
