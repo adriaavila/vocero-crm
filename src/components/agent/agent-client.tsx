@@ -290,10 +290,10 @@ function BusinessHoursSection() {
         <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Modo de atención">
           <button type="button" onClick={() => setSettings({ ...settings, responseMode: "outside_hours" })} className={`rounded-md border p-3 text-left transition-colors ${settings.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
             <span className="block text-sm font-semibold">Fuera de horario</span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Básico: Allok cubre las horas en que tu equipo descansa.</span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Esencial: Allok cubre las horas en que tu equipo descansa.</span>
           </button>
           <button type="button" disabled={!canUseAllDay} onClick={() => setSettings({ ...settings, responseMode: "all_day" })} className={`rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${settings.responseMode === "all_day" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
-            <span className="flex items-center gap-2 text-sm font-semibold">Todo el día <Badge variant="success">Pro</Badge></span>
+            <span className="flex items-center gap-2 text-sm font-semibold">Todo el día <Badge variant="success">Completo</Badge></span>
             <span className="mt-1 block text-xs leading-5 text-text-3">Responde durante toda la jornada, con supervisión humana siempre disponible.</span>
           </button>
         </div>

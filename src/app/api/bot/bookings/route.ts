@@ -94,7 +94,7 @@ async function guard(req: Request): Promise<Gate> {
     };
   }
   if (!(await hasSaaSPlan(organizationId, "pro"))) {
-    return { response: apiError(403, "plan_required", "La agenda está disponible en el plan Pro") };
+    return { response: apiError(403, "plan_required", "La agenda está disponible en el plan Completo") };
   }
   return { organizationId };
 }

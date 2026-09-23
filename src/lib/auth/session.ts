@@ -27,7 +27,7 @@ export class TenantNotFoundError extends Error {
 
 export class SaaSMemberPlanRequiredError extends Error {
   constructor() {
-    super("El acceso del equipo requiere el plan Pro");
+    super("El acceso del equipo requiere el plan Completo");
     this.name = "SaaSMemberPlanRequiredError";
   }
 }
