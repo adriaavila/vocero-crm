@@ -57,16 +57,26 @@ vi.mock("@/server/inbox/identity", async (importOriginal) => ({
 }));
 vi.mock("@/server/inbox/lead-activity", () => ({ onLeadActivity: vi.fn() }));
 vi.mock("@/server/ai/worker", () => ({ kickAgentWorker: vi.fn() }));
+// The business Nea (BOT_API_KEY) serves: `principal` in production.
+let legacyOrganizationId: string | null = null;
+vi.mock("@/server/auth/on-signup", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/auth/on-signup")>()),
+  resolveLegacyOrganizationId: async () => legacyOrganizationId,
+}));
 
 import { schema } from "@/lib/db";
 import { resetEnvCacheForTests } from "@/lib/env";
 import { onUserCreated } from "@/server/auth/on-signup";
 import { ingestInboundMessage } from "@/server/inbox/ingest";
 import { canAgentRespondNow } from "@/server/business-hours";
+import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
 
-async function signUpAndReceiveMessage() {
+async function signUp() {
   await onUserCreated("user_owner_1", "Taller Pérez");
-  const organizationId = rowsOf(schema.organization)[0]?.id as string;
+  return rowsOf(schema.organization)[0]?.id as string;
+}
+
+async function receiveMessage(organizationId: string) {
   await ingestInboundMessage({
     organizationId,
     identity: { identity: "5215511111111", phone: "5215511111111", waUserId: null, profileName: "Ana" },
@@ -75,6 +85,11 @@ async function signUpAndReceiveMessage() {
     text: "Hola, ¿siguen abiertos?",
     timestamp: String(Math.floor(Date.now() / 1000)),
   });
+}
+
+async function signUpAndReceiveMessage() {
+  const organizationId = await signUp();
+  await receiveMessage(organizationId);
   return organizationId;
 }
 
@@ -89,6 +104,7 @@ describe("new SaaS tenant with default settings", () => {
     vi.stubEnv("ALLOK_SAAS_MODE", "true");
     vi.stubEnv("BOT_API_KEY", "");
     resetEnvCacheForTests();
+    legacyOrganizationId = "org_principal";
   });
 
   afterEach(() => {
@@ -112,12 +128,29 @@ describe("new SaaS tenant with default settings", () => {
     expect(await canAgentRespondNow(organizationId, new Date("2026-09-22T17:00:00Z"))).toBe(false); // Tue 11:00
   });
 
-  it("leaves the reply to the external brain when BOT_API_KEY is set", async () => {
+  it("still gets its agent when BOT_API_KEY is set for Nea", async () => {
     vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
 
-    await signUpAndReceiveMessage();
+    const organizationId = await signUpAndReceiveMessage();
+
+    expect(rowsOf(schema.agentJob)).toEqual([expect.objectContaining({ organizationId })]);
+  });
+
+  it("leaves principal to Nea when BOT_API_KEY is set", async () => {
+    vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    const organizationId = await signUp();
+    legacyOrganizationId = organizationId;
+
+    await receiveMessage(organizationId);
 
     expect(rowsOf(schema.agentJob)).toEqual([]);
+  });
+
+  it("a dedicated instance with BOT_API_KEY stays with its external brain", async () => {
+    vi.stubEnv("ALLOK_SAAS_MODE", "");
+    vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+
+    expect(await cerebroExternoAtiende("org_any")).toBe(true);
   });
 
   it("legacy signup keeps the always-on agent without a schedule", async () => {
