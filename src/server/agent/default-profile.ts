@@ -1,3 +1,4 @@
+import { isValidTimeZone } from "@/lib/time/slots";
 import type { WeeklyBusinessHours } from "@/server/business-hours";
 
 /** Versión de la plantilla aplicada al crear una organización SaaS. */
@@ -34,10 +35,14 @@ export function defaultAgentProfile() {
  *
  * "Fuera de horario" con el negocio abierto de lunes a sábado de 9 a 18 es lo
  * único que vale en todos los planes ("Todo el día" es de Pro): el agente
- * contesta de noche y el domingo, en la zona por defecto de la columna. El
- * dueño lo cambia en Agente → Horario de respuesta.
+ * contesta de noche y el domingo. El dueño lo cambia en Agente → Horario de
+ * respuesta.
+ *
+ * La zona es la del navegador de quien se registra. Sin ella (o si no es
+ * válida) queda la de la columna, Ciudad de México: en Caracas eso dejaría al
+ * negocio sin respuesta de 18 a 20, justo cuando el equipo ya se fue.
  */
-export function defaultResponseSchedule() {
+export function defaultResponseSchedule(timezone?: string | null) {
   const open = () => [{ start: "09:00", end: "18:00" }];
   const businessHours: WeeklyBusinessHours = {
     mon: open(),
@@ -47,5 +52,9 @@ export function defaultResponseSchedule() {
     fri: open(),
     sat: open(),
   };
-  return { businessHours, responseMode: "outside_hours" as const };
+  return {
+    businessHours,
+    responseMode: "outside_hours" as const,
+    ...(timezone && isValidTimeZone(timezone) ? { businessTimezone: timezone } : {}),
+  };
 }

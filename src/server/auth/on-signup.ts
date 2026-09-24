@@ -24,7 +24,7 @@ const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
 export async function onUserCreated(
   userId: string,
   userName: string,
-  options?: { skipOrganization?: boolean },
+  options?: { skipOrganization?: boolean; timezone?: string | null },
 ) {
   if (options?.skipOrganization) return;
   const db = getDb();
@@ -87,7 +87,7 @@ export async function onUserCreated(
       organizationId: orgId,
       ...defaultAgentProfile(),
       // SaaS calla sin horario de respuesta; legacy no lo usa y nace igual.
-      ...(isAllokSaaSMode() ? defaultResponseSchedule() : {}),
+      ...(isAllokSaaSMode() ? defaultResponseSchedule(options?.timezone) : {}),
     });
   });
 }
