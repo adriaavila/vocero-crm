@@ -24,7 +24,7 @@ export function FaviconCard({
   generatedHint = "La inicial sobre tu color de acento. Sube un logo para reemplazarlo.",
 }: {
   branding: Branding;
-  /** Capa de agencia: el SaaS genera el punto de allok, no la inicial. */
+  /** Capa de agencia: el SaaS genera el símbolo de allok, no la inicial. */
   generatedHint?: string;
 }) {
   const router = useRouter();

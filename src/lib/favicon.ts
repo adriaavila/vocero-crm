@@ -140,19 +140,23 @@ export function allokFaviconSvg(dot = "#20e58d"): string {
  *
  * Los navegadores guardan el favicon con una insistencia notable: sin que la
  * URL cambie, el logo nuevo puede tardar días en aparecer. Para el subido va
- * el número de versión; para el generado, un hash del nombre y el acento, que
- * son justo lo que lo cambia.
+ * el número de versión; para el generado, un hash de los dos dibujos posibles
+ * (el símbolo y la inicial sobre el acento). Se sirve `immutable` por un año:
+ * si el dibujo cambia y la clave no, cada pestaña que ya lo vio se queda con
+ * el viejo.
  */
 export function faviconCacheKey(branding: Branding): string {
   if (branding.favicon) return `u${branding.favicon.version}`;
+  return `g${huella(`${allokFaviconSvg()}|${generatedFaviconSvg(branding)}`)}`;
+}
+
+/** Sufijo de `/icon.svg` y los PNG del manifiesto: cambia con el símbolo. */
+export const ALLOK_ICON_VERSION = huella(allokFaviconSvg());
+
+function huella(s: string): string {
   let h = 0;
-  // El dibujo también entra: se sirve `immutable` por un año, así que cambiar
-  // el símbolo sin cambiar la clave deja el viejo en cada pestaña que ya lo vio.
-  const semilla = `${ALLOK_MARK.ring}|${branding.name}|${branding.accent}`;
-  for (let i = 0; i < semilla.length; i++) {
-    h = (h * 31 + semilla.charCodeAt(i)) >>> 0;
-  }
-  return `g${h.toString(36)}`;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
 }
 
 /** URL que va en el `<link rel="icon">`. */

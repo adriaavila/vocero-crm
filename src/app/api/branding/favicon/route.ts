@@ -28,7 +28,7 @@ function cabeceras(mime: string, cacheable: boolean): HeadersInit {
   };
 }
 
-/** Sin icono subido, el SaaS firma con el punto de allok; Vocero, con la inicial. */
+/** Sin icono subido, el SaaS firma con el símbolo de allok; Vocero, con la inicial. */
 function generated(branding: Parameters<typeof generatedFaviconSvg>[0]): string {
   return isAllokSaaSMode() ? allokFaviconSvg() : generatedFaviconSvg(branding);
 }
