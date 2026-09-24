@@ -2,7 +2,7 @@ import { and, count, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isAllokSaaSMode, isLegacyAppHost, isSaaSAppHost, slugifyTenantName, tenantSlugFromHost } from "@/lib/tenant-host";
-import { defaultAgentProfile } from "@/server/agent/default-profile";
+import { defaultAgentProfile, defaultResponseSchedule } from "@/server/agent/default-profile";
 
 /** Etapas sembradas del pipeline (US2). */
 const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
@@ -86,6 +86,8 @@ export async function onUserCreated(
       id: newId("agentProfile"),
       organizationId: orgId,
       ...defaultAgentProfile(),
+      // SaaS calla sin horario de respuesta; legacy no lo usa y nace igual.
+      ...(isAllokSaaSMode() ? defaultResponseSchedule() : {}),
     });
   });
 }

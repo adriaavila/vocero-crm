@@ -1,0 +1,130 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * A SaaS business straight out of signup must be able to answer: its inbound
+ * message queues an agent_job and the schedule gate the worker applies lets
+ * the reply through. Runs the real signup, ingest, trigger and gate against an
+ * in-memory Postgres stand-in (rows per table; `where` is ignored because the
+ * test only ever holds one business).
+ */
+
+const tables = new Map<unknown, Record<string, unknown>[]>();
+function rowsOf(table: unknown): Record<string, unknown>[] {
+  if (!tables.has(table)) tables.set(table, []);
+  return tables.get(table)!;
+}
+
+/** Drizzle-style builder: every step chains; awaiting it yields the rows. */
+function query(rows: () => unknown[]) {
+  const chain: Record<string, unknown> = {
+    then: (resolve: (value: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
+      Promise.resolve().then(rows).then(resolve, reject),
+  };
+  for (const step of ["where", "limit", "orderBy", "innerJoin", "returning", "onConflictDoNothing"]) {
+    chain[step] = () => chain;
+  }
+  return chain;
+}
+
+const db = {
+  execute: async () => [],
+  transaction: async (run: (tx: unknown) => Promise<unknown>) => run(db),
+  select: () => ({ from: (table: unknown) => query(() => rowsOf(table)) }),
+  insert: (table: unknown) => ({
+    values: (value: Record<string, unknown> | Record<string, unknown>[]) => {
+      const added = [value].flat();
+      rowsOf(table).push(...added);
+      return query(() => added);
+    },
+  }),
+  update: (table: unknown) => ({
+    set: (patch: Record<string, unknown>) =>
+      query(() => rowsOf(table).map((row) => Object.assign(row, patch))),
+  }),
+};
+
+vi.mock("@/lib/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/db")>()),
+  getDb: () => db,
+}));
+// Contact resolution and lead bookkeeping are not what this test is about.
+vi.mock("@/server/inbox/identity", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/server/inbox/identity")>()),
+  getOrCreateContactByIdentity: async () => ({
+    contact: { id: "contact_ana", channel: "whatsapp" },
+    isNew: true,
+  }),
+}));
+vi.mock("@/server/inbox/lead-activity", () => ({ onLeadActivity: vi.fn() }));
+vi.mock("@/server/ai/worker", () => ({ kickAgentWorker: vi.fn() }));
+
+import { schema } from "@/lib/db";
+import { resetEnvCacheForTests } from "@/lib/env";
+import { onUserCreated } from "@/server/auth/on-signup";
+import { ingestInboundMessage } from "@/server/inbox/ingest";
+import { canAgentRespondNow } from "@/server/business-hours";
+
+async function signUpAndReceiveMessage() {
+  await onUserCreated("user_owner_1", "Taller Pérez");
+  const organizationId = rowsOf(schema.organization)[0]?.id as string;
+  await ingestInboundMessage({
+    organizationId,
+    identity: { identity: "5215511111111", phone: "5215511111111", waUserId: null, profileName: "Ana" },
+    waMessageId: "wamid.default-tenant",
+    type: "text",
+    text: "Hola, ¿siguen abiertos?",
+    timestamp: String(Math.floor(Date.now() / 1000)),
+  });
+  return organizationId;
+}
+
+describe("new SaaS tenant with default settings", () => {
+  beforeEach(() => {
+    tables.clear();
+    vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
+    vi.stubEnv("DATABASE_URL", "postgresql://t:t@localhost:5432/t");
+    vi.stubEnv("BETTER_AUTH_SECRET", "secret-de-test-suficiente");
+    vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 8).toString("base64"));
+    vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verify-test");
+    vi.stubEnv("ALLOK_SAAS_MODE", "true");
+    vi.stubEnv("BOT_API_KEY", "");
+    resetEnvCacheForTests();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetEnvCacheForTests();
+  });
+
+  it("queues an agent_job for an inbound message and is allowed to answer", async () => {
+    const organizationId = await signUpAndReceiveMessage();
+
+    const [conversation] = rowsOf(schema.conversation);
+    expect(conversation).toMatchObject({ organizationId, aiEnabled: true });
+    expect(rowsOf(schema.agentJob)).toEqual([
+      expect.objectContaining({ organizationId, conversationId: conversation?.id }),
+    ]);
+
+    // Default schedule: team hours Mon-Sat 09-18 America/Mexico_City (UTC-6);
+    // the agent covers the rest.
+    expect(await canAgentRespondNow(organizationId, new Date("2026-09-23T02:00:00Z"))).toBe(true); // Tue 20:00
+    expect(await canAgentRespondNow(organizationId, new Date("2026-09-27T18:00:00Z"))).toBe(true); // Sun 12:00
+    expect(await canAgentRespondNow(organizationId, new Date("2026-09-22T17:00:00Z"))).toBe(false); // Tue 11:00
+  });
+
+  it("leaves the reply to the external brain when BOT_API_KEY is set", async () => {
+    vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+
+    await signUpAndReceiveMessage();
+
+    expect(rowsOf(schema.agentJob)).toEqual([]);
+  });
+
+  it("legacy signup keeps the always-on agent without a schedule", async () => {
+    vi.stubEnv("ALLOK_SAAS_MODE", "");
+
+    await onUserCreated("user_owner_1", "Taller Pérez");
+
+    expect(rowsOf(schema.agentProfile)[0]).not.toHaveProperty("businessHours");
+  });
+});

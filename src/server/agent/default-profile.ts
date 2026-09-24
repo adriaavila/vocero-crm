@@ -1,3 +1,5 @@
+import type { WeeklyBusinessHours } from "@/server/business-hours";
+
 /** Versión de la plantilla aplicada al crear una organización SaaS. */
 export const DEFAULT_AGENT_TEMPLATE_VERSION = "saas-v1" as const;
 
@@ -23,4 +25,27 @@ export function defaultAgentProfile() {
     activationMessages: [...DEFAULT_AGENT_PROFILE.activationMessages],
     allowedWaIds: [...DEFAULT_AGENT_PROFILE.allowedWaIds],
   };
+}
+
+/**
+ * Horario de respuesta con el que nace un negocio SaaS. Sin horario,
+ * `canAgentRespondNow` nunca deja contestar y el negocio recién creado queda
+ * mudo.
+ *
+ * "Fuera de horario" con el negocio abierto de lunes a sábado de 9 a 18 es lo
+ * único que vale en todos los planes ("Todo el día" es de Pro): el agente
+ * contesta de noche y el domingo, en la zona por defecto de la columna. El
+ * dueño lo cambia en Agente → Horario de respuesta.
+ */
+export function defaultResponseSchedule() {
+  const open = () => [{ start: "09:00", end: "18:00" }];
+  const businessHours: WeeklyBusinessHours = {
+    mon: open(),
+    tue: open(),
+    wed: open(),
+    thu: open(),
+    fri: open(),
+    sat: open(),
+  };
+  return { businessHours, responseMode: "outside_hours" as const };
 }

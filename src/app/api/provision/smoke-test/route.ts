@@ -19,7 +19,16 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const to = getEnv().WHATSAPP_SMOKE_TEST_TO;
-  if (!to) return Response.json({ message: "WHATSAPP_SMOKE_TEST_TO no está configurado." }, { status: 503 });
+  // Sin número de prueba no hay a quién escribir. Allok llama aquí con las
+  // credenciales ya entregadas y el webhook ya verificado: un error haría que
+  // reintente y le muestre al cliente una entrega fallida que no falló.
+  if (!to) {
+    return Response.json({
+      ok: true,
+      skipped: true,
+      message: "Prueba de envío omitida: WHATSAPP_SMOKE_TEST_TO no está configurado.",
+    });
+  }
   const normalizedTo = normalizeRecipient(to);
   if (!/^\+?[1-9]\d{6,14}$/.test(normalizedTo)) {
     return Response.json({ message: "WHATSAPP_SMOKE_TEST_TO no es un número válido." }, { status: 503 });
