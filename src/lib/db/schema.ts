@@ -681,9 +681,10 @@ export const agentProfile = pgTable(
     lastLiveTestAt: timestamp("last_live_test_at"),
     lastLiveTestPassed: boolean("last_live_test_passed"),
     lastLiveTestElapsedMs: integer("last_live_test_elapsed_ms"),
-    // Proveedor de IA preferido para este agente. "openrouter" fuerza el
-    // modelo gratuito aunque OpenAI esté configurado (ahorro de costo); si el
-    // preferido no responde, el adaptador cae al otro proveedor disponible.
+    // Proveedor de IA preferido para este agente. Los inquilinos nuevos nacen
+    // con "openrouter" (GLM 5.3 Flash, `default-profile.ts`); si el preferido
+    // no responde, el adaptador cae al otro proveedor disponible. El default de
+    // la columna sigue en "openai" para no pedir migración.
     aiProvider: text("ai_provider", { enum: ["openai", "openrouter"] })
       .notNull()
       .default("openai"),
