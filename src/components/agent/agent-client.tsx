@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Switch } from "@/components/ui/switch";
 import { Clock3, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -129,22 +130,12 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
-          <button
-            role="switch"
-            aria-checked={profile.enabled}
-            aria-label="Agente encendido"
+          <Switch
+            checked={profile.enabled}
+            label="Agente encendido"
             disabled={!aiConfigured}
-            onClick={() => void toggle()}
-            className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${
-              profile.enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-knob transition-transform ${
-                profile.enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+            onCheckedChange={() => void toggle()}
+          />
         </div>
       </header>
 
