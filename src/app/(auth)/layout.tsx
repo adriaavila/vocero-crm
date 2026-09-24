@@ -5,7 +5,7 @@ import { AllokAuthFrame } from "@/components/agencia/allok/auth-frame";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
-import { isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
 
 /**
  * Pantalla de entrada: papel frío, rejilla difuminada y dos resplandores
@@ -27,8 +27,9 @@ export default async function AuthLayout({
         (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null))
     : undefined;
   if (tenantSlug && !organizationId) notFound();
-  // Capa de agencia: la entrada del SaaS es la portada de allok.fun.
-  if (isAllokSaaSMode()) return <AllokAuthFrame>{children}</AllokAuthFrame>;
+  // Capa de agencia: la entrada es la portada de allok.fun, en el SaaS y en
+  // una dedicada.
+  if (isAllokBrand()) return <AllokAuthFrame>{children}</AllokAuthFrame>;
   const branding = await getBranding(organizationId).catch(() => DEFAULT_BRANDING);
 
   return (

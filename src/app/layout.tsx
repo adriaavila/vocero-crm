@@ -11,7 +11,7 @@ import { accentCssVariables, DEFAULT_BRANDING, SAAS_BRANDING } from "@/lib/brand
 import { faviconHref } from "@/lib/favicon";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
-import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import "./globals.css";
 
@@ -62,7 +62,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const organizationId = saasMode
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : null;
-  const fallback = saasMode ? SAAS_BRANDING : DEFAULT_BRANDING;
+  const fallback = isAllokBrand() ? SAAS_BRANDING : DEFAULT_BRANDING;
   const branding = await Promise.resolve(saasMode
     ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
@@ -89,7 +89,7 @@ export default async function RootLayout({
   const organizationId = saasMode
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : null;
-  const fallback = saasMode ? SAAS_BRANDING : DEFAULT_BRANDING;
+  const fallback = isAllokBrand() ? SAAS_BRANDING : DEFAULT_BRANDING;
   const branding = await Promise.resolve(saasMode
     ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
@@ -111,7 +111,9 @@ export default async function RootLayout({
       // La preferencia siempre es explícita: el tema viaja resuelto en el HTML
       // del servidor, así que no hay divergencia con el cliente ni parpadeo.
       data-theme={theme}
-      data-saas={saasMode ? "true" : undefined}
+      // `data-saas` es el gancho del diseño allok en globals.css; lo lleva
+      // también la instancia dedicada (ver `isAllokBrand`).
+      data-saas={isAllokBrand() ? "true" : undefined}
     >
       <head>
         {/* Acento white-label inyectado en SSR: sin flash de tema */}

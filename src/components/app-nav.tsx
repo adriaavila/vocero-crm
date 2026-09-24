@@ -109,6 +109,7 @@ export function AppNav({
   commit,
   agenda = false,
   saasMode = false,
+  allokBrand = false,
   saasPlan = null,
   open = false,
   onClose,
@@ -129,6 +130,8 @@ export function AppNav({
    */
   agenda?: boolean;
   saasMode?: boolean;
+  /** El diseño allok (barra de tinta, all ● k con el estado). También en una dedicada. */
+  allokBrand?: boolean;
   saasPlan?: SaaSPlan | null;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
@@ -188,7 +191,7 @@ export function AppNav({
       // cajón visible mientras se desliza y recién entonces lo oculta, que es
       // lo que lo saca del orden de tabulación en móvil.
       // Capa de agencia: en el SaaS la barra es de tinta en los dos temas.
-      data-allok-nav={saasMode || undefined}
+      data-allok-nav={allokBrand || undefined}
       className={cn(
         "fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 transition-[transform,visibility] duration-200",
         "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
@@ -206,7 +209,7 @@ export function AppNav({
         >
           <X className="h-[18px] w-[18px]" strokeWidth={1.8} />
         </button>
-        {saasMode ? (
+        {allokBrand ? (
           <AllokNavHead businessName={branding.name} />
         ) : (
           <div className="min-w-0">

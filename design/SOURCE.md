@@ -15,5 +15,11 @@ Acá se refleja en:
   para el icono de la pestaña.
 - `src/lib/branding.ts` — `SAAS_BRANDING` (acento tinta) y su inversión en oscuro.
 
+**Dónde se ve.** En toda instalación: el SaaS y las dedicadas (la misma imagen
+con `ALLOK_SAAS_MODE` apagado). Lo decide `isAllokBrand()` en
+`src/lib/tenant-host.ts`, no el modo SaaS; `ALLOK_BRAND=off` deja una instancia
+con la marca Vocero de antes. El nombre `data-saas` del atributo es histórico:
+marca diseño, no inquilinos.
+
 Si la marca cambia allá, se cambian estos tres y `design.md`. Reemplaza al
 sistema Dawn → Dusk (cielo magenta), que quedó retirado.
