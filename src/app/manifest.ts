@@ -31,7 +31,9 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     background_color: "#ffffff",
     theme_color: "#ffffff",
     icons: [
-      { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
+      // Next sirve icon.svg `immutable` por un año: el `?v=` cambia con el
+      // dibujo, o Cloudflare y el teléfono se quedan con el anterior.
+      { src: "/icon.svg?v=mark", sizes: "any", type: "image/svg+xml" },
       { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
