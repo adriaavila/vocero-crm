@@ -282,12 +282,26 @@ describe("chatJson (reintentos y errores tipados)", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await chatJson(schema, [{ role: "user", content: "hola" }]); // preferido default: openai
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }], { provider: "openai" });
 
     expect(result.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(4); // 3 intentos a OpenAI + 1 a OpenRouter
     const lastCall = fetchMock.mock.calls[3]!;
     expect(lastCall[0]).toBe("https://openrouter.ai/api/v1/chat/completions");
+  });
+
+  it("sin preferido, OpenRouter va primero con GLM 5.3 Flash", async () => {
+    vi.stubEnv("OPENROUTER_API_TOKEN", "token-openrouter-test");
+    vi.stubEnv("OPENROUTER_MODEL", "");
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse('{"action":"reply","text":"ok"}'));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await chatJson(schema, [{ role: "user", content: "hola" }]);
+
+    expect(result.ok).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(JSON.parse(init!.body as string).model).toBe("z-ai/glm-5.3-flash");
   });
 
   it("ningún proveedor configurado → not_configured sin tocar la red", async () => {

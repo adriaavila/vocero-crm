@@ -70,7 +70,8 @@ export async function chatJson<T>(
   }
 ): Promise<ChatJsonResult<T>> {
   const env = getEnv();
-  const order = providerOrder(opts?.provider ?? "openai");
+  // OpenRouter (GLM 5.3 Flash) es el preferido por costo; OpenAI queda de respaldo.
+  const order = providerOrder(opts?.provider ?? "openrouter");
   const candidates = order
     .map((name) => resolveProvider(name, opts?.judge ?? false, opts?.model, env, opts?.credentials))
     .filter((p): p is ResolvedProvider => p !== null);
