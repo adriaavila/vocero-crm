@@ -20,7 +20,7 @@ export default async function BrandingSettingsPage() {
         branding={branding}
         generatedHint={
           isAllokSaaSMode()
-            ? "El punto de allok: en la pestaña cambia de color con el estado de tu negocio. Sube un logo para reemplazarlo."
+            ? "El símbolo de allok: en la pestaña, su punto cambia de color con el estado de tu negocio. Sube un logo para reemplazarlo."
             : undefined
         }
       />
