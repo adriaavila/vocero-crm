@@ -69,6 +69,12 @@ await json("/api/settings/branding", {
   body: JSON.stringify({ name: "Acme", accent: "#3f6b66", currency: "MXN" }),
 });
 
+// Con la marca allok (por defecto) el generado es su símbolo; con
+// ALLOK_BRAND=off, la inicial del negocio. Mismo criterio que isAllokBrand().
+const ALLOK = process.env.ALLOK_SAAS_MODE === "true" || process.env.ALLOK_BRAND !== "off";
+const esGenerado = (svg, inicial) =>
+  ALLOK ? svg.includes("M33.39 47.94") : svg.includes(`>${inicial}<`);
+
 console.log("\n== Sin configurar nada, ya hay icono ==");
 let res = await api("/api/branding/favicon");
 let cuerpo = await res.text();
@@ -76,8 +82,8 @@ ok("la ruta pública responde 200", res.status === 200);
 ok(
   "es un SVG dibujado con la marca",
   res.headers.get("content-type")?.includes("svg") &&
-    cuerpo.includes(">A<") &&
-    cuerpo.includes("#3f6b66"),
+    esGenerado(cuerpo, "A") &&
+    (ALLOK || cuerpo.includes("#3f6b66")),
   cuerpo.slice(0, 80)
 );
 ok(
@@ -162,7 +168,7 @@ res = await api("/api/branding/favicon");
 cuerpo = await res.text();
 ok(
   "vuelve el generado, ahora con la inicial nueva",
-  res.headers.get("content-type")?.includes("svg") && cuerpo.includes(">A<"),
+  res.headers.get("content-type")?.includes("svg") && esGenerado(cuerpo, "A"),
   cuerpo.slice(0, 60)
 );
 
