@@ -48,7 +48,9 @@ export function AgentWeek({ hours, mode, timezone, pro }: { hours: Week; mode: R
         ? "Tu agente contesta las 168 horas de la semana."
         : "«Todo el día» es de Pro: con tu plan, tu agente no contesta."
       : agentHours === 0
-        ? "Sin horario tu agente no contesta: marca los días de tu equipo."
+        ? teamHours > 0
+          ? "Tu equipo atiende las 168 horas: tu agente no contesta."
+          : "Sin horario tu agente no contesta: marca los días de tu equipo."
         : `Tu agente contesta ${agentHours} de las 168 horas de la semana; tu equipo, ${teamHours}.`;
 
   return (

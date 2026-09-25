@@ -13,7 +13,7 @@ import {
 import { canAutomate } from "@/server/agencia/entitlements";
 import { isExternalBrainConfigured } from "@/lib/env";
 import type { ConversationDto } from "@/lib/types";
-import { hasSaaSPlan } from "@/server/agencia/entitlements";
+import { automationAccessFromMetadata, hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz } from "@/lib/time/slots";
@@ -134,6 +134,8 @@ export type Centro = {
     /** A qué minuto abre el equipo mañana (null: no abre). */
     tomorrow: number | null;
     agentOn: boolean;
+    /** El plan deja automatizar (`canAutomate`): sin eso el agente no contesta. */
+    billingActive: boolean;
     /** Sin horario de respuesta el agente del SaaS no contesta nunca. */
     configured: boolean;
     allDay: boolean;
@@ -159,7 +161,9 @@ export async function getCentro(organizationId: string, conversations: Conversat
   const tz = safeTimeZone(agent.timezone);
   // `created_at` guarda la hora UTC sin zona: la medianoche del negocio se
   // pasa a esa misma forma para compararla.
-  const totals = await getDb().execute(sql`
+  // El horario y el plan se leen junto con las cifras, no después.
+  const [totals, schedule, orgRows] = await Promise.all([
+    getDb().execute(sql`
       with bounds as (
         select ((date_trunc('day', now() at time zone ${tz}) at time zone ${tz}) at time zone 'UTC') as start
       ),
@@ -187,7 +191,14 @@ export async function getCentro(organizationId: string, conversations: Conversat
            cross join bounds b
           where c.organization_id = ${organizationId} and c.is_test = false
             and c.created_at >= b.start)::int as nuevos
-    `);
+    `),
+    getBusinessHours(organizationId),
+    getDb()
+      .select({ metadata: schema.organization.metadata })
+      .from(schema.organization)
+      .where(eq(schema.organization.id, organizationId))
+      .limit(1),
+  ]);
 
   const now = Date.now();
   const rows = conversations.map((c) => ({ c, state: conversationState(c, agent.on, now) }));
@@ -223,9 +234,10 @@ export async function getCentro(organizationId: string, conversations: Conversat
       minute: minuteInTz(new Date(c.lastInboundAt as string), tz),
     }))
     .sort((a, b) => a.minute - b.minute);
-  const schedule = await getBusinessHours(organizationId);
   const allDay = schedule.responseMode === "all_day";
-  const pro = allDay && (await hasSaaSPlan(organizationId, "pro"));
+  // Las mismas lecturas que los gates: canAutomate y hasSaaSPlan.
+  const metadata = orgRows[0]?.metadata;
+  const pro = hasPaidSaaSPlanFromMetadata(metadata, "pro");
   const weekday = weekdayInTz(new Date(now), tz);
   const shifts = coverage(schedule.weeklyHours, schedule.responseMode, pro, weekday);
   const tomorrow = coverage(schedule.weeklyHours, schedule.responseMode, pro, nextDay(weekday)).team[0]?.[0] ?? null;
@@ -233,7 +245,9 @@ export async function getCentro(organizationId: string, conversations: Conversat
   return {
     today: {
       conversations: row?.conversations ?? 0,
-      solo: row?.solo ?? 0,
+      // Una respuesta de hoy a un mensaje de anoche cuenta en `solo` y no en
+      // `conversations`: nunca más atendidas solas que conversaciones.
+      solo: Math.min(row?.solo ?? 0, row?.conversations ?? 0),
       nuevos: row?.nuevos ?? 0,
     },
     waiting: rows.filter((r) => r.state === "atencion").length,
@@ -244,6 +258,7 @@ export async function getCentro(organizationId: string, conversations: Conversat
       ...shifts,
       tomorrow,
       agentOn: agent.on,
+      billingActive: automationAccessFromMetadata(metadata).allowed,
       configured: hasConfiguredBusinessHours(schedule),
       allDay,
     },

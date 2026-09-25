@@ -29,8 +29,9 @@ const NOTE: Record<SystemState, string> = {
 function sentence(day: Day, now: number | null): string {
   if (!day.configured) return "Sin horario de respuesta, tu agente no contesta.";
   if (!day.agentOn) return "Tu agente está apagado: hoy contestas tú.";
-  if (day.agent.length === 0) return "«Todo el día» es del plan Pro: con tu plan, tu agente no contesta.";
-  if (day.allDay) return "Tu agente contesta todo el día.";
+  if (!day.billingActive) return "Tu plan no está activo: tu agente no contesta.";
+  if (day.allDay) return day.agent.length ? "Tu agente contesta todo el día." : "«Todo el día» es del plan Pro: con tu plan, tu agente no contesta.";
+  if (day.agent.length === 0) return "Hoy tu equipo atiende todo el día.";
   if (now === null) return "Tu agente contesta cuando tu equipo no está.";
   const shift = day.agent.find(([a, b]) => now >= a && now < b);
   if (shift) {
@@ -89,11 +90,12 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
   });
   const counts = { activo: 0, atendiendo: 0, atencion: 0, pausado: 0 } as Record<SystemState, number>;
   for (const p of day.points) counts[p.state]++;
-  const agentState: SystemState = day.agentOn ? "activo" : "pausado";
+  const agentState: SystemState = day.agentOn && day.billingActive ? "activo" : "pausado";
 
   let action: { href: string; label: string } | null = null;
   if (owner && !day.configured) action = { href: "/agent", label: "Definir horario" };
-  else if (owner && day.agentOn && day.agent.length === 0) action = { href: "/settings/billing", label: "Ver planes" };
+  else if (owner && day.agentOn && (!day.billingActive || (day.allDay && day.agent.length === 0)))
+    action = { href: "/settings/billing", label: "Ver planes" };
   else if (owner) action = { href: "/agent", label: "Cambiar horario" };
 
   return (
@@ -164,7 +166,7 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
           split(span, now).map((part, k) => {
             if (!part) return null;
             // El turno que corre ahora fluye; lo que viene más tarde espera tenue.
-            const live = k === 1 && day.agentOn && now !== null && now >= span[0];
+            const live = k === 1 && day.agentOn && day.billingActive && now !== null && now >= span[0];
             return (
               <svg
                 key={`agente-${span[0]}-${k}`}

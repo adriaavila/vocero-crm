@@ -655,18 +655,16 @@
   }
 }
 @keyframes ak-procesando {
-  0%,
-  100% {
+  0% {
     stroke-dasharray: 100 0;
+    transform: rotate(0deg);
   }
   30%,
   83% {
     stroke-dasharray: 72 28;
   }
-  from {
-    transform: rotate(0deg);
-  }
-  to {
+  100% {
+    stroke-dasharray: 100 0;
     transform: rotate(720deg);
   }
 }
@@ -1012,7 +1010,12 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
-    /* Un bucle de 0,01 ms parpadea: una vuelta y queda en su final. */
+  }
+  /* En allok, además: un bucle de 0,01 ms parpadea, así que da una vuelta y
+     queda en su final. Vocero conserva su regla de siempre. */
+  :root[data-saas="true"] *,
+  :root[data-saas="true"] *::before,
+  :root[data-saas="true"] *::after {
     animation-iteration-count: 1 !important;
     animation-delay: 0s !important;
   }
