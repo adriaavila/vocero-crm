@@ -11,7 +11,7 @@ import {
   type WhatsAppLink,
 } from "@/lib/estado";
 import { canAutomate } from "@/server/agencia/entitlements";
-import { isExternalBrainConfigured } from "@/lib/env";
+import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
 import type { ConversationDto } from "@/lib/types";
 
 /**
@@ -27,7 +27,10 @@ async function agentOn(organizationId: string): Promise<{ on: boolean; timezone:
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .limit(1);
   // Un cerebro externo (BOT_API_KEY) también contesta: no es «apagado».
-  return { on: Boolean(rows[0]?.enabled) || isExternalBrainConfigured(), timezone: rows[0]?.timezone ?? "UTC" };
+  return {
+    on: Boolean(rows[0]?.enabled) || (await cerebroExternoAtiende(organizationId)),
+    timezone: rows[0]?.timezone ?? "UTC",
+  };
 }
 
 export async function getSystemState(organizationId: string, owner: boolean): Promise<SystemSnapshot> {
