@@ -29,7 +29,11 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error: err } = await signUp.email({ name, email, password });
+    const { error: err } = await signUp.email(
+      { name, email, password },
+      // El horario de respuesta del negocio nace en la zona del navegador.
+      { headers: { "x-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone } },
+    );
     if (err) {
       setLoading(false);
       if (err.status === 403) {
