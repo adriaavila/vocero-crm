@@ -59,6 +59,25 @@ function bot(path, opts = {}) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Espera a que algo OCURRA, en vez de dormir un rato y confiar.
+ *
+ * Un `sleep` fijo convierte cualquier lentitud —la primera compilación de una
+ * ruta en `next dev`, por ejemplo— en un fallo que no significa nada. Y si se
+ * pone generoso, alarga el guion entero para todos.
+ *
+ * Portado de upstream 3907f07 (fix/015): lo necesita el bloque de selftest de
+ * 018 (anuncio de origen) y no existía en este fork.
+ */
+async function hasta(cond, ms = 15000, paso = 400) {
+  const fin = Date.now() + ms;
+  for (;;) {
+    if (await cond()) return true;
+    if (Date.now() > fin) return false;
+    await sleep(paso);
+  }
+}
 const PN = "PN-E2E-1";
 
 async function main() {
