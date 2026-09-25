@@ -15,6 +15,7 @@ import { isPublicSignupAllowed } from "@/server/auth/registration";
 import {
   isAllokSaaSMode,
   isKnownAllokHost,
+  isSaaSAdminEmail,
   isSaaSAppHost,
   saasAppHost,
   SIGNUP_HOST_HINT,
@@ -45,6 +46,17 @@ export function runInternalSignup<T>(fn: () => Promise<T>): Promise<T> {
 
 function isInternalSignup(): boolean {
   return internalSignupContext().getStore() === true;
+}
+
+/**
+ * ¿La petición trae la sesión de un admin de allok? Con el autoservicio
+ * apagado, el alta de un negocio la hace allok en la llamada de puesta en
+ * marcha, desde su propia sesión (la cookie vive en `.allok.fun`).
+ */
+async function isSaaSAdminRequest(requestHeaders: Headers | undefined): Promise<boolean> {
+  if (!requestHeaders) return false;
+  const session = await getAuth().api.getSession({ headers: requestHeaders }).catch(() => null);
+  return isSaaSAdminEmail(session?.user.email);
 }
 
 const RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
@@ -132,7 +144,13 @@ function createAuth() {
               message: `${SIGNUP_HOST_HINT} ${saasAppHost()}`,
             });
           }
-          if (!isInternalSignup() && !(await isPublicSignupAllowed())) {
+          if (
+            !isInternalSignup() &&
+            !(await isPublicSignupAllowed()) &&
+            // El arnés E2E (`isMockEnabled`, nunca en producción) crea sus
+            // negocios de prueba por aquí, como el límite de arriba.
+            !(isAllokSaaSMode() && (isMockEnabled() || (await isSaaSAdminRequest(ctx.headers))))
+          ) {
             throw new APIError("FORBIDDEN", {
               message:
                 "El registro está cerrado: esta instancia ya tiene su organización",

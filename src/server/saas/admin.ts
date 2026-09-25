@@ -3,7 +3,7 @@ import { count, desc } from "drizzle-orm";
 import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
-import { isAllokSaaSMode, isSaaSAdminHost } from "@/lib/tenant-host";
+import { isAllokSaaSMode, isSaaSAdminEmail, isSaaSAdminHost } from "@/lib/tenant-host";
 import { billingFromMetadata, type SaaSBillingState } from "@/server/saas/billing";
 
 export class SaaSAdminUnauthorized extends Error {
@@ -19,13 +19,7 @@ export type SaaSAdminIdentity = {
   name: string;
 };
 
-export function isSaaSAdminEmail(email: string | null | undefined): boolean {
-  const allowed = (process.env.ALLOK_ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  return Boolean(email && allowed.includes(email.trim().toLowerCase()));
-}
+export { isSaaSAdminEmail } from "@/lib/tenant-host";
 
 export async function requireSaaSAdmin(action = "view_tenants"): Promise<SaaSAdminIdentity> {
   if (!isAllokSaaSMode()) throw new SaaSAdminUnauthorized();

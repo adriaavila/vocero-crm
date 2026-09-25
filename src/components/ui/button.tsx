@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
  * globals.css (esquina de 10px, sin levantar, presión 0.97); sin ellos quedan
  * los valores de Vocero de siempre.
  */
-const buttonVariants = cva(
+export const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[var(--btn-radius,9999px)] text-sm font-semibold tracking-[-0.01em] transition-[color,background-color,border-color,transform,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[var(--btn-press,1)] disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
