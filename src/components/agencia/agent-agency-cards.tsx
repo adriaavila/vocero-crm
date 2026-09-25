@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ChangeEvent } from "react";
+import { Switch } from "@/components/ui/switch";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -295,21 +296,7 @@ function AllowedNumbersSection({
               Desactívalo para responder a cualquier cliente.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
-            aria-label="Limitar a números autorizados"
-            onClick={() => setEnabled(!enabled)}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+          <Switch checked={enabled} label="Limitar a números autorizados" onCheckedChange={setEnabled} />
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -370,21 +357,7 @@ function ActivationMessagesSection({
               una conversación normal.
             </CardDescription>
           </div>
-          <button
-            role="switch"
-            aria-checked={enabled}
-            aria-label="Activar IA mediante mensajes"
-            onClick={() => setEnabled(!enabled)}
-            className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
-              enabled ? "bg-primary" : "bg-secondary"
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                enabled ? "translate-x-5" : "translate-x-0.5"
-              }`}
-            />
-          </button>
+          <Switch checked={enabled} label="Activar IA mediante mensajes" onCheckedChange={setEnabled} />
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
