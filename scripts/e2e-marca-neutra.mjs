@@ -111,7 +111,10 @@ const favicon = await fetch(`${BASE}/api/branding/favicon`);
 const faviconSvg = await favicon.text();
 ok(
   "el favicon generado dibuja la inicial del nombre nuevo, no un logo especial",
-  faviconSvg.includes(">F<") && !faviconSvg.includes("M0 32 Q2.08"),
+  // Con la marca allok (por defecto) es su símbolo; con ALLOK_BRAND=off, la inicial.
+  (process.env.ALLOK_SAAS_MODE === "true" || process.env.ALLOK_BRAND !== "off"
+    ? faviconSvg.includes("M33.39 47.94")
+    : faviconSvg.includes(">F<")) && !faviconSvg.includes("M0 32 Q2.08"),
   faviconSvg.slice(0, 120)
 );
 
