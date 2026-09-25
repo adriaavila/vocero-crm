@@ -1,22 +1,45 @@
 import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { dayIsoInTz, eachDateInRange, isValidTimeZone, todayInTz } from "@/lib/time/slots";
 import { listConversations } from "@/server/inbox/queries";
 import type { ConversationDto } from "@/lib/types";
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Los 7 días que terminan hoy en la zona del negocio (UTC si no hay una
+ * válida), con los entrantes de cada uno. En días UTC, el jueves 21:10 de
+ * Caracas ya es viernes: la barra de «hoy» decía «vie» y lo de esa noche
+ * contaba para el día siguiente.
+ */
+export function inboundByDay(rows: { at: Date; count: number }[], timezone: string | undefined, now: Date) {
+  const tz = timezone && isValidTimeZone(timezone) ? timezone : "UTC";
+  const today = todayInTz(now, tz);
+  const first = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * DAY_MS).toISOString().slice(0, 10);
+  const counts = new Map(eachDateInRange(first, today).map((date) => [date, 0]));
+  for (const row of rows) {
+    const date = dayIsoInTz(row.at, tz);
+    const total = counts.get(date);
+    if (total !== undefined) counts.set(date, total + row.count);
+  }
+  return Array.from(counts, ([date, total]) => ({ date, count: total }));
+}
 
 /** `conversationList`: la lista ya cargada, si quien llama también la usa (Inicio del SaaS). */
 export async function getOverview(organizationId: string, conversationList?: ConversationDto[]) {
   const db = getDb();
-  const since = new Date();
-  since.setUTCHours(0, 0, 0, 0);
-  since.setUTCDate(since.getUTCDate() - 6);
+  const now = new Date();
+  // Ocho días cubren la semana local en cualquier zona; lo anterior a su
+  // primer día se descarta al contar.
+  const since = new Date(now.getTime() - 8 * DAY_MS);
+  // ponytail: tramos de una hora UTC, exactos en zonas de hora entera (toda
+  // LATAM). Una zona de :30 o :45 pediría tramos de 15 min (`date_bin`).
+  const hour = sql<Date>`date_trunc('hour', ${schema.message.createdAt})`.mapWith(schema.message.createdAt);
 
   const [conversations, trendRows, pipelineRows, profileRows, runRows] = await Promise.all([
     conversationList ?? listConversations(organizationId),
-    db.select({
-      date: sql<string>`to_char(date_trunc('day', ${schema.message.createdAt} at time zone 'UTC'), 'YYYY-MM-DD')`,
-      count: count(),
-    })
+    db.select({ at: hour, count: count() })
       .from(schema.message)
       .innerJoin(schema.conversation, eq(schema.message.conversationId, schema.conversation.id))
       .where(scoped(
@@ -26,7 +49,7 @@ export async function getOverview(organizationId: string, conversationList?: Con
         eq(schema.conversation.isTest, false),
         gte(schema.message.createdAt, since)
       ))
-      .groupBy(sql`date_trunc('day', ${schema.message.createdAt} at time zone 'UTC')`),
+      .groupBy(hour),
     db.select({
       stageId: schema.pipelineStage.id,
       name: schema.pipelineStage.name,
@@ -42,20 +65,12 @@ export async function getOverview(organizationId: string, conversationList?: Con
       .where(eq(schema.pipelineStage.organizationId, organizationId))
       .groupBy(schema.pipelineStage.id)
       .orderBy(schema.pipelineStage.position),
-    db.select({ enabled: schema.agentProfile.enabled }).from(schema.agentProfile)
+    db.select({ enabled: schema.agentProfile.enabled, timezone: schema.agentProfile.businessTimezone }).from(schema.agentProfile)
       .where(scoped(schema.agentProfile.organizationId, organizationId)).limit(1),
     db.select().from(schema.agentTestRun)
       .where(and(eq(schema.agentTestRun.organizationId, organizationId), eq(schema.agentTestRun.status, "done")))
       .orderBy(desc(schema.agentTestRun.startedAt)).limit(2),
   ]);
-
-  const trend = new Map(trendRows.map((row) => [row.date, row.count]));
-  const inboundTrend = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(since);
-    date.setUTCDate(since.getUTCDate() + index);
-    const key = date.toISOString().slice(0, 10);
-    return { date: key, count: trend.get(key) ?? 0 };
-  });
 
   const latest = runRows[0] ?? null;
   const redRows = latest
@@ -83,7 +98,7 @@ export async function getOverview(organizationId: string, conversationList?: Con
       activeWindows: conversations.filter((item) => item.windowOpen).length,
       agentEnabled: Boolean(profileRows[0]?.enabled),
     },
-    inboundTrend,
+    inboundTrend: inboundByDay(trendRows, profileRows[0]?.timezone, now),
     pipeline: pipelineRows.map(({ stageId, name, kind, count: total }) => ({ stageId, name, kind, count: total })),
     priorities,
     latestLab: latest?.finishedAt && latest.score !== null
