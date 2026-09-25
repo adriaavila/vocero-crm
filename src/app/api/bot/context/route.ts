@@ -126,7 +126,7 @@ export async function GET(req: Request) {
 
   const [agentAccess, booking] = await Promise.all([
     accesoDeAgencia(organizationId),
-    proEnabled ? proximaCita(organizationId, contact.id) : Promise.resolve(null),
+    proEnabled ? proximaCita(organizationId, conversation) : Promise.resolve(null),
   ]);
 
   return Response.json({
