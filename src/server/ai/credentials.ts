@@ -4,6 +4,7 @@ import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
+import { isNeaBrain } from "@/lib/env";
 
 export type AiRuntimeConfig = {
   providers: Partial<Record<AiProvider, AiProviderSettings>>;
@@ -69,6 +70,18 @@ export function hasConfiguredAiProvider(config: AiRuntimeConfig): boolean {
 
 export async function isAiConfiguredForOrganization(organizationId: string): Promise<boolean> {
   return hasConfiguredAiProvider(await getAiRuntimeConfig(organizationId));
+}
+
+/**
+ * true si algún cerebro puede responder por esta organización: Nea (que no
+ * necesita una clave de IA propia por-org, la firma con `BOT_API_KEY`) o Rei
+ * con un proveedor de IA configurado (propio o de plataforma). Los gates que
+ * antes preguntaban "¿tiene IA configurada?" para decidir si el agente puede
+ * encenderse deben preguntar esto en su lugar, o una instancia con Nea nunca
+ * pasaría el gate.
+ */
+export async function isAgentAvailableForOrganization(organizationId: string): Promise<boolean> {
+  return isNeaBrain() || (await isAiConfiguredForOrganization(organizationId));
 }
 
 export async function listAiCredentialStatuses(organizationId: string): Promise<AiCredentialStatuses> {

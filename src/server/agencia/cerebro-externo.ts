@@ -1,19 +1,19 @@
-import { isExternalBrainConfigured } from "@/lib/env";
-import { isAllokSaaSMode } from "@/lib/tenant-host";
-import { resolveLegacyOrganizationId } from "@/server/auth/on-signup";
+import { isNeaBrain } from "@/lib/env";
 
 /**
- * Capa de agencia: ¿el cerebro externo (`BOT_API_KEY`) contesta en este
- * negocio?
+ * Capa de agencia: ¿Nea (el cerebro externo) contesta en este negocio?
  *
- * En una instancia dedicada la clave es del único negocio: sí, y el agente
- * interno se hace a un lado. En SaaS la clave también es una sola, pero el bot
- * que la usa (Nea) atiende solo la organización heredada, `principal`. Si la
- * clave callara al agente interno en todos los negocios, cada negocio nuevo se
- * quedaría sin nadie que le conteste.
+ * Hasta esta migración, `BOT_API_KEY` sola bastaba, y en SaaS eso solo cubría
+ * el negocio heredado (`principal`): Nea escuchaba su PROPIA suscripción al
+ * webhook de Meta, así que era el único número que oía. Cualquier otro
+ * negocio del SaaS se quedaba sin nadie que le contestara — el bug que esta
+ * migración corrige.
+ *
+ * Ahora el CRM DESPACHA cada turno a Nea (`server/ai/nea-dispatch.ts`), así
+ * que ya no existe "el negocio que Nea escucha": cualquier organización con
+ * Nea configurada (`isNeaBrain()`) recibe el despacho. El parámetro se
+ * conserva por compatibilidad con quien llama; ya no decide nada.
  */
-export async function cerebroExternoAtiende(organizationId: string): Promise<boolean> {
-  if (!isExternalBrainConfigured()) return false;
-  if (!isAllokSaaSMode()) return true;
-  return organizationId === (await resolveLegacyOrganizationId());
+export async function cerebroExternoAtiende(_organizationId: string): Promise<boolean> {
+  return isNeaBrain();
 }

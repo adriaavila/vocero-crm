@@ -4,6 +4,7 @@ import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
+import { persistTestOutbound } from "@/server/ai/pipeline";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,9 @@ export async function POST(req: Request) {
   const db = getDb();
   const convs = await db
     .select({
+      id: schema.conversation.id,
+      organizationId: schema.conversation.organizationId,
+      isTest: schema.conversation.isTest,
       aiEnabled: schema.conversation.aiEnabled,
       handoffAt: schema.conversation.handoffAt,
     })
@@ -54,6 +58,14 @@ export async function POST(req: Request) {
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
   if (!conv.aiEnabled || conv.handoffAt) {
     return apiError(409, "ai_paused", "La IA está en pausa en esta conversación");
+  }
+
+  // Laboratorio: se persiste como saliente de prueba y JAMÁS toca la API real
+  // (FR-031). El cerebro externo no distingue — el CRM sí, y aquí es donde
+  // aplica el guardarraíl.
+  if (conv.isTest) {
+    const { messageId } = await persistTestOutbound(conv, body.data.text);
+    return Response.json({ messageId });
   }
 
   try {

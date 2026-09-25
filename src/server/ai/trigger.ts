@@ -1,24 +1,30 @@
 import { scheduleAgentTurn } from "@/server/ai/pipeline";
-import { shouldRunInternalAgent } from "@/lib/env";
+import { isNeaBrain, shouldRunInternalAgent } from "@/lib/env";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
-import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
 
 /**
  * Punto de enganche del turno del agente tras la ingesta de un mensaje
  * entrante REAL (las conversaciones del Laboratorio invocan el pipeline
  * directamente, sin debounce).
+ *
+ * Ya NO decide aquí si Nea o Rei contestan — eso lo decide `runAgentTurn`
+ * (server/ai/pipeline.ts) dentro del propio turno. Antes, un `BOT_API_KEY`
+ * configurado hacía que este punto se quedara callado (Nea escuchaba su
+ * propia suscripción al webhook de Meta); ahora el CRM DESPACHA cada turno a
+ * Nea, así que encolar el turno es SIEMPRE el primer paso — quedarse callado
+ * aquí es exactamente el bug que dejaba a cada negocio sin nadie que le
+ * conteste.
  */
 export async function maybeRunAgentTurn(
   conversationId: string,
-  organizationId: string
+  _organizationId: string
 ): Promise<void> {
-  if (await cerebroExternoAtiende(organizationId)) return;
-  // En SaaS las claves pueden vivir por organización en CRM; no podemos
-  // decidir con isAiConfigured(), que solo conoce el entorno del proceso.
   if (isAllokSaaSMode()) {
+    // Las claves de IA (y de Nea) pueden vivir por organización; eso solo se
+    // resuelve dentro del turno, que sí conoce cuál organización es.
     await scheduleAgentTurn(conversationId);
     return;
   }
-  if (!shouldRunInternalAgent()) return;
+  if (!isNeaBrain() && !shouldRunInternalAgent()) return;
   await scheduleAgentTurn(conversationId);
 }

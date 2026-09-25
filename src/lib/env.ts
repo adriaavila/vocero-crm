@@ -59,8 +59,13 @@ const envSchema = z.object({
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
   WA_MOCK_ENABLED: z.string().optional(),
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
-  // Sin ella, toda esa superficie responde 401.
+  // Sin ella, toda esa superficie responde 401. También firma el despacho a
+  // Nea (HMAC-SHA256 del body exacto) cuando NEA_DISPATCH_URL está presente.
   BOT_API_KEY: z.string().optional(),
+  // URL del servicio de Nea al que el CRM despacha cada turno entrante
+  // (`POST ${NEA_DISPATCH_URL}`). Sin ella, Rei (el agente interno) contesta
+  // si tiene proveedor de IA configurado.
+  NEA_DISPATCH_URL: z.string().url().optional(),
   // Secreto compartido con allok para `POST /api/provision`: allok entrega ahí
   // las credenciales de un número recién conectado. Sin ella, la ruta responde 401.
   PROVISION_API_KEY: z.string().min(16).optional(),
@@ -145,19 +150,27 @@ export function isAiConfigured(): boolean {
   return hasToken(process.env.OPENAI_API_KEY) || hasToken(process.env.OPENROUTER_API_TOKEN);
 }
 
-/** El bot externo tiene prioridad para no responder dos veces al mismo mensaje. */
+/**
+ * true si Nea (el cerebro externo) está lista para recibir despachos:
+ * necesita a dónde mandar el turno (`NEA_DISPATCH_URL`) y con qué firmarlo
+ * (`BOT_API_KEY`, ≥16 caracteres). `BOT_API_KEY` sola ya no basta — antes
+ * apagaba a Rei en toda la instancia aunque nadie estuviera despachando nada,
+ * y una instancia sin `NEA_DISPATCH_URL` se quedaba sin ningún cerebro.
+ */
+export function isNeaBrain(): boolean {
+  const hasDispatchUrl = (process.env.NEA_DISPATCH_URL?.trim().length ?? 0) > 0;
+  const hasSigningKey = (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+  return hasDispatchUrl && hasSigningKey;
+}
+
+/** Rei (el agente interno) contesta salvo que Nea esté configurada. */
 export function shouldRunInternalAgent(): boolean {
-  return isAiConfigured() && (process.env.BOT_API_KEY?.trim().length ?? 0) < 16;
+  return isAiConfigured() && !isNeaBrain();
 }
 
-/** true si esta instancia tiene un cerebro externo conectado por /api/bot/*. */
-export function isExternalBrainConfigured(): boolean {
-  return (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
-}
-
-/** true si responde el agente interno o un cerebro externo autenticado. */
+/** true si responde el agente interno o Nea. */
 export function isAgentConfigured(): boolean {
-  return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+  return isAiConfigured() || isNeaBrain();
 }
 
 export function isWahaConfigured(): boolean {

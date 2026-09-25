@@ -7,7 +7,7 @@ import { getBranding } from "@/server/branding";
 import { pasoAgenda, type PasoAgenda } from "@/server/agencia/readiness-agenda";
 import { businessHoursFromProfile, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
-import { isAiConfiguredForOrganization } from "@/server/ai/credentials";
+import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 
 export type ReadinessStepId =
   | "whatsapp"
@@ -241,7 +241,7 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
     profile,
     whatsappConnected: credentials[0]?.status === "connected",
     whatsappStatus: credentials[0]?.status ?? null,
-    aiConfigured: await isAiConfiguredForOrganization(organizationId),
+    aiConfigured: await isAgentAvailableForOrganization(organizationId),
     liveTestAvailable: isWahaConfigured(),
     knowledgeCount: knowledge[0]?.count ?? 0,
     knowledgeUpdatedAt: knowledge[0]?.updatedAt ?? null,

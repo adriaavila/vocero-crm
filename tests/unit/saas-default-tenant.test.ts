@@ -151,15 +151,16 @@ describe("new SaaS tenant with default settings", () => {
     expect(rowsOf(schema.agentProfile)[0]).not.toHaveProperty("businessTimezone");
   });
 
-  it("still gets its agent when BOT_API_KEY is set for Nea", async () => {
+  it("still gets its agent when BOT_API_KEY and NEA_DISPATCH_URL are set for Nea", async () => {
     vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
 
     const organizationId = await signUpAndReceiveMessage();
 
     expect(rowsOf(schema.agentJob)).toEqual([expect.objectContaining({ organizationId })]);
   });
 
-  it("Nea's key does not override an owner who turned the agent off", async () => {
+  it("BOT_API_KEY alone (no NEA_DISPATCH_URL) does not override an owner who turned the agent off", async () => {
     vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
     const organizationId = await signUp();
     Object.assign(rowsOf(schema.agentProfile)[0]!, { enabled: false });
@@ -173,21 +174,36 @@ describe("new SaaS tenant with default settings", () => {
     expect(rowsOf(schema.conversation)[0]).toMatchObject({ aiEnabled: false });
   });
 
-  it("leaves principal to Nea when BOT_API_KEY is set", async () => {
+  it("every SaaS tenant gets a queued turn now, principal included (the bug this migration fixes)", async () => {
+    // Antes, un `BOT_API_KEY` configurado apagaba a este punto de enganche
+    // por completo para el negocio heredado (`principal`) porque Nea
+    // escuchaba su PROPIA suscripción al webhook — cualquier otro negocio del
+    // SaaS se quedaba sin nadie. Ahora el CRM despacha, así que SIEMPRE
+    // encola, sea o no el negocio heredado.
     vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
     const organizationId = await signUp();
     legacyOrganizationId = organizationId;
 
     await receiveMessage(organizationId);
 
-    expect(rowsOf(schema.agentJob)).toEqual([]);
+    expect(rowsOf(schema.agentJob)).toEqual([expect.objectContaining({ organizationId })]);
   });
 
-  it("a dedicated instance with BOT_API_KEY stays with its external brain", async () => {
+  it("a dedicated instance with BOT_API_KEY and NEA_DISPATCH_URL stays with its external brain", async () => {
     vi.stubEnv("ALLOK_SAAS_MODE", "");
     vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
 
     expect(await cerebroExternoAtiende("org_any")).toBe(true);
+  });
+
+  it("a dedicated instance with only BOT_API_KEY (no NEA_DISPATCH_URL) does NOT count as an external brain", async () => {
+    vi.stubEnv("ALLOK_SAAS_MODE", "");
+    vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "");
+
+    expect(await cerebroExternoAtiende("org_any")).toBe(false);
   });
 
   it("legacy signup keeps the always-on agent without a schedule", async () => {

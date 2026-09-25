@@ -3,9 +3,10 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
-import { getEnv } from "@/lib/env";
+import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { getAiRuntimeConfig, hasConfiguredAiProvider } from "@/server/ai/credentials";
+import { buildNeaPayload, dispatchToNea, type NeaSourceMessage } from "@/server/ai/nea-dispatch";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -134,6 +135,10 @@ async function executeTurn(conversationId: string): Promise<void> {
  * debounce 0 y sin pasar por el coalesce).
  */
 export async function runAgentTurn(conversationId: string): Promise<void> {
+  if (isNeaBrain()) {
+    await runNeaAgentTurn(conversationId);
+    return;
+  }
   const db = getDb();
   const convRows = await db
     .select()
@@ -307,6 +312,98 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   }
 }
 
+/**
+ * El turno cuando Nea (cerebro externo) es el cerebro por defecto: el CRM
+ * solo reúne lo que Nea necesita y le DESPACHA el turno completo — Nea decide
+ * ventana, patrones de handoff, agenda y todo lo demás por su cuenta.
+ *
+ * Compuertas que sí quedan del lado del CRM (lo único que Nea no puede ver
+ * sin preguntarle al CRM primero):
+ *  - existe la conversación y el perfil del agente;
+ *  - `profile.enabled` para conversaciones reales (el Laboratorio evalúa
+ *    igual aunque el agente aún no esté encendido);
+ *  - el horario de negocio en SaaS (`canAgentRespondNow`);
+ *  - handoff activo o IA apagada en la conversación — EXCEPTO cuando el
+ *    perfil tiene activación por mensajes (`activationEnabled`, columna
+ *    `preset_only`): ahí Nea necesita ver la conversación pausada para poder
+ *    reactivarla si el mensaje entrante coincide con la frase acordada;
+ *  - al menos un mensaje entrante (sin eso no hay nada que despachar).
+ */
+async function runNeaAgentTurn(conversationId: string): Promise<void> {
+  const db = getDb();
+  const convRows = await db
+    .select()
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversationId))
+    .limit(1);
+  const conversation = convRows[0];
+  if (!conversation) return;
+  const organizationId = conversation.organizationId;
+
+  const profileRows = await db
+    .select()
+    .from(schema.agentProfile)
+    .where(eq(schema.agentProfile.organizationId, organizationId))
+    .limit(1);
+  const profile = profileRows[0];
+  if (!profile) return;
+
+  if (!conversation.isTest && !profile.enabled) return;
+  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
+    return;
+  }
+  if ((conversation.handoffAt || !conversation.aiEnabled) && !profile.activationEnabled) {
+    return;
+  }
+
+  const contactRows = await db
+    .select({ waIdentity: schema.contact.waIdentity, name: schema.contact.name })
+    .from(schema.contact)
+    .where(eq(schema.contact.id, conversation.contactId))
+    .limit(1);
+  const contact = contactRows[0];
+  if (!contact) return;
+
+  const messageRows = await db
+    .select({
+      id: schema.message.id,
+      waMessageId: schema.message.waMessageId,
+      direction: schema.message.direction,
+      type: schema.message.type,
+      text: schema.message.text,
+      waTimestamp: schema.message.waTimestamp,
+      createdAt: schema.message.createdAt,
+      mediaWaId: schema.mediaAsset.waMediaId,
+    })
+    .from(schema.message)
+    .leftJoin(schema.mediaAsset, eq(schema.message.mediaAssetId, schema.mediaAsset.id))
+    .where(eq(schema.message.conversationId, conversationId))
+    .orderBy(desc(schema.message.createdAt))
+    .limit(20);
+  messageRows.reverse();
+
+  const sourceMessages: NeaSourceMessage[] = messageRows.map((m) => ({
+    id: m.id,
+    waMessageId: m.waMessageId,
+    direction: m.direction,
+    type: m.type,
+    text: m.text,
+    mediaWaId: m.mediaWaId,
+    timestamp: m.waTimestamp ?? m.createdAt,
+  }));
+
+  const payload = buildNeaPayload({
+    organizationId,
+    conversationId,
+    isTest: conversation.isTest,
+    contact: { identity: contact.waIdentity, name: contact.name },
+    messages: sourceMessages,
+  });
+  if (!payload.messages.length) return;
+
+  await dispatchToNea(payload);
+}
+
 type Conversation = typeof schema.conversation.$inferSelect;
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
@@ -337,14 +434,20 @@ async function deliverReply(
   }
 }
 
-/** Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031). */
-async function persistTestOutbound(
-  conversation: Conversation,
+/**
+ * Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031).
+ * Exportado porque `/api/bot/messages` reusa exactamente este camino cuando
+ * el cerebro externo (Nea) contesta una conversación de prueba — el mismo
+ * guardarraíl vale sin importar quién redactó el texto.
+ */
+export async function persistTestOutbound(
+  conversation: Pick<Conversation, "id" | "organizationId">,
   text: string
-): Promise<void> {
+): Promise<{ messageId: string }> {
   const db = getDb();
+  const id = newId("message");
   await db.insert(schema.message).values({
-    id: newId("message"),
+    id,
     organizationId: conversation.organizationId,
     conversationId: conversation.id,
     direction: "out",
@@ -358,6 +461,7 @@ async function persistTestOutbound(
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
     .where(eq(schema.conversation.id, conversation.id));
+  return { messageId: id };
 }
 
 export async function applyHandoff(
