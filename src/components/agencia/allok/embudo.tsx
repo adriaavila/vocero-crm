@@ -131,7 +131,7 @@ export function FunnelStrip({ stages, leads }: { stages: StageDto[]; leads: { st
   if (f.total === 0) return null;
 
   return (
-    <section aria-label="Embudo de ventas" className="flex snap-x items-stretch overflow-x-auto border-b px-4 py-3 sm:px-6">
+    <section aria-label="Embudo de ventas" className="relative flex snap-x items-stretch overflow-x-auto border-b px-4 py-3 sm:px-6">
       {/* El tablero cuenta dónde está cada lead hoy; el embudo, hasta dónde llegó. */}
       <div className="mr-5 flex w-[6.5rem] shrink-0 flex-col justify-center gap-1">
         <span className="kicker">Embudo</span>
