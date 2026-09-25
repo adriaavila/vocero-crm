@@ -122,22 +122,6 @@ export function ControlCenter({
             </h1>
             <p className="mt-2 text-[15px] leading-relaxed text-text-2">{summary}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/inbox"
-              className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-border-strong bg-background px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
-            >
-              Conversaciones
-            </Link>
-            {owner && (
-              <Link
-                href="/lab"
-                className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-border-strong bg-background px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
-              >
-                Probar el agente
-              </Link>
-            )}
-          </div>
         </header>
 
         {/* El centro de control. Tinta en los dos temas: es donde el punto se lee. */}
@@ -192,9 +176,12 @@ export function ControlCenter({
           <div className="border-t">
             <div className="flex items-center justify-between px-5 pb-1 pt-4 md:px-7">
               <h2 className="kicker">{centro.waiting > 0 ? "Primero lo que espera por ti" : "Lo último"}</h2>
-              <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground md:min-h-0">
-                Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-              </Link>
+              {/* Una acción por destino: si el estado ya lleva a Conversaciones, no se repite. */}
+              {centro.feed.length > 0 && !(snapshot.href === "/inbox" && action) && (
+                <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground md:min-h-0">
+                  Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              )}
             </div>
             {centro.feed.length ? (
               <ul className="pb-2">
