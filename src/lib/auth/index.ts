@@ -97,7 +97,16 @@ function createAuth() {
       requireEmailVerification: false,
       minPasswordLength: 8,
     },
-    plugins: [organization({ creatorRole: "owner" })],
+    plugins: [
+      organization({
+        creatorRole: "owner",
+        // En el SaaS cada negocio lo crea allok (autoservicio apagado): sin
+        // esto, cualquier usuario con sesión abría otro con
+        // `/organization/create`, saltándose el registro y el slug reservado.
+        allowUserToCreateOrganization: (user) =>
+          !isAllokSaaSMode() || isSaaSAdminEmail(user.email),
+      }),
+    ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         if (isAllokSaaSMode()) {

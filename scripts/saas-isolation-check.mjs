@@ -1,4 +1,6 @@
 import { chromium } from "playwright";
+// Crea sus negocios por el registro público: en modo SaaS eso sólo pasa con
+// WA_MOCK_ENABLED=true en `next dev` (el autoservicio está apagado).
 
 const base = process.env.APP_BASE_URL ?? "http://localhost:3000";
 const port = new URL(base).port;

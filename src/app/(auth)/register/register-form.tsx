@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function RegisterForm() {
+export default function RegisterForm({ adminMode = false }: { adminMode?: boolean }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -19,6 +19,7 @@ export default function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState<"basic" | "pro">("basic");
+  const [created, setCreated] = useState<{ email: string; url: string | null } | null>(null);
 
   useEffect(() => {
     const requestedPlan = new URLSearchParams(window.location.search).get("plan");
@@ -29,6 +30,24 @@ export default function RegisterForm() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    if (adminMode) {
+      // Alta hecha por allok: el servidor crea la cuenta sin tocar la sesión
+      // del admin y sin abrir el checkout.
+      const response = await fetch("/api/saas/businesses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      }).catch(() => null);
+      const payload = (await response?.json().catch(() => null)) as
+        { url?: string | null; message?: string } | null;
+      setLoading(false);
+      if (!response?.ok) {
+        setError(payload?.message ?? "No se pudo crear el negocio.");
+        return;
+      }
+      setCreated({ email, url: payload?.url ?? null });
+      return;
+    }
     const { error: err } = await signUp.email({ name, email, password });
     if (err) {
       setLoading(false);
@@ -71,6 +90,24 @@ export default function RegisterForm() {
     }
     router.push(destino);
     router.refresh();
+  }
+
+  if (created) {
+    return (
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle>Negocio creado</CardTitle>
+          <CardDescription>
+            {created.email} ya puede entrar{created.url ? <> en <a href={`${created.url}/login`} className="font-medium text-foreground hover:underline">{created.url.replace(/^https?:\/\//, "")}</a></> : null} con la contraseña que pusiste. Pídele que la cambie en Cuenta.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button type="button" variant="outline" className="w-full" onClick={() => { setCreated(null); setName(""); setEmail(""); setPassword(""); }}>
+            Crear otro
+          </Button>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (

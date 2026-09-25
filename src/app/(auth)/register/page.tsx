@@ -14,13 +14,14 @@ export const dynamic = "force-dynamic";
 /**
  * Con el autoservicio apagado, el registro del SaaS le dice a quien llega que
  * el alta se hace con allok. El formulario sólo lo ve un admin de allok, que
- * crea el negocio durante la puesta en marcha. El servidor cierra lo mismo en
+ * crea el negocio durante la puesta en marcha (`/api/saas/businesses`). El servidor cierra lo mismo en
  * `/sign-up/email`: esto es la cara, no la cerradura.
  */
 export default async function RegisterPage() {
   if (isAllokSaaSMode() && !SAAS_SELF_SERVE) {
     const session = await getAuth().api.getSession({ headers: await headers() }).catch(() => null);
     if (!isSaaSAdminEmail(session?.user.email)) return <SetupWithUs />;
+    return <RegisterForm adminMode />;
   }
   return <RegisterForm />;
 }
