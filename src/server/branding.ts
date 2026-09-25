@@ -6,7 +6,7 @@ import {
   SAAS_BRANDING,
   type Branding,
 } from "@/lib/branding";
-import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { isAllokBrand } from "@/lib/tenant-host";
 
 /** Marca guardada en organization.metadata (JSON de Better Auth). */
 
@@ -47,16 +47,16 @@ export async function getBrandingContext(
         .from(schema.organization)
         .limit(1);
   if (!rows[0]) {
-    return { organizationId: null, branding: isAllokSaaSMode() ? SAAS_BRANDING : DEFAULT_BRANDING };
+    return { organizationId: null, branding: isAllokBrand() ? SAAS_BRANDING : DEFAULT_BRANDING };
   }
   const meta = parseMetadata(rows[0].metadata);
   const customBranding = meta.branding as Partial<Branding> | undefined;
   const branding = normalizeBranding(customBranding ?? null);
   return {
     organizationId: rows[0].id,
-    // Un negocio del SaaS que no tocó su marca lleva su nombre y el acento de
-    // allok; una instancia Vocero, la marca por defecto de siempre.
-    branding: customBranding || !isAllokSaaSMode()
+    // Un negocio que no tocó su marca lleva su nombre y el acento de allok (en
+    // el SaaS y en una dedicada); con `ALLOK_BRAND=off`, la de Vocero.
+    branding: customBranding || !isAllokBrand()
       ? branding
       : { ...branding, name: rows[0].name, accent: SAAS_BRANDING.accent },
   };

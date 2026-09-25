@@ -9,7 +9,7 @@ import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
-import { isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import { getOrganizationBilling } from "@/server/saas/billing";
 // Capa de agencia: el estado de la operación (el punto de all ● k).
@@ -34,12 +34,11 @@ export default async function AppLayout({
   }
   if (!session) redirect("/login");
   const branding = await getBranding(session.organizationId);
-  const [billing, systemState] = saasMode
-    ? await Promise.all([
-        getOrganizationBilling(session.organizationId),
-        getSystemState(session.organizationId, session.role === "owner"),
-      ])
-    : [null, null];
+  const [billing, systemState] = await Promise.all([
+    saasMode ? getOrganizationBilling(session.organizationId) : null,
+    // El punto de all ● k: va donde va la marca allok, también en la dedicada.
+    isAllokBrand() ? getSystemState(session.organizationId, session.role === "owner") : null,
+  ]);
   const authSession = await getAuth().api.getSession({
     headers: requestHeaders,
   });

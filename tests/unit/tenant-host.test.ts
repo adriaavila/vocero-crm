@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  isAllokBrand,
   isKnownAllokHost,
   isLegacyAppHost,
   isSaaSAdminHost,
@@ -74,5 +75,23 @@ describe("tenant host resolver", () => {
     expect(slugifyTenantName("App")).toBe("negocio");
     expect(slugifyTenantName("Status")).toBe("negocio");
     expect(slugifyTenantName("CRM")).toBe("negocio");
+  });
+});
+
+describe("marca allok", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("va también en una dedicada: el SaaS apagado no apaga la marca", () => {
+    vi.stubEnv("ALLOK_SAAS_MODE", "");
+    vi.stubEnv("ALLOK_BRAND", "");
+    expect(isAllokBrand()).toBe(true);
+  });
+
+  it("ALLOK_BRAND=off deja la marca Vocero, salvo en el SaaS", () => {
+    vi.stubEnv("ALLOK_BRAND", "off");
+    vi.stubEnv("ALLOK_SAAS_MODE", "");
+    expect(isAllokBrand()).toBe(false);
+    vi.stubEnv("ALLOK_SAAS_MODE", "true");
+    expect(isAllokBrand()).toBe(true);
   });
 });

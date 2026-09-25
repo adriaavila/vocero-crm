@@ -48,7 +48,7 @@ export function AppShell({
   /** La navegación Allok reduce el CRM a las cuatro acciones principales. */
   saasMode?: boolean;
   saasPlan?: SaaSPlan | null;
-  /** Capa de agencia: el estado resuelto en el servidor; null fuera del SaaS. */
+  /** Capa de agencia: el estado resuelto en el servidor; null sin la marca allok. */
   systemState?: SystemSnapshot | null;
   children: React.ReactNode;
 }) {
@@ -112,6 +112,7 @@ export function AppShell({
         theme={theme}
         agenda={agenda}
         saasMode={saasMode}
+        allokBrand={Boolean(systemState)}
         saasPlan={saasPlan}
         open={navOpen}
         onClose={() => setNavOpen(false)}
