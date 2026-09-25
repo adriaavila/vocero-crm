@@ -13,6 +13,10 @@ import {
 import { canAutomate } from "@/server/agencia/entitlements";
 import { isExternalBrainConfigured } from "@/lib/env";
 import type { ConversationDto } from "@/lib/types";
+import { hasSaaSPlan } from "@/server/agencia/entitlements";
+import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
+import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
+import { dayIsoInTz } from "@/lib/time/slots";
 
 /**
  * Capa de agencia (fork) — el estado de la operación con datos reales: el
@@ -114,11 +118,26 @@ export type FeedRow = {
   at: string | null;
 };
 
+/** Una conversación de hoy en la línea del día: el minuto en que el cliente escribió por última vez. */
+export type DayPoint = { id: string; contactId: string; name: string; state: SystemState; minute: number };
+
 export type Centro = {
   today: { conversations: number; solo: number; nuevos: number };
   waiting: number;
   feed: FeedRow[];
   timezone: string;
+  /** Inicio, «Hoy, hora por hora»: quién escribió y quién contesta cada minuto del día. */
+  day: {
+    points: DayPoint[];
+    team: Span[];
+    agent: Span[];
+    /** A qué minuto abre el equipo mañana (null: no abre). */
+    tomorrow: number | null;
+    agentOn: boolean;
+    /** Sin horario de respuesta el agente del SaaS no contesta nunca. */
+    configured: boolean;
+    allDay: boolean;
+  };
 };
 
 function safeTimeZone(tz: string): string {
@@ -191,6 +210,26 @@ export async function getCentro(organizationId: string, conversations: Conversat
     }));
   const row = (totals as unknown as { conversations: number; solo: number; nuevos: number }[])[0];
 
+  // La línea del día: un punto por conversación de hoy, en el minuto en que
+  // el cliente escribió por última vez, con el color de su estado.
+  const today = dayIsoInTz(new Date(now), tz);
+  const points = rows
+    .filter(({ c }) => c.lastInboundAt && dayIsoInTz(new Date(c.lastInboundAt), tz) === today)
+    .map(({ c, state }): DayPoint => ({
+      id: c.id,
+      contactId: c.contact.id,
+      name: c.contact.name,
+      state,
+      minute: minuteInTz(new Date(c.lastInboundAt as string), tz),
+    }))
+    .sort((a, b) => a.minute - b.minute);
+  const schedule = await getBusinessHours(organizationId);
+  const allDay = schedule.responseMode === "all_day";
+  const pro = allDay && (await hasSaaSPlan(organizationId, "pro"));
+  const weekday = weekdayInTz(new Date(now), tz);
+  const shifts = coverage(schedule.weeklyHours, schedule.responseMode, pro, weekday);
+  const tomorrow = coverage(schedule.weeklyHours, schedule.responseMode, pro, nextDay(weekday)).team[0]?.[0] ?? null;
+
   return {
     today: {
       conversations: row?.conversations ?? 0,
@@ -200,6 +239,14 @@ export async function getCentro(organizationId: string, conversations: Conversat
     waiting: rows.filter((r) => r.state === "atencion").length,
     feed,
     timezone: tz,
+    day: {
+      points,
+      ...shifts,
+      tomorrow,
+      agentOn: agent.on,
+      configured: hasConfiguredBusinessHours(schedule),
+      allDay,
+    },
   };
 }
 

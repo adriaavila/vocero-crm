@@ -17,6 +17,7 @@ import {
   type AgencyProfile,
 } from "@/components/agencia/agent-agency-cards";
 import { useActivationGate } from "@/components/agencia/activation-gate";
+import { AgentWeek } from "@/components/agencia/allok/agent-week";
 
 type Profile = {
   enabled: boolean;
@@ -297,6 +298,8 @@ function BusinessHoursSection() {
             <span className="mt-1 block text-xs leading-5 text-text-3">Responde durante toda la jornada, con supervisión humana siempre disponible.</span>
           </button>
         </div>
+
+        <AgentWeek hours={currentSettings.weeklyHours} mode={settings.responseMode} timezone={settings.timezone} pro={canUseAllDay} />
 
         {settings.responseMode === "outside_hours" && <div className="space-y-2 rounded-md border p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-3">Horario del negocio</p>
