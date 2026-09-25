@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TimezoneSelect } from "@/components/ui/timezone-select";
 import { cn } from "@/lib/utils";
 import {
   CONNECTOR_META,
@@ -308,11 +309,11 @@ export function AgendaClient() {
           </div>
           <div className="col-span-2 space-y-1.5">
             <Label htmlFor="tz">Zona horaria</Label>
-            <Input
+            <TimezoneSelect
               id="tz"
               value={settings.timezone}
-              onChange={(e) => patch({ timezone: e.target.value })}
-              placeholder="America/Mexico_City"
+              onValueChange={(timezone) => patch({ timezone })}
+              className="w-full"
             />
           </div>
         </CardContent>
