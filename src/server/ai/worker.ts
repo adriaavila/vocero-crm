@@ -5,19 +5,33 @@ import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipel
 
 const POLL_MS = 1_000;
 const STALE_AFTER_MS = 10 * 60_000;
+const DEFAULT_CONCURRENCY = 4;
+
+type WorkerState = { started: boolean; id: string; inFlight: number };
 
 const globalForWorker = globalThis as unknown as {
-  __voceroAgentWorker?: { started: boolean; id: string };
+  __voceroAgentWorker?: WorkerState;
 };
 
-function workerState() {
+function workerState(): WorkerState {
   if (!globalForWorker.__voceroAgentWorker) {
     globalForWorker.__voceroAgentWorker = {
       started: false,
       id: `agent-worker-${process.pid}-${crypto.randomUUID()}`,
+      inFlight: 0,
     };
   }
   return globalForWorker.__voceroAgentWorker;
+}
+
+/** Solo para tests: limpia el estado global del worker (cupo, id, arranque). */
+export function resetWorkerStateForTests(): void {
+  globalForWorker.__voceroAgentWorker = undefined;
+}
+
+function workerConcurrency(): number {
+  const raw = Number(process.env.AGENT_WORKER_CONCURRENCY);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_CONCURRENCY;
 }
 
 /** Arranca una sola vez por proceso; Coolify mantiene este proceso vivo. */
@@ -26,7 +40,7 @@ export function startAgentWorker(): void {
   const state = workerState();
   if (state.started) return;
   state.started = true;
-  void poll(state.id);
+  void poll(state);
 }
 
 /** La inserción de un trabajo despierta el worker sin crear otro intervalo. */
@@ -34,17 +48,48 @@ export function kickAgentWorker(): void {
   startAgentWorker();
 }
 
-async function poll(workerId: string): Promise<void> {
+async function poll(state: WorkerState): Promise<void> {
   try {
     await markStaleJobs();
-    const job = await claimNextJob(workerId);
-    if (job) await processJob(job, workerId);
+    await claimUpToCapacity(state);
   } catch (error) {
     console.error("[agent-worker] poll falló:", error);
   }
 
-  const timer = setTimeout(() => void poll(workerId), POLL_MS);
+  const timer = setTimeout(() => void poll(state), POLL_MS);
   timer.unref?.();
+}
+
+/**
+ * Reclama trabajos hasta llenar el cupo (`AGENT_WORKER_CONCURRENCY`, default
+ * 4) SIN esperar a que terminen los que ya están en vuelo — cada uno corre su
+ * propio turno en paralelo. El claim ya usa `FOR UPDATE SKIP LOCKED` y hay un
+ * índice único de trabajo activo por conversación (`claimNextJob`), así que
+ * varios cupos del mismo proceso nunca chocan por el mismo trabajo.
+ *
+ * Antes, un solo turno lento (un despacho a Nea colgado, o simplemente
+ * tardado) bloqueaba a TODOS los demás negocios: `poll` esperaba a que ese
+ * turno terminara — `await processJob(...)` — antes de reclamar el
+ * siguiente, y el reintento solo se reprogramaba DESPUÉS de esa espera.
+ */
+export async function claimUpToCapacity(state: WorkerState = workerState()): Promise<void> {
+  const capacity = workerConcurrency() - state.inFlight;
+  for (let i = 0; i < capacity; i++) {
+    const job = await claimNextJob(state.id);
+    if (!job) break;
+    state.inFlight++;
+    // `processJob` ya atrapa el fallo del turno y lo convierte en
+    // `needs_review`, pero su PROPIA limpieza (el `update`/`applyHandoff` del
+    // catch) puede fallar a su vez — sin este `.catch`, eso se escapa como
+    // una promesa rechazada sin nadie que la maneje.
+    void processJob(job, state.id)
+      .catch((error) => {
+        console.error(`[agent-worker] limpieza del trabajo ${job.id} falló:`, error);
+      })
+      .finally(() => {
+        state.inFlight--;
+      });
+  }
 }
 
 async function markStaleJobs(): Promise<void> {

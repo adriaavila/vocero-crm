@@ -5,7 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { encenderConversacionesEnEspera } from "@/server/agencia/ia-inicial";
 import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
-import { isAiConfiguredForOrganization } from "@/server/ai/credentials";
+import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { getReadiness, saasActivationBlockers } from "@/server/readiness";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
@@ -39,7 +39,7 @@ export const GET = withOwner(async (session) => {
       presetOnly: p.activationEnabled,
       presetReplies: activation.presetReplies,
     },
-    aiConfigured: await isAiConfiguredForOrganization(session.organizationId),
+    aiConfigured: await isAgentAvailableForOrganization(session.organizationId),
   });
 });
 
@@ -50,7 +50,7 @@ export const PUT = withOwner(async (session, req: Request) => {
     return apiError(402, "billing_inactive", "Activa o recupera tu suscripción para encender Allok.");
   }
   if (body.data.enabled === true && isAllokSaaSMode()) {
-    if (!(await isAiConfiguredForOrganization(session.organizationId))) {
+    if (!(await isAgentAvailableForOrganization(session.organizationId))) {
       return apiError(503, "ai_not_configured", "La IA todavía no está configurada en esta instancia.");
     }
     const credentials = await getCredentialsByOrg(session.organizationId);

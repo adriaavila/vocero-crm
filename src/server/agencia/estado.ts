@@ -11,7 +11,7 @@ import {
   type WhatsAppLink,
 } from "@/lib/estado";
 import { canAutomate } from "@/server/agencia/entitlements";
-import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
+import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
 import type { ConversationDto } from "@/lib/types";
 import { automationAccessFromMetadata, hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
@@ -30,9 +30,11 @@ async function agentOn(organizationId: string): Promise<{ on: boolean; timezone:
     .from(schema.agentProfile)
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .limit(1);
-  // Un cerebro externo (BOT_API_KEY) también contesta: no es «apagado».
+  // Un cerebro externo LEGADO (BOT_API_KEY sin despacho) también contesta: no
+  // es «apagado». Nea (con despacho) NO cuenta aquí — respeta
+  // `profile.enabled` igual que Rei (ver `cerebro-externo.ts`).
   return {
-    on: Boolean(rows[0]?.enabled) || (await cerebroExternoAtiende(organizationId)),
+    on: Boolean(rows[0]?.enabled) || (await cerebroExternoLegadoSiempreOn(organizationId)),
     timezone: rows[0]?.timezone ?? "UTC",
   };
 }

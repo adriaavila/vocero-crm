@@ -57,10 +57,20 @@ const envSchema = z.object({
   GOOGLE_OAUTH_BASE_URL: z.string().url().default("https://oauth2.googleapis.com"),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
+  // SaaS: cupo de turnos en paralelo del worker de agent_job (server/ai/
+  // worker.ts). Documentada aquí para que quede validada junto al resto del
+  // entorno; el worker la lee de `process.env` directamente (no de
+  // `getEnv()`) porque corre fuera del ciclo de una request.
+  AGENT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WA_MOCK_ENABLED: z.string().optional(),
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
-  // Sin ella, toda esa superficie responde 401.
+  // Sin ella, toda esa superficie responde 401. También firma el despacho a
+  // Nea (HMAC-SHA256 del body exacto) cuando NEA_DISPATCH_URL está presente.
   BOT_API_KEY: z.string().optional(),
+  // URL del servicio de Nea al que el CRM despacha cada turno entrante
+  // (`POST ${NEA_DISPATCH_URL}`). Sin ella, Rei (el agente interno) contesta
+  // si tiene proveedor de IA configurado.
+  NEA_DISPATCH_URL: z.string().url().optional(),
   // Secreto compartido con allok para `POST /api/provision`: allok entrega ahí
   // las credenciales de un número recién conectado. Sin ella, la ruta responde 401.
   PROVISION_API_KEY: z.string().min(16).optional(),
@@ -145,19 +155,40 @@ export function isAiConfigured(): boolean {
   return hasToken(process.env.OPENAI_API_KEY) || hasToken(process.env.OPENROUTER_API_TOKEN);
 }
 
-/** El bot externo tiene prioridad para no responder dos veces al mismo mensaje. */
-export function shouldRunInternalAgent(): boolean {
-  return isAiConfigured() && (process.env.BOT_API_KEY?.trim().length ?? 0) < 16;
-}
-
-/** true si esta instancia tiene un cerebro externo conectado por /api/bot/*. */
+/**
+ * true si esta instancia tiene un cerebro externo conectado por `/api/bot/*`
+ * — Nea u otro bot propio, sin importar si además está enganchado por
+ * despacho (`isNeaBrain()`). Idéntico al comportamiento de siempre: un
+ * `BOT_API_KEY` configurado significa "hay un bot al mando", y Rei se hace a
+ * un lado. Cambiar ESTO por algo condicionado a `NEA_DISPATCH_URL` fue el
+ * bug que hacía que una instancia dedicada con `BOT_API_KEY` + una clave de
+ * IA propia terminara con Rei respondiendo A LA VEZ que su bot externo.
+ */
 export function isExternalBrainConfigured(): boolean {
   return (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
 }
 
+/**
+ * true si Nea (el cerebro externo) está lista para recibir despachos:
+ * necesita a dónde mandar el turno (`NEA_DISPATCH_URL`) y con qué firmarlo
+ * (`BOT_API_KEY`, ≥16 caracteres — lo mismo que `isExternalBrainConfigured`,
+ * más específico). Sin `NEA_DISPATCH_URL`, un `BOT_API_KEY` configurado sigue
+ * significando "hay un cerebro externo LEGADO al mando" (`isExternalBrainConfigured`),
+ * no "no hay ningún cerebro": el trato con ese bot no cambia con este PR.
+ */
+export function isNeaBrain(): boolean {
+  const hasDispatchUrl = (process.env.NEA_DISPATCH_URL?.trim().length ?? 0) > 0;
+  return hasDispatchUrl && isExternalBrainConfigured();
+}
+
+/** El bot externo (Nea o legado) tiene prioridad para no responder dos veces al mismo mensaje. */
+export function shouldRunInternalAgent(): boolean {
+  return isAiConfigured() && !isExternalBrainConfigured();
+}
+
 /** true si responde el agente interno o un cerebro externo autenticado. */
 export function isAgentConfigured(): boolean {
-  return isAiConfigured() || (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+  return isAiConfigured() || isExternalBrainConfigured();
 }
 
 export function isWahaConfigured(): boolean {

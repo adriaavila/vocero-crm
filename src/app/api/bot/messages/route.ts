@@ -2,8 +2,10 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
+import { isNeaBrain } from "@/lib/env";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
+import { persistTestOutbound } from "@/server/ai/pipeline";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,9 @@ export async function POST(req: Request) {
   const db = getDb();
   const convs = await db
     .select({
+      id: schema.conversation.id,
+      organizationId: schema.conversation.organizationId,
+      isTest: schema.conversation.isTest,
       aiEnabled: schema.conversation.aiEnabled,
       handoffAt: schema.conversation.handoffAt,
     })
@@ -54,6 +59,19 @@ export async function POST(req: Request) {
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
   if (!conv.aiEnabled || conv.handoffAt) {
     return apiError(409, "ai_paused", "La IA está en pausa en esta conversación");
+  }
+
+  // Laboratorio CON Nea: el runner llama a `runAgentTurn` directo (sin pasar
+  // por esta ruta), pero Nea SÍ contesta por aquí — se persiste como saliente
+  // de prueba y JAMÁS toca la API real (FR-031).
+  //
+  // SIN Nea (comportamiento de `main`, sin cambios): un cerebro externo
+  // legado jamás debería estar hablándole a una conversación de prueba — esas
+  // no son alcanzables desde fuera a propósito — así que aquí sigue el
+  // guardarraíl duro de siempre: 409 `sandbox_violation` vía `sendText`.
+  if (conv.isTest && isNeaBrain()) {
+    const { messageId } = await persistTestOutbound(conv, body.data.text);
+    return Response.json({ messageId });
   }
 
   try {

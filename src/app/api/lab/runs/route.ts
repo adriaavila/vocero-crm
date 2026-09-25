@@ -3,7 +3,7 @@ import { apiError, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { RunConflictError, startRun } from "@/server/lab/runner";
-import { isAiConfiguredForOrganization } from "@/server/ai/credentials";
+import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -36,12 +36,12 @@ export const GET = withOwner(async (session) => {
   });
   return Response.json({
     runs: withDelta,
-    aiConfigured: await isAiConfiguredForOrganization(session.organizationId),
+    aiConfigured: await isAgentAvailableForOrganization(session.organizationId),
   });
 });
 
 export const POST = withOwner(async (session) => {
-  if (!(await isAiConfiguredForOrganization(session.organizationId))) {
+  if (!(await isAgentAvailableForOrganization(session.organizationId))) {
     return apiError(
       409,
       "ai_not_configured",

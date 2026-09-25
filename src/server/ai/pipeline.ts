@@ -1,11 +1,17 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
-import { getEnv } from "@/lib/env";
+import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { getAiRuntimeConfig, hasConfiguredAiProvider } from "@/server/ai/credentials";
+import {
+  buildNeaPayload,
+  dispatchToNea,
+  selectMessagesForNea,
+  type NeaSourceMessage,
+} from "@/server/ai/nea-dispatch";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -20,7 +26,7 @@ import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
-import { hasSaaSPlan } from "@/server/agencia/entitlements";
+import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAgentRespondNow } from "@/server/business-hours";
 
@@ -118,6 +124,15 @@ async function executeTurn(conversationId: string): Promise<void> {
     await runAgentTurn(conversationId);
   } catch (err) {
     console.error("[agente] turno falló:", err);
+    // Con Nea: mismo trato que el worker de SaaS ante un despacho que agotó
+    // sus reintentos — un humano se entera por el handoff en vez de que la
+    // conversación se quede pausada en silencio. Con Rei: EXACTAMENTE el
+    // comportamiento de `main`, solo log — un fallo del LLM interno no debe
+    // escalar a un humano solo, es lo que ya decide `applyHandoff("error")`
+    // más arriba en `runAgentTurn` cuando corresponde.
+    if (isNeaBrain()) {
+      await applyHandoffOnFailure(conversationId).catch(() => {});
+    }
   } finally {
     entry.running = false;
     if (entry.pending) {
@@ -129,11 +144,27 @@ async function executeTurn(conversationId: string): Promise<void> {
   }
 }
 
+/** Handoff `error` para el conversationId de un turno legado que reventó. */
+async function applyHandoffOnFailure(conversationId: string): Promise<void> {
+  const rows = await getDb()
+    .select({ organizationId: schema.conversation.organizationId })
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversationId))
+    .limit(1);
+  const organizationId = rows[0]?.organizationId;
+  if (!organizationId) return;
+  await applyHandoff(conversationId, organizationId, "error");
+}
+
 /**
  * Ejecuta UN turno del agente ahora (el Laboratorio lo llama directo, con
  * debounce 0 y sin pasar por el coalesce).
  */
 export async function runAgentTurn(conversationId: string): Promise<void> {
+  if (isNeaBrain()) {
+    await runNeaAgentTurn(conversationId);
+    return;
+  }
   const db = getDb();
   const convRows = await db
     .select()
@@ -307,6 +338,174 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
   }
 }
 
+/**
+ * El turno cuando Nea (cerebro externo) es el cerebro por defecto: el CRM
+ * solo reúne lo que Nea necesita y le DESPACHA el turno completo — Nea decide
+ * ventana, patrones de handoff, agenda y todo lo demás por su cuenta.
+ *
+ * Compuertas que sí quedan del lado del CRM (lo único que Nea no puede ver
+ * sin preguntarle al CRM primero):
+ *  - existe la conversación y el perfil del agente;
+ *  - `profile.enabled` para conversaciones reales (el Laboratorio evalúa
+ *    igual aunque el agente aún no esté encendido);
+ *  - el horario de negocio en SaaS (`canAgentRespondNow`);
+ *  - handoff activo o IA apagada en la conversación — EXCEPTO cuando el
+ *    perfil tiene activación por mensajes (`activationEnabled`, columna
+ *    `preset_only`): ahí Nea necesita ver la conversación pausada para poder
+ *    reactivarla si el mensaje entrante coincide con la frase acordada;
+ *  - al menos un mensaje entrante (sin eso no hay nada que despachar).
+ */
+async function runNeaAgentTurn(conversationId: string): Promise<void> {
+  const db = getDb();
+  const convRows = await db
+    .select()
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversationId))
+    .limit(1);
+  const conversation = convRows[0];
+  if (!conversation) return;
+  const organizationId = conversation.organizationId;
+
+  const profileRows = await db
+    .select()
+    .from(schema.agentProfile)
+    .where(eq(schema.agentProfile.organizationId, organizationId))
+    .limit(1);
+  const profile = profileRows[0];
+  if (!profile) return;
+
+  if (!conversation.isTest && !profile.enabled) return;
+  // Mismo freno de facturación que `sendText` aplica al entregar la respuesta
+  // de Rei: sin esto, una organización con la automatización pausada seguía
+  // recibiendo turnos despachados a Nea (que sí sabe cómo responder, así que
+  // el guard tiene que estar ANTES del despacho, no después).
+  if (!conversation.isTest && !(await canAutomate(organizationId))) return;
+  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
+    return;
+  }
+  if ((conversation.handoffAt || !conversation.aiEnabled) && !profile.activationEnabled) {
+    return;
+  }
+
+  const contactRows = await db
+    .select({ waIdentity: schema.contact.waIdentity, name: schema.contact.name })
+    .from(schema.contact)
+    .where(eq(schema.contact.id, conversation.contactId))
+    .limit(1);
+  const contact = contactRows[0];
+  if (!contact) return;
+
+  const sourceMessages = conversation.isTest
+    ? await neaMessagesSinceLastOutbound(db, conversationId)
+    : await neaRecentInboundMessages(db, conversationId);
+
+  const payload = buildNeaPayload({
+    organizationId,
+    conversationId,
+    isTest: conversation.isTest,
+    contact: { identity: contact.waIdentity, name: contact.name },
+    messages: sourceMessages,
+  });
+  if (!payload.messages.length) return;
+
+  await dispatchToNea(payload);
+}
+
+type Db = ReturnType<typeof getDb>;
+
+function toNeaSourceMessages(
+  rows: {
+    id: string;
+    waMessageId: string | null;
+    direction: "in" | "out";
+    type: string;
+    text: string | null;
+    waTimestamp: Date | null;
+    createdAt: Date;
+    mediaWaId: string | null;
+  }[]
+): NeaSourceMessage[] {
+  return rows.map((m) => ({
+    id: m.id,
+    waMessageId: m.waMessageId,
+    direction: m.direction,
+    type: m.type,
+    text: m.text,
+    mediaWaId: m.mediaWaId,
+    timestamp: m.waTimestamp ?? m.createdAt,
+  }));
+}
+
+/**
+ * Laboratorio (`isTest`): los entrantes DESPUÉS del último saliente. Un
+ * mensaje de prueba nunca trae `wa_message_id` (siempre `null`), así que Nea
+ * no puede dedupearlos — hay que recortar exactamente a lo nuevo.
+ */
+async function neaMessagesSinceLastOutbound(
+  db: Db,
+  conversationId: string
+): Promise<NeaSourceMessage[]> {
+  const rows = await db
+    .select({
+      id: schema.message.id,
+      waMessageId: schema.message.waMessageId,
+      direction: schema.message.direction,
+      type: schema.message.type,
+      text: schema.message.text,
+      waTimestamp: schema.message.waTimestamp,
+      createdAt: schema.message.createdAt,
+      mediaWaId: schema.mediaAsset.waMediaId,
+    })
+    .from(schema.message)
+    .leftJoin(schema.mediaAsset, eq(schema.message.mediaAssetId, schema.mediaAsset.id))
+    .where(eq(schema.message.conversationId, conversationId))
+    .orderBy(desc(schema.message.createdAt))
+    .limit(20);
+  rows.reverse();
+  return selectMessagesForNea(toNeaSourceMessages(rows));
+}
+
+/**
+ * Conversación real: los últimos hasta 10 entrantes de las últimas 24h, SIN
+ * recortar por "desde el último saliente". Un mensaje que llega mientras el
+ * despacho anterior seguía en vuelo con "desde el último saliente" se perdía
+ * — nunca aparecía en ningún despacho porque para cuando Nea contestaba (y
+ * quedaba un saliente), ese entrante ya había quedado ANTES del corte de la
+ * siguiente selección. Mandar siempre la ventana completa (con su
+ * `wa_message_id`) y dejar que Nea dedupee por id es lo que garantiza que
+ * todo mensaje aparezca en al menos un despacho.
+ */
+async function neaRecentInboundMessages(
+  db: Db,
+  conversationId: string
+): Promise<NeaSourceMessage[]> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      id: schema.message.id,
+      waMessageId: schema.message.waMessageId,
+      direction: schema.message.direction,
+      type: schema.message.type,
+      text: schema.message.text,
+      waTimestamp: schema.message.waTimestamp,
+      createdAt: schema.message.createdAt,
+      mediaWaId: schema.mediaAsset.waMediaId,
+    })
+    .from(schema.message)
+    .leftJoin(schema.mediaAsset, eq(schema.message.mediaAssetId, schema.mediaAsset.id))
+    .where(
+      and(
+        eq(schema.message.conversationId, conversationId),
+        eq(schema.message.direction, "in"),
+        gte(schema.message.createdAt, since)
+      )
+    )
+    .orderBy(desc(schema.message.createdAt))
+    .limit(10);
+  rows.reverse();
+  return toNeaSourceMessages(rows);
+}
+
 type Conversation = typeof schema.conversation.$inferSelect;
 
 /** Entrega la respuesta: envío real o persistencia sandbox (is_test). */
@@ -337,14 +536,20 @@ async function deliverReply(
   }
 }
 
-/** Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031). */
-async function persistTestOutbound(
-  conversation: Conversation,
+/**
+ * Mensaje saliente del sandbox: se persiste, JAMÁS toca la API (FR-031).
+ * Exportado porque `/api/bot/messages` reusa exactamente este camino cuando
+ * el cerebro externo (Nea) contesta una conversación de prueba — el mismo
+ * guardarraíl vale sin importar quién redactó el texto.
+ */
+export async function persistTestOutbound(
+  conversation: Pick<Conversation, "id" | "organizationId">,
   text: string
-): Promise<void> {
+): Promise<{ messageId: string }> {
   const db = getDb();
+  const id = newId("message");
   await db.insert(schema.message).values({
-    id: newId("message"),
+    id,
     organizationId: conversation.organizationId,
     conversationId: conversation.id,
     direction: "out",
@@ -358,6 +563,7 @@ async function persistTestOutbound(
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
     .where(eq(schema.conversation.id, conversation.id));
+  return { messageId: id };
 }
 
 export async function applyHandoff(

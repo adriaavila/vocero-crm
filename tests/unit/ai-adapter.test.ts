@@ -9,13 +9,31 @@ describe("isAgentConfigured", () => {
   it("acepta un cerebro externo sin activar el LLM interno", () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
 
     expect(isAgentConfigured()).toBe(true);
   });
 
-  it("da prioridad al cerebro externo si ambos están configurados", () => {
+  it("BOT_API_KEY sola (sin NEA_DISPATCH_URL) sigue contando como cerebro externo — NO-OP crítico del despacho a Nea", () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "");
+
+    expect(isAgentConfigured()).toBe(true);
+  });
+
+  it("da prioridad al cerebro externo si Nea y Rei están configurados", () => {
     vi.stubEnv("OPENAI_API_KEY", "token-openai");
     vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
+
+    expect(shouldRunInternalAgent()).toBe(false);
+  });
+
+  it("BOT_API_KEY sola (sin NEA_DISPATCH_URL) sigue apagando a Rei — igual que en main", () => {
+    vi.stubEnv("OPENAI_API_KEY", "token-openai");
+    vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "");
 
     expect(shouldRunInternalAgent()).toBe(false);
   });

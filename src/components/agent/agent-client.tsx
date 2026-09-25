@@ -38,7 +38,19 @@ type KbEntry = {
   content: string | null;
 };
 
-export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
+export function AgentClient({
+  saasMode = false,
+  externalBrainAlwaysOn = false,
+}: {
+  saasMode?: boolean;
+  /**
+   * Un cerebro externo LEGADO (BOT_API_KEY sin despacho) contesta pase lo
+   * que pase con `profile.enabled` — el CRM no lo controla. Calculado en el
+   * servidor con el mismo ingrediente que `agentOn` en `server/agencia/
+   * estado.ts` (`cerebroExternoLegadoSiempreOn`).
+   */
+  externalBrainAlwaysOn?: boolean;
+}) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [aiCredentials, setAiCredentials] = useState<AgencyAiCredentials | null>(null);
@@ -140,6 +152,23 @@ export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
           />
         </div>
       </header>
+
+      <p className="px-4 pt-3 text-sm text-muted-foreground sm:px-6">
+        {(() => {
+          // Un cerebro externo legado contesta con el interruptor apagado
+          // (no lo controla el CRM): sin esto, esta línea decía "Agente
+          // apagado" mientras ese bot seguía respondiendo de verdad.
+          const agentIsOn = profile.enabled || externalBrainAlwaysOn;
+          if (!agentIsOn) return "Agente apagado. Nadie responde automáticamente.";
+          const name = profile.name?.trim() || "Tu agente";
+          // El horario de atención solo existe como concepto en SaaS
+          // (canAgentRespondNow); una instancia dedicada contesta apenas
+          // llega el mensaje, así que prometer un horario ahí sería falso.
+          return saasMode
+            ? `${name} está encendido y responde según tu horario de atención.`
+            : `${name} está encendido y responde en tu WhatsApp.`;
+        })()}
+      </p>
 
       {saveError && (
         <p role="alert" className="mx-4 mt-4 rounded-lg border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text sm:mx-6 sm:mt-6">
