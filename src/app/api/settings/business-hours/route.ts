@@ -37,7 +37,7 @@ export const PUT = withOwner(async (session, request: Request) => {
     body.data.responseMode === "all_day" &&
     !(await hasSaaSPlan(session.organizationId, "pro"))
   ) {
-    return apiError(402, "pro_required", "La atención todo el día está disponible en Pro.");
+    return apiError(402, "pro_required", "La atención todo el día está disponible en Completo.");
   }
 
   try {

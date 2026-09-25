@@ -55,7 +55,7 @@ export function ControlCenter({
   centro: Centro;
   overview: Overview;
   readiness: ReadinessResponse | null;
-  /** Ventas, Agenda y Equipo (plan Pro activo). */
+  /** Ventas, Agenda y Equipo (plan Completo activo). */
   pro: boolean;
   billingNotice?: string | null;
   businessName: string;
@@ -343,7 +343,7 @@ function Upsell({ owner }: { owner: boolean }) {
       <FunnelChart stages={GHOST_STAGES} ghost />
       <div className="px-5 py-5">
         <p className="text-[14px] leading-relaxed text-text-2">
-          Con Pro cada conversación entra a un tablero de ventas, el agente agenda
+          Con Completo cada conversación entra a un tablero de ventas, el agente agenda
           citas y tu equipo atiende desde la misma bandeja.
         </p>
         {owner && (

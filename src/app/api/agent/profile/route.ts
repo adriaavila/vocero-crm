@@ -59,7 +59,7 @@ export const PUT = withOwner(async (session, req: Request) => {
     }
     const businessHours = await getBusinessHours(session.organizationId);
     if (businessHours.responseMode === "all_day" && !(await hasSaaSPlan(session.organizationId, "pro"))) {
-      return apiError(402, "pro_required", "La atención todo el día está disponible en Pro.");
+      return apiError(402, "pro_required", "La atención todo el día está disponible en Completo.");
     }
     if (!hasConfiguredBusinessHours(businessHours)) {
       return apiError(409, "business_hours_required", "Define al menos un horario de respuesta antes de activar Allok.");

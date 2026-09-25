@@ -48,7 +48,7 @@ export const POST = withProOwner(async (session, req: Request) => {
     .from(schema.member)
     .where(scoped(schema.member.organizationId, session.organizationId));
   if ((memberCount[0]?.count ?? 0) >= 3) {
-    return apiError(409, "member_limit", "Pro incluye hasta 3 usuarios, incluido el propietario");
+    return apiError(409, "member_limit", "Completo incluye hasta 3 usuarios, incluido el propietario");
   }
 
   const auth = getAuth();

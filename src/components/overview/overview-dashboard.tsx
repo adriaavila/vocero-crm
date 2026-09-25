@@ -137,10 +137,10 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
             </div>
           </div>
           <div className="overflow-hidden rounded-lg border bg-background shadow-sm">
-            <ModuleTitle title={proEnabled ? "Pipeline" : "Ventas"} right={proEnabled ? <Link href="/pipeline" className="text-xs font-medium text-brand-text">Ver tablero</Link> : <Badge variant="secondary">Pro</Badge>} />
+            <ModuleTitle title={proEnabled ? "Pipeline" : "Ventas"} right={proEnabled ? <Link href="/pipeline" className="text-xs font-medium text-brand-text">Ver tablero</Link> : <Badge variant="secondary">Completo</Badge>} />
             {proEnabled ? <div className="space-y-4 p-5">
               {data.pipeline.map((stage) => <div key={stage.stageId}><div className="mb-1.5 flex justify-between text-xs"><span>{stage.name}</span><span className="font-semibold">{stage.count}</span></div><div className="h-2 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-brand" style={{ width: `${(stage.count / maxPipeline) * 100}%` }} /></div></div>)}
-            </div> : <div className="flex min-h-64 flex-col items-center justify-center p-6 text-center"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-tint text-brand-text"><LockKeyhole className="h-4 w-4" /></span><p className="mt-3 text-sm font-semibold">Convierte conversaciones en ventas</p><p className="mt-1 max-w-xs text-xs leading-5 text-text-3">Pipeline y agenda están incluidos en Pro, cuando tu equipo ya está listo para crecer.</p><Link href="/settings/billing" className="mt-4 inline-flex h-9 items-center rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg hover:bg-brand-hover">Ver Pro <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" /></Link></div>}
+            </div> : <div className="flex min-h-64 flex-col items-center justify-center p-6 text-center"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-tint text-brand-text"><LockKeyhole className="h-4 w-4" /></span><p className="mt-3 text-sm font-semibold">Convierte conversaciones en ventas</p><p className="mt-1 max-w-xs text-xs leading-5 text-text-3">Pipeline y agenda están incluidos en Completo, cuando tu equipo ya está listo para crecer.</p><Link href="/settings/billing" className="mt-4 inline-flex h-9 items-center rounded-md bg-brand px-3 text-xs font-semibold text-brand-fg hover:bg-brand-hover">Ver Completo <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" /></Link></div>}
           </div>
         </section>
 

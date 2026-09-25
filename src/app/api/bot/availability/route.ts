@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
   if (!(await hasSaaSPlan(organizationId, "pro"))) {
-    return apiError(403, "plan_required", "La agenda está disponible en el plan Pro");
+    return apiError(403, "plan_required", "La agenda está disponible en el plan Completo");
   }
 
   const url = new URL(req.url);
