@@ -473,6 +473,377 @@
   --st-soft: var(--st-pausado-soft);
 }
 
+/*
+  Movimiento de allok (fork). El vocabulario de allok.fun: una entrada corta
+  (allok-enter), el trazo que fluye (flow-line), la cifra que sube
+  (count-up) y el punto en sus tres tramos, rehecho acá en CSS a partir de
+  su Lottie (allok-fun/public/lottie/ok-dot.json) para no cargar un
+  reproductor. Todo lo que se mueve dice algo de la operación: un punto es
+  una conversación o un lead, y su color es su estado. Nada se mueve de
+  adorno, y `prefers-reduced-motion` deja cada cosa quieta en su estado final.
+*/
+@keyframes ak-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+.ak-enter {
+  animation: ak-enter 280ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+
+/* La cifra sube a su sitio, dígito por dígito (allok.fun, count-up). */
+@keyframes ak-count {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+.ak-count {
+  display: inline-block;
+  animation: ak-count 520ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 45ms);
+}
+
+/* Barras que crecen desde su base; bandas que se abren desde el centro. */
+@keyframes ak-grow-y {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes ak-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+}
+.ak-grow-y {
+  transform-origin: 50% 100%;
+  animation: ak-grow-y 560ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+.ak-grow-x {
+  transform-origin: 50% 50%;
+  animation: ak-grow-x 560ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+}
+
+/* Un arco que se cierra hasta su valor (el anillo de «atendidas solas»). */
+@keyframes ak-draw {
+  from {
+    stroke-dashoffset: 100;
+  }
+}
+.ak-draw {
+  animation: ak-draw 560ms var(--ease-out) both;
+  animation-delay: 120ms;
+}
+
+/* Un punto que cae a su sitio: la conversación entra a la línea del día. */
+@keyframes ak-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-18px) scale(0.4);
+  }
+  55% {
+    opacity: 1;
+  }
+}
+.ak-drop {
+  animation: ak-drop 460ms var(--ease-out) both;
+  animation-delay: calc(min(var(--i, 0) * 28ms, 700ms) + 240ms);
+}
+
+/* Un punto que aparece en su sitio (la semana del agente, el tablero). */
+@keyframes ak-pop {
+  from {
+    opacity: 0;
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.25);
+  }
+}
+.ak-pop {
+  animation: ak-pop 360ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 12ms);
+}
+
+/* El trazo que fluye (allok.fun, flow-line). Con guion 0 y punta redonda,
+   cada guion es un punto: los puntos avanzan por la línea, en su sentido. */
+@keyframes ak-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.ak-flow {
+  stroke-dasharray: 0 12;
+  stroke-linecap: round;
+  animation: ak-flow 2.4s linear infinite;
+}
+/* Sin nada vivo detrás (el embudo), el flujo corre al entrar y se detiene:
+   en bucle queda solo el turno del agente que corre ahora. */
+.ak-flow-entrada {
+  animation-iteration-count: 3;
+}
+
+/*
+  El punto de allok en sus tres tramos, como el Lottie de la web (caja de 64,
+  anillo r18 con trazo 5, relleno r18):
+    esperando  el anillo respira (atención, pausado)          1 s, en bucle
+    procesando el anillo gira con un hueco (atendiendo)       1 s, en bucle
+    resuelto   el anillo se abre y se apaga mientras el punto
+               aparece con un rebote (all ok)                 0,75 s, una vez
+    secuencia  los tres seguidos, una vez: la historia entera 2,75 s
+  El SVG desborda la caja del punto, así el punto ocupa lo mismo que el quieto.
+*/
+.ak-live {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.ak-live > svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 177.78%;
+  height: 177.78%;
+  overflow: visible;
+  transform: translate(-50%, -50%);
+}
+.ak-live-ring,
+.ak-live-fill {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.ak-live-ring {
+  fill: none;
+  stroke: var(--st);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.ak-live-fill {
+  fill: var(--st);
+}
+.ak-live:is([data-motion="esperando"], [data-motion="procesando"]) .ak-live-fill {
+  opacity: 0;
+}
+.ak-live[data-motion="esperando"] .ak-live-ring {
+  animation: ak-esperando 2s ease-in-out infinite;
+}
+.ak-live[data-motion="procesando"] .ak-live-ring {
+  animation: ak-procesando 1s linear infinite;
+}
+.ak-live[data-motion="resuelto"] .ak-live-ring {
+  animation: ak-resuelto-ring 750ms var(--ease-out) both;
+}
+.ak-live[data-motion="resuelto"] .ak-live-fill {
+  animation: ak-resuelto-fill 750ms both;
+}
+.ak-live[data-motion="secuencia"] .ak-live-ring {
+  animation: ak-secuencia-ring 2.75s both;
+  animation-delay: 400ms;
+}
+.ak-live[data-motion="secuencia"] .ak-live-fill {
+  animation: ak-secuencia-fill 2.75s both;
+  animation-delay: 400ms;
+}
+@keyframes ak-esperando {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+@keyframes ak-procesando {
+  0% {
+    stroke-dasharray: 100 0;
+    transform: rotate(0deg);
+  }
+  30%,
+  83% {
+    stroke-dasharray: 72 28;
+  }
+  100% {
+    stroke-dasharray: 100 0;
+    transform: rotate(720deg);
+  }
+}
+@keyframes ak-resuelto-ring {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  31% {
+    opacity: 0;
+  }
+  44%,
+  100% {
+    opacity: 0;
+    transform: scale(1.24);
+  }
+}
+@keyframes ak-resuelto-fill {
+  0% {
+    opacity: 0.25;
+    transform: scale(0.13);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
+  }
+  13% {
+    opacity: 1;
+  }
+  36% {
+    transform: scale(1.18);
+    animation-timing-function: ease-in-out;
+  }
+  67% {
+    transform: scale(0.96);
+  }
+  84%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes ak-secuencia-ring {
+  0% {
+    opacity: 0.55;
+    stroke-dasharray: 100 0;
+    transform: rotate(0deg) scale(0.86);
+    animation-timing-function: ease-in-out;
+  }
+  18% {
+    opacity: 1;
+    transform: rotate(0deg) scale(1.04);
+    animation-timing-function: ease-in-out;
+  }
+  36% {
+    opacity: 0.8;
+    stroke-dasharray: 100 0;
+    transform: rotate(0deg) scale(0.92);
+    animation-timing-function: linear;
+  }
+  47%,
+  67% {
+    stroke-dasharray: 72 28;
+  }
+  73% {
+    opacity: 1;
+    stroke-dasharray: 100 0;
+    transform: rotate(720deg) scale(1);
+    animation-timing-function: var(--ease-out);
+  }
+  81% {
+    opacity: 0;
+  }
+  85%,
+  100% {
+    opacity: 0;
+    transform: rotate(720deg) scale(1.24);
+  }
+}
+@keyframes ak-secuencia-fill {
+  0%,
+  71% {
+    opacity: 0;
+    transform: scale(0);
+    animation-timing-function: cubic-bezier(0.3, 0, 0.2, 1);
+  }
+  76% {
+    opacity: 1;
+  }
+  82% {
+    transform: scale(1.18);
+    animation-timing-function: ease-in-out;
+  }
+  91% {
+    transform: scale(0.96);
+  }
+  96%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+  La portada del login: un tablero de conversaciones de una noche cualquiera.
+  Cada punto es una conversación que llega; allok la atiende (azul) y queda
+  resuelta (verde). Una de cada tanto te toca a ti (ámbar) antes de cerrarse.
+  Es la promesa de la marca contada con su propio código de color, sin cifras.
+*/
+.ak-night {
+  background-color: var(--ground-4);
+}
+.ak-night[data-run="allok"] {
+  animation: ak-night var(--d, 7s) var(--ease-out) infinite;
+  animation-delay: var(--at, 0s);
+}
+.ak-night[data-run="tu"] {
+  animation: ak-night-tu var(--d, 7s) var(--ease-out) infinite;
+  animation-delay: var(--at, 0s);
+}
+@keyframes ak-night {
+  0%,
+  100% {
+    background-color: var(--ground-4);
+    transform: scale(1);
+  }
+  7% {
+    background-color: var(--st-atendiendo);
+    transform: scale(1.6);
+  }
+  13%,
+  30% {
+    background-color: var(--st-atendiendo);
+    transform: scale(1);
+  }
+  36% {
+    background-color: var(--st-activo);
+    transform: scale(1.6);
+  }
+  42%,
+  70% {
+    background-color: var(--st-activo);
+    transform: scale(1);
+  }
+  88% {
+    background-color: var(--ground-4);
+  }
+}
+@keyframes ak-night-tu {
+  0%,
+  100% {
+    background-color: var(--ground-4);
+    transform: scale(1);
+  }
+  7% {
+    background-color: var(--st-atencion);
+    transform: scale(1.6);
+  }
+  13%,
+  48% {
+    background-color: var(--st-atencion);
+    transform: scale(1);
+  }
+  54% {
+    background-color: var(--st-activo);
+    transform: scale(1.6);
+  }
+  60%,
+  76% {
+    background-color: var(--st-activo);
+    transform: scale(1);
+  }
+  92% {
+    background-color: var(--ground-4);
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -644,5 +1015,32 @@
   *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+  /* En allok, además: un bucle de 0,01 ms parpadea, así que da una vuelta y
+     queda en su final. Vocero conserva su regla de siempre. */
+  :root[data-saas="true"] *,
+  :root[data-saas="true"] *::before,
+  :root[data-saas="true"] *::after {
+    animation-iteration-count: 1 !important;
+    animation-delay: 0s !important;
+  }
+  /* El punto quieto es el punto lleno, como en allok.fun sin su Lottie. */
+  .ak-live .ak-live-ring {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+  .ak-live .ak-live-fill {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  /* El tablero de la noche, quieto: lo que ya quedó resuelto. */
+  .ak-night[data-run] {
+    animation: none !important;
+    background-color: var(--st-activo);
+  }
+
+  .ak-flow {
+    animation: none !important;
   }
 }

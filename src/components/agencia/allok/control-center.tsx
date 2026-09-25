@@ -10,6 +10,9 @@ import type { getOverview } from "@/server/overview";
 import type { ReadinessResponse } from "@/server/readiness";
 import { previewText } from "@/components/inbox/helpers";
 import { cn } from "@/lib/utils";
+import { Anillo, Cifra } from "./cifra";
+import { DayLine } from "./day-line";
+import { FunnelChart } from "./embudo";
 import { StateDot } from "./mark";
 import { useSystemRevision, useSystemState } from "./system-state";
 
@@ -84,10 +87,20 @@ export function ControlCenter({
   const tz = centro.timezone;
   const firstName = userName.trim().split(/\s+/)[0];
   const today = new Intl.DateTimeFormat("es", { weekday: "long", day: "numeric", month: "long", timeZone: tz }).format(new Date());
+  // El saludo va con la hora del negocio, no con la del servidor.
+  const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(new Date()));
+  const greeting = hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches";
+  const { conversations, solo } = centro.today;
+  const summary =
+    conversations === 0
+      ? "Todavía no escribió nadie hoy."
+      : solo === 0
+        ? `Hoy escribieron ${conversations} ${conversations === 1 ? "persona" : "personas"}.`
+        : `allok atendió sin ayuda ${solo} de ${conversations} ${conversations === 1 ? "conversación" : "conversaciones"} de hoy.`;
 
-  const kpis: { label: string; value: number; state?: SystemState }[] = [
-    { label: "Conversaciones", value: centro.today.conversations },
-    { label: "Atendidas solas", value: centro.today.solo, state: centro.today.solo > 0 ? "activo" : undefined },
+  const kpis: { label: string; value: number; of?: number; state?: SystemState }[] = [
+    { label: "Conversaciones", value: conversations },
+    { label: "Atendidas solas", value: solo, of: conversations > 0 ? conversations : undefined },
     { label: "Leads nuevos", value: centro.today.nuevos },
     { label: "Esperan por ti", value: centro.waiting, state: centro.waiting > 0 ? "atencion" : undefined },
   ];
@@ -104,25 +117,10 @@ export function ControlCenter({
         <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
           <div className="min-w-0">
             <p className="kicker" suppressHydrationWarning>{today}</p>
-            <h1 className="mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] text-balance md:text-[38px]">
-              {firstName ? `Hola, ${firstName}.` : "Hola."}
+            <h1 suppressHydrationWarning className="mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] text-balance md:text-[38px]">
+              {firstName ? `${greeting}, ${firstName}.` : `${greeting}.`}
             </h1>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/inbox"
-              className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-border-strong bg-background px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
-            >
-              Conversaciones
-            </Link>
-            {owner && (
-              <Link
-                href="/lab"
-                className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-border-strong bg-background px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
-              >
-                Probar el agente
-              </Link>
-            )}
+            <p className="mt-2 text-[15px] leading-relaxed text-text-2">{summary}</p>
           </div>
         </header>
 
@@ -133,7 +131,7 @@ export function ControlCenter({
         >
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-5 py-5 md:px-7">
             <span className="flex items-center gap-3">
-              <StateDot state={state} size={13} decorative />
+              <StateDot state={state} size={14} decorative motion />
               <span className="text-[24px] font-bold leading-none tracking-[-0.035em] md:text-[28px]">
                 {STATE_LABEL[state]}
               </span>
@@ -157,12 +155,18 @@ export function ControlCenter({
             )}
           </div>
 
+          <DayLine day={centro.day} timezone={tz} owner={owner} />
+
           <dl className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
             {kpis.map((kpi) => (
               <div key={kpi.label} className="bg-background px-5 py-5 md:px-7 md:py-6">
                 <dt className="kicker">{kpi.label}</dt>
                 <dd className="mt-2.5 flex items-baseline gap-2.5 text-[36px] font-bold leading-none tracking-[-0.04em] tabular-nums md:text-[42px]">
-                  {kpi.value}
+                  <Cifra value={kpi.value} />
+                  {kpi.of !== undefined && (
+                    <span className="-ml-1.5 text-[17px] font-semibold tracking-[-0.02em] text-text-3 md:text-[19px]">/{kpi.of}</span>
+                  )}
+                  {kpi.of !== undefined && <Anillo value={kpi.value} of={kpi.of} className="ml-auto self-center" />}
                   {kpi.state && <StateDot state={kpi.state} size={9} />}
                 </dd>
               </div>
@@ -172,9 +176,12 @@ export function ControlCenter({
           <div className="border-t">
             <div className="flex items-center justify-between px-5 pb-1 pt-4 md:px-7">
               <h2 className="kicker">{centro.waiting > 0 ? "Primero lo que espera por ti" : "Lo último"}</h2>
-              <Link href="/inbox" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground">
-                Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-              </Link>
+              {/* Una acción por destino: si el estado ya lleva a Conversaciones, no se repite. */}
+              {centro.feed.length > 0 && !(snapshot.href === "/inbox" && action) && (
+                <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground md:min-h-0">
+                  Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Link>
+              )}
             </div>
             {centro.feed.length ? (
               <ul className="pb-2">
@@ -271,10 +278,10 @@ function Trend({ overview, owner }: { overview: Overview; owner: boolean }) {
           const last = i === points.length - 1;
           return (
             <div key={p.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-              <span className={cn("font-mono text-[11px]", last ? "text-foreground" : "text-text-3")}>{p.count}</span>
+              <Cifra value={p.count} className={cn("font-mono text-[11px]", last ? "text-foreground" : "text-text-3")} />
               <span
-                className={cn("w-full rounded-[5px]", last ? "bg-foreground" : "bg-[var(--ground-4)]")}
-                style={{ height: `${Math.max(3, (p.count / max) * 120)}px` }}
+                className={cn("ak-grow-y w-full rounded-[5px]", last ? "bg-foreground" : "bg-[var(--ground-4)]")}
+                style={{ height: `${Math.max(3, (p.count / max) * 120)}px`, "--i": i } as React.CSSProperties}
               />
               <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-3">{weekday(p.date)}</span>
             </div>
@@ -307,8 +314,6 @@ function Trend({ overview, owner }: { overview: Overview; owner: boolean }) {
 }
 
 function Sales({ overview }: { overview: Overview }) {
-  const stages = overview.pipeline;
-  const max = Math.max(...stages.map((s) => s.count), 1);
   return (
     <Card
       title="Ventas"
@@ -318,33 +323,24 @@ function Sales({ overview }: { overview: Overview }) {
         </Link>
       }
     >
-      <ul className="space-y-3.5 px-5 py-5">
-        {stages.map((stage) => (
-          <li key={stage.stageId}>
-            <div className="mb-1.5 flex items-baseline justify-between gap-3 text-[13.5px]">
-              <span className="truncate">{stage.name}</span>
-              <span className="font-mono text-[12px] text-text-2">{stage.count}</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-[var(--ground-3)]">
-              <div
-                data-state={stage.kind === "won" ? "activo" : undefined}
-                className={cn(
-                  "h-full rounded-full",
-                  stage.kind === "won" ? "bg-[var(--st)]" : stage.kind === "lost" ? "bg-[var(--ground-4)]" : "bg-foreground",
-                )}
-                style={{ width: `${(stage.count / max) * 100}%` }}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
+      <FunnelChart stages={overview.pipeline.map((s) => ({ id: s.stageId, name: s.name, kind: s.kind, count: s.count }))} />
     </Card>
   );
 }
 
+/** Las etapas de siempre, para dibujar la forma del embudo cuando todavía no hay tablero. */
+const GHOST_STAGES = ["Nuevo", "En conversación", "Interesado", "Cliente"].map((name, i, all) => ({
+  id: name,
+  name,
+  kind: i === all.length - 1 ? ("won" as const) : ("open" as const),
+  count: 0,
+}));
+
 function Upsell({ owner }: { owner: boolean }) {
   return (
     <Card title="Ventas, agenda y equipo">
+      {/* La forma del embudo, sin una sola cifra: es lo que Pro llena. */}
+      <FunnelChart stages={GHOST_STAGES} ghost />
       <div className="px-5 py-5">
         <p className="text-[14px] leading-relaxed text-text-2">
           Con Pro cada conversación entra a un tablero de ventas, el agente agenda

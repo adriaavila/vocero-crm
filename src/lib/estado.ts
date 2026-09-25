@@ -29,6 +29,18 @@ export const STATE_DOT: Record<SystemState, string> = {
   pausado: "#8a9097",
 };
 
+/**
+ * El tramo del punto animado de allok.fun que le toca a cada estado (espejo de
+ * `STATES[].motion` en allok-fun/src/lib/brand.ts): esperando respira,
+ * procesando gira, resuelto se cierra en punto una vez y se queda quieto.
+ */
+export const STATE_MOTION: Record<SystemState, "esperando" | "procesando" | "resuelto"> = {
+  activo: "resuelto",
+  atendiendo: "procesando",
+  atencion: "esperando",
+  pausado: "esperando",
+};
+
 /** Lo que el estado le dice a quien no lee leyendas (allok.fun, «El sistema»). */
 export const STATE_HINT: Record<SystemState, string> = {
   activo: "Atendido solo",

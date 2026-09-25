@@ -1,4 +1,5 @@
 import { AllokWordmark, StateDot } from "./mark";
+import { NightBoard } from "./noche";
 
 const VOICE = ["Cada lead, atendido.", "Todo conectado. Todo bajo control.", "Siempre encendido."];
 
@@ -22,7 +23,8 @@ export function AllokAuthFrame({ children }: { children: React.ReactNode }) {
             <p>Te fuiste a dormir.</p>
             <p className="text-ink-40">Tu WhatsApp no.</p>
             <p className="mt-1 flex items-center gap-3">
-              <StateDot state="activo" size={18} decorative />
+              {/* El punto cuenta la historia entera una vez: espera, atiende, resuelve. */}
+              <StateDot state="activo" size={18} decorative motion="secuencia" />
               <span>all ok</span>
             </p>
           </div>
@@ -30,6 +32,7 @@ export function AllokAuthFrame({ children }: { children: React.ReactNode }) {
             allok contesta con lo que de verdad vendes, pregunta lo que hay que preguntar y
             agenda la cita. Tú ves lo que pasó y decides cuándo entrar.
           </p>
+          <NightBoard />
         </div>
 
         <ul className="grid gap-2.5 text-[14px] text-text-2">
