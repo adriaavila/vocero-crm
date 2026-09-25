@@ -101,9 +101,13 @@ export function planForPriceId(priceId: string | null | undefined): SaaSPlan | n
   return null;
 }
 
-/** Pro tienta con 7 días de prueba; Básico cobra desde el día 1. */
-export function trialDaysForPlan(plan: SaaSPlan): number | undefined {
-  return plan === "pro" ? 7 : undefined;
+/**
+ * Completo tienta con 7 días de prueba; Esencial cobra desde el día 1.
+ * Una sola prueba por negocio: quien ya tuvo suscripción (aunque la cancelara
+ * durante la prueba) vuelve pagando.
+ */
+export function trialDaysForPlan(plan: SaaSPlan, hadSubscription = false): number | undefined {
+  return plan === "pro" && !hadSubscription ? 7 : undefined;
 }
 
 export function appOrigin(request: Request): string {

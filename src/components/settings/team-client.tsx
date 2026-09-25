@@ -101,7 +101,7 @@ export function TeamClient() {
         <CardHeader>
           <CardTitle>Crear cuenta de equipo</CardTitle>
           <CardDescription>
-            Pro incluye hasta 3 usuarios, incluido el propietario. Sin correos ni invitaciones: comparte tú mismo la contraseña temporal con tu compañero (se muestra UNA sola vez).
+            Completo incluye hasta 3 usuarios, incluido el propietario. Sin correos ni invitaciones: comparte tú mismo la contraseña temporal con tu compañero (se muestra UNA sola vez).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -164,7 +164,7 @@ export function TeamClient() {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Miembros</p><span className="text-xs text-text-3">{members.length}/{MAX_TEAM_MEMBERS}</span></div>
-        {members.length >= MAX_TEAM_MEMBERS && <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">Llegaste al límite de Pro. Los accesos existentes se conservan.</p>}
+        {members.length >= MAX_TEAM_MEMBERS && <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">Llegaste al límite de Completo. Los accesos existentes se conservan.</p>}
         {members.map((m) => (
           <div
             key={m.id}

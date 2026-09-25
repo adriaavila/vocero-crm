@@ -1,6 +1,7 @@
 import { scheduleAgentTurn } from "@/server/ai/pipeline";
-import { isExternalBrainConfigured, shouldRunInternalAgent } from "@/lib/env";
+import { shouldRunInternalAgent } from "@/lib/env";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
 
 /**
  * Punto de enganche del turno del agente tras la ingesta de un mensaje
@@ -8,9 +9,10 @@ import { isAllokSaaSMode } from "@/lib/tenant-host";
  * directamente, sin debounce).
  */
 export async function maybeRunAgentTurn(
-  conversationId: string
+  conversationId: string,
+  organizationId: string
 ): Promise<void> {
-  if (isExternalBrainConfigured()) return;
+  if (await cerebroExternoAtiende(organizationId)) return;
   // En SaaS las claves pueden vivir por organización en CRM; no podemos
   // decidir con isAiConfigured(), que solo conoce el entorno del proceso.
   if (isAllokSaaSMode()) {

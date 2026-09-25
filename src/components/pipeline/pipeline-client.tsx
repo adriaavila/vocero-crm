@@ -25,6 +25,7 @@ import { LossReasonDialog } from "./loss-reason-dialog";
 import { AmountDialog } from "./amount-dialog";
 import { PriorityBadge } from "./priority-picker";
 import { LeadDrawer } from "./lead-drawer";
+import { FunnelStrip } from "@/components/agencia/allok/embudo";
 
 export type BoardLead = {
   id: string;
@@ -178,6 +179,8 @@ export function PipelineClient() {
           <Settings2 className="h-4 w-4" /> Gestionar etapas
         </Button>
       </header>
+      {/* Capa de agencia: el embudo de allok arriba del tablero (solo SaaS). */}
+      <FunnelStrip stages={stages} leads={leads} />
 
       {/* El tablero se arrastra en horizontal; en el teléfono cada columna
           se detiene en su sitio (snap) para no quedar a medio camino. */}

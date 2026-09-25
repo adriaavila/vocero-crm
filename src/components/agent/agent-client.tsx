@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { TimezoneSelect } from "@/components/ui/timezone-select";
 import { Skeleton } from "@/components/ui/skeleton";
 // Capa de agencia (fork). Todo lo propio vive en components/agencia/ para que
 // la próxima fusión con upstream no toque este archivo más que en esta línea.
@@ -18,6 +19,7 @@ import {
   type AgencyProfile,
 } from "@/components/agencia/agent-agency-cards";
 import { useActivationGate } from "@/components/agencia/activation-gate";
+import { AgentWeek } from "@/components/agencia/allok/agent-week";
 
 type Profile = {
   enabled: boolean;
@@ -281,13 +283,15 @@ function BusinessHoursSection() {
         <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Modo de atención">
           <button type="button" onClick={() => setSettings({ ...settings, responseMode: "outside_hours" })} className={`rounded-md border p-3 text-left transition-colors ${settings.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
             <span className="block text-sm font-semibold">Fuera de horario</span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Básico: Allok cubre las horas en que tu equipo descansa.</span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Esencial: Allok cubre las horas en que tu equipo descansa.</span>
           </button>
           <button type="button" disabled={!canUseAllDay} onClick={() => setSettings({ ...settings, responseMode: "all_day" })} className={`rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${settings.responseMode === "all_day" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
-            <span className="flex items-center gap-2 text-sm font-semibold">Todo el día <Badge variant="success">Pro</Badge></span>
+            <span className="flex items-center gap-2 text-sm font-semibold">Todo el día <Badge variant="success">Completo</Badge></span>
             <span className="mt-1 block text-xs leading-5 text-text-3">Responde durante toda la jornada, con supervisión humana siempre disponible.</span>
           </button>
         </div>
+
+        <AgentWeek hours={currentSettings.weeklyHours} mode={settings.responseMode} timezone={settings.timezone} pro={canUseAllDay} />
 
         {settings.responseMode === "outside_hours" && <div className="space-y-2 rounded-md border p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-3">Horario del negocio</p>
@@ -303,7 +307,7 @@ function BusinessHoursSection() {
           <p className="mt-2 text-xs leading-5 text-text-3">Un cierre a las 00:00 termina al comenzar el día siguiente. Usa <strong className="font-semibold text-text-2">24 h</strong> para mantener ese día siempre abierto.</p>
         </div>}
 
-        <div className="space-y-1.5"><Label htmlFor="business-timezone">Zona horaria IANA</Label><Input id="business-timezone" value={settings.timezone} onChange={(event) => setSettings({ ...settings, timezone: event.target.value })} placeholder="America/Mexico_City" /><p className="text-xs text-text-3">Usa la zona del negocio, no la del servidor.</p></div>
+        <div className="space-y-1.5"><Label htmlFor="business-timezone">Zona horaria</Label><TimezoneSelect id="business-timezone" value={settings.timezone} onValueChange={(timezone) => setSettings({ ...settings, timezone })} className="w-full" /><p className="text-xs text-text-3">Usa la zona del negocio, no la del servidor.</p></div>
         {error && <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">{error}</p>}
         <div className="flex items-center gap-3"><Button onClick={() => void save()} disabled={saving}>{saving ? "Guardando…" : "Guardar horario"}</Button>{saved && <span className="text-xs text-success-text">Guardado ✓</span>}</div>
       </CardContent>

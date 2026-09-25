@@ -48,7 +48,11 @@ export default function RegisterForm({ adminMode = false }: { adminMode?: boolea
       setCreated({ email, url: payload?.url ?? null });
       return;
     }
-    const { error: err } = await signUp.email({ name, email, password });
+    const { error: err } = await signUp.email(
+      { name, email, password },
+      // El horario de respuesta del negocio nace en la zona del navegador.
+      { headers: { "x-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone } },
+    );
     if (err) {
       setLoading(false);
       if (err.status === 403) {
@@ -120,7 +124,7 @@ export default function RegisterForm({ adminMode = false }: { adminMode?: boolea
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {plan === "pro" ? "Pro" : "Básico"}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {plan === "pro" ? "Completo" : "Esencial"}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="name">Nombre del negocio</Label>

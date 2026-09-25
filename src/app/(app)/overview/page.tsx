@@ -33,7 +33,7 @@ export default async function OverviewPage({
     : params.billing === "cancelled"
       ? "No se realizó ningún cobro. Puedes retomar el checkout desde Facturación cuando quieras."
       : params.upgrade === "pro"
-        ? "Ventas, Agenda y Equipo están incluidos en Pro. Puedes comparar los planes y activar el upgrade desde Facturación."
+        ? "Ventas, Agenda y Equipo están incluidos en Completo. Puedes comparar los planes y activar el upgrade desde Facturación."
       : params.billing === "unavailable" && isAllokSaaSMode()
         ? "Tu espacio está listo, pero Facturación todavía no está configurada. Puedes continuar preparando Allok y volver a intentarlo desde Facturación."
       : null;

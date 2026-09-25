@@ -57,7 +57,7 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
       plan: parsed.data.plan,
     },
     subscription_data: {
-      trial_period_days: trialDaysForPlan(parsed.data.plan),
+      trial_period_days: trialDaysForPlan(parsed.data.plan, current.subscriptionId !== null),
       metadata: {
         organizationId: session.organizationId,
         plan: parsed.data.plan,

@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { isExternalBrainConfigured } from "@/lib/env";
+import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
 
 /**
  * Capa de agencia — ¿la IA nace encendida en una conversación nueva?
@@ -29,7 +29,9 @@ import { isExternalBrainConfigured } from "@/lib/env";
  *                                   Sin esto, una instancia con Rei al frente
  *                                   —que es el caso normal de la agencia— y
  *                                   el agente interno apagado dejaba a TODOS
- *                                   los leads sin respuesta.
+ *                                   los leads sin respuesta. En SaaS solo
+ *                                   cuenta en el negocio que el bot atiende
+ *                                   (`cerebro-externo.ts`).
  *   + activación por mensajes
  *     configurados                → NO. En ese modo solo despiertan los
  *                                   mensajes exactos que el dueño definió,
@@ -50,9 +52,9 @@ export async function iaInicialPara(organizationId: string): Promise<boolean> {
     .limit(1);
   const perfil = rows[0];
   // Sin perfil todavía: solo un cerebro externo puede decidir si responde.
-  if (!perfil) return isExternalBrainConfigured();
+  if (!perfil) return cerebroExternoAtiende(organizationId);
   if (perfil.activationEnabled) return false;
-  return perfil.enabled || isExternalBrainConfigured();
+  return perfil.enabled || (await cerebroExternoAtiende(organizationId));
 }
 
 /**

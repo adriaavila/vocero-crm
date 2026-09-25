@@ -35,7 +35,7 @@ export function withAuth<Args extends unknown[]>(
         return apiError(404, "tenant_not_found", "El negocio no existe");
       }
       if (err instanceof SaaSMemberPlanRequiredError) {
-        return apiError(402, "plan_required", "El acceso de miembros está pausado hasta reactivar Pro");
+        return apiError(402, "plan_required", "El acceso de miembros está pausado hasta reactivar Completo");
       }
       if (err instanceof UnauthorizedError) {
         return apiError(401, "unauthorized", "No autenticado");
@@ -69,7 +69,7 @@ export function withPro<Args extends unknown[]>(
 ): (...args: Args) => Promise<Response> {
   return withAuth(async (session, ...args) => {
     if (!(await hasSaaSPlan(session.organizationId, "pro"))) {
-      return apiError(403, "plan_required", "Esta función está disponible en el plan Pro");
+      return apiError(403, "plan_required", "Esta función está disponible en el plan Completo");
     }
     return handler(session, ...args);
   });
@@ -83,7 +83,7 @@ export function withProOwner<Args extends unknown[]>(
       return apiError(403, "forbidden", "Solo el propietario puede realizar esta acción");
     }
     if (!(await hasSaaSPlan(session.organizationId, "pro"))) {
-      return apiError(403, "plan_required", "Esta función está disponible en el plan Pro");
+      return apiError(403, "plan_required", "Esta función está disponible en el plan Completo");
     }
     return handler(session, ...args);
   });

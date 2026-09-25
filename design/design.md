@@ -11,7 +11,8 @@ self-hosted conserva su marca y no hereda nada.
 estado, así que la marca no se puede pintar sin decir cómo está la operación.
 En verde se lee, literalmente, «all ok». De ahí sale todo lo demás: la paleta
 es casi monocromática (Cloud y tinta) y **el color que queda significa estado**.
-No hay ilustración ni robot: el producto es la estética.
+No hay ilustración ni robot: el producto es la estética. Los gráficos tampoco
+son ilustración: son los datos dibujados con ese mismo punto.
 
 ## Color
 
@@ -63,8 +64,21 @@ itálicas de adorno.
 - **Cromo en tinta**: la barra lateral (`data-allok-nav`) y la tarjeta de estado
   de Inicio (`.ak-ink`) son tinta en los dos temas: es donde el punto se lee.
 - **Inicio** (`control-center.tsx`): la primera línea contesta «¿está
-  funcionando?»; debajo, lo de hoy (conversaciones, atendidas solas, leads,
-  esperan por ti) y las conversaciones, primero las que esperan.
+  funcionando?»; debajo, **la línea del día** (`day-line.tsx`, la firma de la
+  pantalla: un punto por conversación de hoy a su hora, el horario del equipo
+  y el turno del agente), lo de hoy (conversaciones, atendidas solas de las de
+  hoy con su anillo, leads, esperan por ti) y las conversaciones, primero las
+  que esperan.
+- **Embudo** (`embudo.tsx`, a partir del de rei-crm): cuántos llegaron al
+  menos a cada etapa y qué parte pasó desde la anterior; por el centro bajan
+  puntos. Vertical en Inicio, acostado arriba del tablero. Sin Pro, la forma
+  vacía y ninguna cifra.
+- **La semana del agente** (`agent-week.tsx`): 7 × 24 puntos, uno por hora:
+  verde contesta el agente, tinta el equipo, hueco nadie. Se redibuja mientras
+  el dueño edita el horario.
+- **Portada** (`auth-frame.tsx` + `noche.tsx`): «Mientras duermes», un tablero
+  de conversaciones de una noche cualquiera en el código de color. Es la
+  promesa, no un dato: no lleva cifras.
 - **Botones**: esquina de 10px, sin levantar al pasar, presión 0.97 (`--btn-*`).
 - **Avatares** neutros: el color es estado, no identidad.
 - **Interruptor** encendido: pista verde de estado, perilla en tinta.
@@ -78,16 +92,43 @@ dentro de la ventana de 24 h → atención; leída o fría → quieta. El negoci
 WhatsApp y el plan primero, después quién espera, después si el agente está
 apagado, después si está trabajando.
 
-## Movimiento
+## Movimiento y gráficos
 
-Poco, y siempre con una señal quieta al lado. La presión es la única respuesta
-táctil. El punto late **solo** en `atendiendo` (algo en vuelo). Siempre
-`transition-property` con nombre, nunca `transition: all`. `prefers-reduced-motion`
-lo apaga todo.
+El punto de `all ● k` es la unidad de todo gráfico: cada conversación y cada
+lead es un punto con el color de su estado, y el movimiento es la operación
+trabajando. El vocabulario es el de allok.fun, en `globals.css` («Movimiento de
+allok»):
+
+| pieza | qué hace | dónde |
+|---|---|---|
+| `ak-enter` | entra subiendo 10 px (allok-enter) | etiquetas, la tira del embudo |
+| `ak-count` · `Cifra` | la cifra sube dígito por dígito (count-up) | cifras de Inicio |
+| `ak-grow-x` / `ak-grow-y` | barras y bandas que crecen desde su base | semana, embudo, horario |
+| `ak-drop` | un punto cae a su sitio | la línea del día |
+| `ak-pop` | un punto aparece; lo que cambia, en ola | la semana del agente |
+| `ak-flow` | trazo punteado que avanza (flow-line) | el turno del agente que corre ahora, leads bajando por el embudo |
+| `ak-draw` · `Anillo` | un arco que se cierra hasta su valor | atendidas solas |
+| `StateDot motion` | el Lottie ok-dot rehecho en CSS: *esperando* respira (atención, pausado), *procesando* gira (atendiendo), *resuelto* se cierra en punto una vez (all ok); *secuencia*, los tres | logotipo, estado de Inicio, portada |
+| `ak-night` | una conversación llega, allok la atiende, queda resuelta | portada del login |
+
+- **Lo que se mueve solo dice algo que está pasando**: el turno del agente
+  fluye mientras corre, el punto de `atendiendo` gira. Todo lo demás entra una
+  vez y se queda quieto, con su palabra al lado.
+- Entradas de 280 ms, datos hasta 560 ms, escalonado de 12 a 70 ms; una curva,
+  `--ease-out`. El punto *esperando* respira cada 2 s (la web, cada 1 s: el
+  CRM se mira todo el día).
+- Un punto chico de lista late solo en `atendiendo`; el punto vivo va de 12 px
+  para arriba, más chico el anillo no se lee.
+- Un gráfico nunca inventa un número: sin datos se dibuja la forma vacía y una
+  frase («Cuando alguien escriba, aparece aquí como un punto.»).
+- La presión es la única respuesta táctil de un botón. Siempre
+  `transition-property` con nombre, nunca `transition: all`.
+- `prefers-reduced-motion` deja cada cosa en su estado final: el punto lleno,
+  el tablero con lo ya resuelto, los bucles en una vuelta.
 
 ## Sí / No
 
 - **Sí**: tokens por nombre, nunca hex en un componente; estado = punto + palabra;
   una acción principal por pantalla; español, segunda persona, `allok` en minúscula.
 - **No**: colores de adorno, degradados, emoji en la interfaz, un verde que no
-  signifique «todo bien», un número inventado.
+  signifique «todo bien», un número inventado, un movimiento que no diga nada.

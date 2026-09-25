@@ -171,9 +171,11 @@ function createAuth() {
     databaseHooks: {
       user: {
         create: {
-          after: async (user) => {
+          after: async (user, context) => {
             await onUserCreated(user.id, user.name, {
               skipOrganization: isInternalSignup(),
+              // La manda /register: fija la zona del horario del negocio nuevo.
+              timezone: context?.headers?.get("x-timezone"),
             });
           },
         },

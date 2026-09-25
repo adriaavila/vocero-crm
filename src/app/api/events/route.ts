@@ -20,7 +20,7 @@ export async function GET(req: Request) {
       return new Response("No autenticado", { status: 401 });
     }
     if (err instanceof SaaSMemberPlanRequiredError) {
-      return new Response("El acceso de miembros requiere el plan Pro", { status: 402 });
+      return new Response("El acceso de miembros requiere el plan Completo", { status: 402 });
     }
     throw err;
   }

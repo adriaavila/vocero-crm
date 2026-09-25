@@ -67,4 +67,8 @@ describe("Allok SaaS billing", () => {
     expect(trialDaysForPlan("pro")).toBe(7);
     expect(trialDaysForPlan("basic")).toBeUndefined();
   });
+
+  it("la prueba es una sola vez por negocio", () => {
+    expect(trialDaysForPlan("pro", true)).toBeUndefined();
+  });
 });
