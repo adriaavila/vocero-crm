@@ -108,16 +108,29 @@ export function generatedFaviconSvg(branding: Branding): string {
 
 
 /**
- * El icono del SaaS allok: el punto solo, sobre tinta (allok.fun/icon.svg).
- * A 16px el logotipo `all ● k` no se lee y lo único que tiene que sobrevivir
- * es el estado. Un negocio que sube su icono lo reemplaza; si no, en la
- * pestaña el punto cambia de color con el estado de la operación.
+ * El símbolo de allok en una caja de 64: un círculo que el punto cierra.
+ * Espejo de `MARK` en allok-fun/src/lib/brand.ts; `src/app/icon.svg` y los
+ * PNG de `public/` copian estos números. Si cambia allá, cambia acá.
+ */
+export const ALLOK_MARK = {
+  ring: "M33.39 47.94A16 16 0 1 1 47.94 30.6",
+  stroke: 6.5,
+  dot: { cx: 44.26, cy: 42.28, r: 6.5 },
+} as const;
+
+/**
+ * El icono del SaaS allok: el símbolo sobre tinta (allok.fun/icon.svg).
+ * A 16px el logotipo `all ● k` no se lee; el símbolo sí, y su punto lleva el
+ * estado. Un negocio que sube su icono lo reemplaza; si no, en la pestaña el
+ * punto cambia de color con el estado de la operación.
  */
 export function allokFaviconSvg(dot = "#20e58d"): string {
+  const { ring, stroke, dot: d } = ALLOK_MARK;
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">`,
     `<rect width="64" height="64" rx="17" fill="#0b0d0e"/>`,
-    `<circle cx="32" cy="32" r="14" fill="${dot}"/>`,
+    `<path d="${ring}" fill="none" stroke="#f7f8f8" stroke-width="${stroke}" stroke-linecap="round"/>`,
+    `<circle cx="${d.cx}" cy="${d.cy}" r="${d.r}" fill="${dot}"/>`,
     `</svg>`,
   ].join("");
 }
@@ -127,17 +140,23 @@ export function allokFaviconSvg(dot = "#20e58d"): string {
  *
  * Los navegadores guardan el favicon con una insistencia notable: sin que la
  * URL cambie, el logo nuevo puede tardar días en aparecer. Para el subido va
- * el número de versión; para el generado, un hash del nombre y el acento, que
- * son justo lo que lo cambia.
+ * el número de versión; para el generado, un hash de los dos dibujos posibles
+ * (el símbolo y la inicial sobre el acento). Se sirve `immutable` por un año:
+ * si el dibujo cambia y la clave no, cada pestaña que ya lo vio se queda con
+ * el viejo.
  */
 export function faviconCacheKey(branding: Branding): string {
   if (branding.favicon) return `u${branding.favicon.version}`;
+  return `g${huella(`${allokFaviconSvg()}|${generatedFaviconSvg(branding)}`)}`;
+}
+
+/** Sufijo de `/icon.svg` y los PNG del manifiesto: cambia con el símbolo. */
+export const ALLOK_ICON_VERSION = huella(allokFaviconSvg());
+
+function huella(s: string): string {
   let h = 0;
-  const semilla = `${branding.name}|${branding.accent}`;
-  for (let i = 0; i < semilla.length; i++) {
-    h = (h * 31 + semilla.charCodeAt(i)) >>> 0;
-  }
-  return `g${h.toString(36)}`;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
 }
 
 /** URL que va en el `<link rel="icon">`. */

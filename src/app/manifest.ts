@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { DEFAULT_BRANDING } from "@/lib/branding";
+import { ALLOK_ICON_VERSION } from "@/lib/favicon";
 import { getBranding } from "@/server/branding";
 import { headers } from "next/headers";
 import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
@@ -31,9 +32,11 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     background_color: "#ffffff",
     theme_color: "#ffffff",
     icons: [
-      { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
-      { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      // Next sirve icon.svg `immutable` por un año: el `?v=` cambia con el
+      // símbolo, o Cloudflare y el teléfono se quedan con el anterior.
+      { src: `/icon.svg?v=${ALLOK_ICON_VERSION}`, sizes: "any", type: "image/svg+xml" },
+      { src: `/icon-512.png?v=${ALLOK_ICON_VERSION}`, sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: `/icon-maskable-512.png?v=${ALLOK_ICON_VERSION}`, sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
       { name: "Bandeja", url: "/inbox" },

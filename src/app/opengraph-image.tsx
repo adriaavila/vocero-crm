@@ -1,9 +1,9 @@
 import { ImageResponse } from "next/og";
 import { DEFAULT_BRANDING, resolveAccentSet } from "@/lib/branding";
-import { faviconInitial } from "@/lib/favicon";
+import { ALLOK_MARK, faviconInitial } from "@/lib/favicon";
 import { getBranding } from "@/server/branding";
 import { headers } from "next/headers";
-import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 export const alt = "CRM de WhatsApp";
@@ -20,6 +20,8 @@ export default async function Image() {
     ? Promise.resolve(DEFAULT_BRANDING)
     : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
   const { accent, fg } = resolveAccentSet(branding.accent);
+  // Con la marca allok firma su símbolo, como el favicon; en Vocero, la inicial.
+  const saas = isAllokBrand();
 
   return new ImageResponse(
     <div
@@ -29,29 +31,37 @@ export default async function Image() {
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        background: "#08090a",
-        color: "#f5f5f4",
+        background: saas ? "#0b0d0e" : "#08090a",
+        color: saas ? "#f7f8f8" : "#f5f5f4",
         padding: "68px 80px",
         fontFamily: "sans-serif",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div
-          style={{
-            display: "flex",
-            width: 52,
-            height: 52,
-            borderRadius: 16,
-            background: accent,
-            color: fg,
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 26,
-            fontWeight: 700,
-          }}
-        >
-          {faviconInitial(branding.name)}
-        </div>
+        {saas ? (
+          <svg width={52} height={52} viewBox="0 0 64 64">
+            <rect width="64" height="64" rx="17" fill="#0b0d0e" stroke="#f7f8f8" strokeOpacity="0.15" />
+            <path d={ALLOK_MARK.ring} fill="none" stroke="#f7f8f8" strokeWidth={ALLOK_MARK.stroke} strokeLinecap="round" />
+            <circle cx={ALLOK_MARK.dot.cx} cy={ALLOK_MARK.dot.cy} r={ALLOK_MARK.dot.r} fill="#20e58d" />
+          </svg>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              width: 52,
+              height: 52,
+              borderRadius: 16,
+              background: accent,
+              color: fg,
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 26,
+              fontWeight: 700,
+            }}
+          >
+            {faviconInitial(branding.name)}
+          </div>
+        )}
         <span style={{ fontSize: 20, color: "#8a8a8a", letterSpacing: "0.12em" }}>CRM · WHATSAPP</span>
       </div>
 

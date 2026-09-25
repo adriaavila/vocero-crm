@@ -2,7 +2,7 @@ import { readMediaFile } from "@/server/whatsapp/media";
 import { getBrandingContext } from "@/server/branding";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { allokFaviconSvg, FAVICON_ASSET, generatedFaviconSvg } from "@/lib/favicon";
-import { isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 export const dynamic = "force-dynamic";
@@ -28,9 +28,9 @@ function cabeceras(mime: string, cacheable: boolean): HeadersInit {
   };
 }
 
-/** Sin icono subido, el SaaS firma con el punto de allok; Vocero, con la inicial. */
+/** Sin icono subido, la marca allok firma con su símbolo; Vocero, con la inicial. */
 function generated(branding: Parameters<typeof generatedFaviconSvg>[0]): string {
-  return isAllokSaaSMode() ? allokFaviconSvg() : generatedFaviconSvg(branding);
+  return isAllokBrand() ? allokFaviconSvg() : generatedFaviconSvg(branding);
 }
 
 /**

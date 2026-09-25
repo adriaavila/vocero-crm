@@ -53,9 +53,13 @@ itálicas de adorno.
 
 - **`AllokWordmark` / `StateDot`** (`components/agencia/allok/mark.tsx`). El
   logotipo recibe el estado real; no tiene default.
+- **El símbolo** (`ALLOK_MARK` en `lib/favicon.ts`, espejo de `MARK`): un
+  círculo que el punto cierra, Cloud sobre tinta, el punto a 130° en el color
+  del estado. Va donde no cabe la palabra: favicon, ícono de la app, imagen para
+  compartir. Nunca junto al logotipo (serían dos puntos diciendo lo mismo).
 - **Estado vivo** (`system-state.tsx`): llega resuelto del servidor
   (`server/agencia/estado.ts`) y se relee con cada evento SSE y cada minuto. El
-  icono de la pestaña lleva el mismo punto.
+  símbolo de la pestaña lleva el mismo punto. Un icono subido en Marca le gana.
 - **Cromo en tinta**: la barra lateral (`data-allok-nav`) y la tarjeta de estado
   de Inicio (`.ak-ink`) son tinta en los dos temas: es donde el punto se lee.
 - **Inicio** (`control-center.tsx`): la primera línea contesta «¿está

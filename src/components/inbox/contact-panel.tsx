@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { Switch } from "@/components/ui/switch";
 import Link from "next/link";
 import { Check, ChevronRight, Sparkles, UserRound } from "lucide-react";
 import type {
@@ -215,27 +216,16 @@ export function ContactPanel({
                         : "Activada"}
                 </p>
               </div>
-              <button
-                role="switch"
-                aria-checked={aiActive}
-                aria-label="IA en esta conversación"
-                onClick={() => {
+              <Switch
+                checked={aiActive}
+                label="IA en esta conversación"
+                className="-my-2 -mr-1.5"
+                onCheckedChange={() => {
                   void onPatchConversation({
                     aiEnabled: !conversation.aiEnabled,
                   });
                 }}
-                className={cn(
-                  "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full px-0.5 transition-colors",
-                  aiActive ? "bg-brand" : "bg-border-strong"
-                )}
-              >
-                <span
-                  className={cn(
-                    "h-4 w-4 rounded-full bg-knob shadow-sm transition-transform",
-                    aiActive ? "translate-x-4" : "translate-x-0"
-                  )}
-                />
-              </button>
+              />
             </div>
 
             {!agentReady && (
