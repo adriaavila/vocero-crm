@@ -59,7 +59,7 @@ export function FunnelChart({ stages, ghost = false }: { stages: StageCount[]; g
           </svg>
           {f.total > 0 && !ghost && (
             <svg className="ak-enter absolute inset-0 h-full w-full overflow-visible" style={{ "--i": steps.length } as React.CSSProperties}>
-              <line x1="50%" x2="50%" y1="10" y2={height - 10} stroke="var(--bg)" strokeWidth="4" className="ak-flow" />
+              <line x1="50%" x2="50%" y1="10" y2={height - 10} stroke="var(--bg)" strokeWidth="4" className="ak-flow ak-flow-entrada" />
             </svg>
           )}
           {empty && !ghost && (
@@ -72,7 +72,7 @@ export function FunnelChart({ stages, ghost = false }: { stages: StageCount[]; g
         {steps.map((s, i) => (
           <Fragment key={s.id}>
             <span className="col-start-1 flex min-w-0 items-center gap-2 text-[13.5px]" style={{ gridRowStart: i + 1 }}>
-              {s.won && <StateDot state="activo" size={7} decorative />}
+              {s.won && !empty && <StateDot state="activo" size={7} decorative />}
               <span className="truncate">{s.name}</span>
             </span>
             <span className="col-start-3 flex flex-col items-end justify-center" style={{ gridRowStart: i + 1 }}>
@@ -144,7 +144,7 @@ export function FunnelStrip({ stages, leads }: { stages: StageDto[]; leads: { st
               <span className="sr-only">{`${s.fromPrev ?? 0}% pasó a ${s.name}`}</span>
               <span aria-hidden className="text-center font-mono text-[10.5px] text-text-3">{s.fromPrev ?? 0}%</span>
               <svg aria-hidden className="mt-1 h-1 w-full overflow-visible" data-state={s.won ? "activo" : undefined}>
-                <line x1="2" x2="100%" y1="2" y2="2" stroke={s.won ? "var(--st)" : "var(--text-3)"} strokeWidth="3" className="ak-flow" />
+                <line x1="2" x2="100%" y1="2" y2="2" stroke={s.won ? "var(--st)" : "var(--text-3)"} strokeWidth="3" className="ak-flow ak-flow-entrada" />
               </svg>
             </div>
           )}
@@ -153,7 +153,11 @@ export function FunnelStrip({ stages, leads }: { stages: StageDto[]; leads: { st
               {s.won && <StateDot state="activo" size={7} decorative />}
               <span className="truncate">{s.name}</span>
             </span>
-            <span className="mt-0.5 block font-mono text-[19px] font-semibold leading-tight tabular-nums">{s.reached}</span>
+            {/* «llegaron»: el tablero de abajo cuenta dónde están hoy, esto hasta dónde llegaron. */}
+            <span className="mt-0.5 flex items-baseline gap-1.5">
+              <span className="font-mono text-[19px] font-semibold leading-tight tabular-nums">{s.reached}</span>
+              <span className="text-[11.5px] text-text-3">llegaron</span>
+            </span>
             <span className="mt-1.5 block h-1 w-full overflow-hidden rounded-full bg-[var(--ground-3)]">
               <span
                 data-state={s.won ? "activo" : undefined}

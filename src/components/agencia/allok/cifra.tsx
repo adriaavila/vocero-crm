@@ -34,7 +34,7 @@ export function Anillo({ value, of, className }: { value: number; of: number; cl
       aria-label={`${Math.round(pct)} %`}
       className={cn("h-7 w-7 shrink-0 -rotate-90 md:h-8 md:w-8", className)}
     >
-      <circle cx="18" cy="18" r="14" fill="none" stroke="var(--ground-4)" strokeWidth="4" />
+      <circle cx="18" cy="18" r="14" fill="none" stroke="color-mix(in srgb, var(--text) 18%, transparent)" strokeWidth="4" />
       <circle
         cx="18"
         cy="18"

@@ -67,7 +67,7 @@ export function AgentWeek({ hours, mode, timezone, pro }: { hours: Week; mode: R
             Tu equipo
           </li>
           <li className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full border border-[var(--rule)]" />
+            <span className="h-2 w-2 rounded-full border border-[var(--text-4)]" />
             Nadie
           </li>
         </ul>
@@ -95,7 +95,7 @@ export function AgentWeek({ hours, mode, timezone, pro }: { hours: Week; mode: R
                       "ak-pop block rounded-full",
                       who === "agente" && "h-2 w-2 bg-[var(--st)]",
                       who === "equipo" && "h-2 w-2 bg-foreground",
-                      who === "nadie" && "h-1.5 w-1.5 border border-[var(--rule)]",
+                      who === "nadie" && "h-1.5 w-1.5 border border-[var(--text-4)]",
                     )}
                     style={{
                       "--i": r + h,

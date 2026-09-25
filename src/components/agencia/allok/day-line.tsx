@@ -69,8 +69,10 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
 
   // Columnas de media hora; en el teléfono de una hora, para que los puntos
   // se apilen en vez de pisarse.
+  // Los puntos esperan a saber el ancho: así caen una vez en su columna y no
+  // se deslizan a otra al hidratar.
   const plot = useRef<HTMLDivElement>(null);
-  const [slot, setSlot] = useState(30);
+  const [slot, setSlot] = useState<number | null>(null);
   useLayoutEffect(() => {
     const el = plot.current;
     if (!el) return;
@@ -82,18 +84,20 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
   }, []);
 
   const stacks = new Map<number, number>();
-  const dots = day.points.map((p, i) => {
-    const column = Math.floor(p.minute / slot);
+  const dots = (slot === null ? [] : day.points).map((p, i) => {
+    const column = Math.floor(p.minute / (slot ?? 30));
     const level = stacks.get(column) ?? 0;
     stacks.set(column, level + 1);
     return { ...p, column, level, i };
   });
   const counts = { activo: 0, atendiendo: 0, atencion: 0, pausado: 0 } as Record<SystemState, number>;
   for (const p of day.points) counts[p.state]++;
-  const agentState: SystemState = day.agentOn && day.billingActive ? "activo" : "pausado";
+  // Apagado o sin plan, el agente no tiene turno: no se dibuja.
+  const agentSpans = day.agentOn && day.billingActive ? day.agent : [];
 
   let action: { href: string; label: string } | null = null;
   if (owner && !day.configured) action = { href: "/agent", label: "Definir horario" };
+  else if (owner && !day.agentOn) action = { href: "/agent", label: "Encender tu agente" };
   else if (owner && day.agentOn && (!day.billingActive || (day.allDay && day.agent.length === 0)))
     action = { href: "/settings/billing", label: "Ver planes" };
   else if (owner) action = { href: "/agent", label: "Cambiar horario" };
@@ -107,7 +111,7 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
             <span className="h-2 w-4 rounded-full bg-[var(--rule)]" />
             Tu equipo
           </li>
-          <li className="flex items-center gap-1.5" data-state={agentState}>
+          <li className="flex items-center gap-1.5" data-state="activo">
             <svg width="18" height="4" className="overflow-visible">
               <line x1="2" x2="18" y1="2" y2="2" stroke="var(--st)" strokeWidth="3" strokeLinecap="round" strokeDasharray="0 6" />
             </svg>
@@ -119,7 +123,7 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
       <p className="sr-only">
         {day.points.length === 0
           ? "Hoy todavía no escribió nadie."
-          : `Hoy escribieron ${day.points.length}: ${counts.activo} respondidas, ${counts.atendiendo} en curso, ${counts.atencion} esperan por ti.`}
+          : `Hoy escribieron ${day.points.length}: ${counts.activo} respondidas, ${counts.atendiendo} en curso, ${counts.atencion} esperan por ti, ${counts.pausado} sin respuesta.`}
       </p>
 
       <div ref={plot} aria-hidden className="relative mt-3 h-[112px] select-none">
@@ -162,15 +166,15 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
               ),
           ),
         )}
-        {day.agent.map((span) =>
+        {agentSpans.map((span) =>
           split(span, now).map((part, k) => {
             if (!part) return null;
             // El turno que corre ahora fluye; lo que viene más tarde espera tenue.
-            const live = k === 1 && day.agentOn && day.billingActive && now !== null && now >= span[0];
+            const live = k === 1 && now !== null && now >= span[0];
             return (
               <svg
                 key={`agente-${span[0]}-${k}`}
-                data-state={agentState}
+                data-state="activo"
                 className={cn("absolute bottom-[25px] h-1 overflow-visible", k === 1 && !live && now !== null && "opacity-40")}
                 style={{ left: at(part[0]), width: at(part[1] - part[0]) }}
               >
@@ -198,9 +202,9 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
               href={`/inbox?contact=${d.contactId}`}
               tabIndex={-1}
               title={`${d.name} · ${NOTE[d.state]} · ${hhmm(d.minute)}`}
-              className="ak-drop group absolute grid place-items-center transition-[left,bottom] duration-500"
+              className="ak-drop group absolute grid place-items-center [@media(pointer:coarse)]:pointer-events-none"
               style={{
-                left: `calc(${at((d.column + 0.5) * slot)} - ${DOT / 2 + 3}px)`,
+                left: `calc(${at((d.column + 0.5) * (slot ?? 30))} - ${DOT / 2 + 3}px)`,
                 bottom: BASE - 3 + d.level * PITCH,
                 width: DOT + 6,
                 height: DOT + 6,
@@ -225,14 +229,14 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
             <span
               key={`mas-${column}`}
               className="absolute -translate-x-1/2 font-mono text-[10px] text-text-3"
-              style={{ left: at((column + 0.5) * slot), bottom: BASE + MAX_STACK * PITCH }}
+              style={{ left: at((column + 0.5) * (slot ?? 30)), bottom: BASE + MAX_STACK * PITCH }}
             >
               <span className="ak-enter block">+{n - MAX_STACK}</span>
             </span>
           ) : null,
         )}
         {day.points.length === 0 && (
-          <p className="absolute inset-x-0 top-[34px] text-center text-[13px] text-text-3">
+          <p className="absolute inset-x-0 top-[34px] z-10 mx-auto w-fit bg-background px-2 text-center text-[13px] text-text-3 text-balance">
             Cuando alguien escriba, aparece aquí como un punto.
           </p>
         )}
@@ -255,7 +259,7 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
       <p className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[13.5px] text-text-2">
         <span>{sentence(day, now)}</span>
         {action && (
-          <Link href={action.href} className="font-medium text-foreground underline-offset-4 hover:underline">
+          <Link href={action.href} className="inline-flex min-h-11 items-center font-medium text-foreground underline-offset-4 hover:underline md:min-h-0">
             {action.label}
           </Link>
         )}

@@ -192,7 +192,7 @@ export function ControlCenter({
           <div className="border-t">
             <div className="flex items-center justify-between px-5 pb-1 pt-4 md:px-7">
               <h2 className="kicker">{centro.waiting > 0 ? "Primero lo que espera por ti" : "Lo último"}</h2>
-              <Link href="/inbox" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground">
+              <Link href="/inbox" className="inline-flex min-h-11 items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground md:min-h-0">
                 Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden />
               </Link>
             </div>
@@ -342,7 +342,7 @@ function Sales({ overview }: { overview: Overview }) {
 }
 
 /** Las etapas de siempre, para dibujar la forma del embudo cuando todavía no hay tablero. */
-const GHOST_STAGES = ["Nuevo", "Conversando", "Interesado", "Cliente"].map((name, i, all) => ({
+const GHOST_STAGES = ["Nuevo", "En conversación", "Interesado", "Cliente"].map((name, i, all) => ({
   id: name,
   name,
   kind: i === all.length - 1 ? ("won" as const) : ("open" as const),

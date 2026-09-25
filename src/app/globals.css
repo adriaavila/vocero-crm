@@ -535,8 +535,8 @@
   }
 }
 .ak-draw {
-  animation: ak-draw 900ms var(--ease-out) both;
-  animation-delay: 300ms;
+  animation: ak-draw 560ms var(--ease-out) both;
+  animation-delay: 120ms;
 }
 
 /* Un punto que cae a su sitio: la conversación entra a la línea del día. */
@@ -580,6 +580,11 @@
   stroke-dasharray: 0 12;
   stroke-linecap: round;
   animation: ak-flow 2.4s linear infinite;
+}
+/* Sin nada vivo detrás (el embudo), el flujo corre al entrar y se detiene:
+   en bucle queda solo el turno del agente que corre ahora. */
+.ak-flow-entrada {
+  animation-iteration-count: 3;
 }
 
 /*
@@ -1034,9 +1039,7 @@
     animation: none !important;
     background-color: var(--st-activo);
   }
-  .ak-night[data-run="tu"] {
-    background-color: var(--st-atencion);
-  }
+
   .ak-flow {
     animation: none !important;
   }
