@@ -35,6 +35,15 @@ const RESERVED_SUBDOMAINS = new Set([
  */
 export const SIGNUP_HOST_HINT = "El registro de Allok empieza en";
 
+/** Admins de allok: `ALLOK_ADMIN_EMAILS`, separados por coma. */
+export function isSaaSAdminEmail(email: string | null | undefined): boolean {
+  const allowed = (process.env.ALLOK_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return Boolean(email && allowed.includes(email.trim().toLowerCase()));
+}
+
 export function isAllokSaaSMode(): boolean {
   return process.env.ALLOK_SAAS_MODE === "true";
 }

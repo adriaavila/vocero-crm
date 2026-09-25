@@ -41,4 +41,21 @@ describe("registro público cerrado", () => {
     vi.stubEnv("ALLOW_SIGNUP", "1");
     expect(await isPublicSignupAllowed()).toBe(false);
   });
+
+  it("SaaS con autoservicio apagado → cerrado aunque no haya organizaciones", async () => {
+    orgCount = 0;
+    vi.stubEnv("ALLOK_SAAS_MODE", "true");
+    vi.stubEnv("ALLOW_SIGNUP", "true");
+    expect(await isPublicSignupAllowed()).toBe(false);
+  });
+});
+
+describe("admins de allok", () => {
+  it("sólo los correos de ALLOK_ADMIN_EMAILS, sin importar mayúsculas", async () => {
+    const { isSaaSAdminEmail } = await import("@/lib/tenant-host");
+    vi.stubEnv("ALLOK_ADMIN_EMAILS", "a@allok.fun, B@allok.fun");
+    expect(isSaaSAdminEmail("b@ALLOK.fun")).toBe(true);
+    expect(isSaaSAdminEmail("cliente@negocio.com")).toBe(false);
+    expect(isSaaSAdminEmail(null)).toBe(false);
+  });
 });
