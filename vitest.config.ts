@@ -2,8 +2,10 @@ import { defineConfig } from "vitest/config";
 import path from "node:path";
 
 export default defineConfig({
-  // JSX con el runtime automático, como lo compila Next: sin esto, renderizar
-  // un componente en un test falla con "React is not defined".
+  // El tsconfig dice `jsx: "preserve"` porque de JSX se encarga Next. Vitest
+  // no es Next: sin esto compila el JSX al runtime clásico (`React.
+  // createElement` sin importar React) y un componente no se puede dibujar
+  // en una prueba.
   esbuild: { jsx: "automatic" },
   test: {
     include: ["tests/unit/**/*.test.ts"],

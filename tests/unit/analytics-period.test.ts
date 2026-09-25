@@ -8,9 +8,8 @@ beforeAll(() => {
   process.env.META_WEBHOOK_VERIFY_TOKEN = "verify-test";
 });
 
-const { daysApart, median, PeriodError, resolvePeriod } = await import(
-  "@/server/analytics/period"
-);
+const { daysApart, median, PeriodError, pickBusinessTimezone, resolvePeriod } =
+  await import("@/server/analytics/period");
 const { bucketsDelPeriodo } = await import("@/lib/analytics");
 const { shortcuts } = await import("@/components/results/range-picker");
 
@@ -177,5 +176,33 @@ describe("median", () => {
 
   it("un valor extremo no la arrastra", () => {
     expect(median([2, 3, 4, 5, 100_000])).toBe(4);
+  });
+});
+
+describe("pickBusinessTimezone", () => {
+  // Fork — la zona del negocio para Resultados es la del agente
+  // (`agent_profile.business_timezone`), no la de la agenda: son dos
+  // configuraciones de upstream distintas y sin este orden, un negocio con
+  // agenda en otra zona vería un "hoy" distinto en cada pantalla.
+  it("gana el perfil del agente cuando es válido, aunque la agenda tenga otra", () => {
+    expect(pickBusinessTimezone(MX, "America/Bogota")).toBe(MX);
+  });
+
+  it("sin perfil de agente, cae a la zona de la agenda", () => {
+    expect(pickBusinessTimezone(null, "America/Bogota")).toBe("America/Bogota");
+    expect(pickBusinessTimezone(undefined, "America/Bogota")).toBe(
+      "America/Bogota"
+    );
+  });
+
+  it("una zona de agente inválida no tumba la pantalla: cae a la agenda", () => {
+    expect(pickBusinessTimezone("no-es-una-zona", "America/Bogota")).toBe(
+      "America/Bogota"
+    );
+  });
+
+  it("sin ninguna de las dos, o las dos inválidas, el default", () => {
+    expect(pickBusinessTimezone(null, null)).toBe(MX);
+    expect(pickBusinessTimezone("no-es-una-zona", "tampoco")).toBe(MX);
   });
 });

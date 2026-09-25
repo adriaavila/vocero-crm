@@ -66,6 +66,16 @@ export async function botBlock(
  * compararía consigo misma y la primera respuesta saldría siempre vacía.
  */
 const conversacionId = sql.raw(`"conversation"."id"`);
+/**
+ * Fork — igual truco que `conversacionId`, para poder correlacionar TAMBIÉN
+ * por `organization_id` dentro de las mismas subconsultas: sin ella, cada
+ * `exists`/`min` de `message` solo filtra por `conversation_id` y Postgres no
+ * puede usar `message_org_conv_idx` (organization_id, conversation_id,
+ * created_at) — en una tabla compartida por todos los negocios, ese índice es
+ * la diferencia entre un plan que toca unas pocas filas y uno que barre la
+ * tabla entera.
+ */
+const organizacionId = sql.raw(`"conversation"."organization_id"`);
 
 /** Las conversaciones reales que empezaron en el rango. */
 function cohorte(organizationId: string, start: Date, end: Date) {
@@ -84,8 +94,8 @@ function cohorte(organizationId: string, start: Date, end: Date) {
  * cerebro externo por `/api/bot/messages` escriben igual.
  */
 async function conteosDeLaCohorte(organizationId: string, start: Date, end: Date) {
-  const entrante = sql`exists (select 1 from "message" mi where mi."conversation_id" = ${conversacionId} and mi."direction" = 'in')`;
-  const delAgente = sql`exists (select 1 from "message" mo where mo."conversation_id" = ${conversacionId} and mo."direction" = 'out' and mo."origin" = 'ai')`;
+  const entrante = sql`exists (select 1 from "message" mi where mi."organization_id" = ${organizacionId} and mi."conversation_id" = ${conversacionId} and mi."direction" = 'in')`;
+  const delAgente = sql`exists (select 1 from "message" mo where mo."organization_id" = ${organizacionId} and mo."conversation_id" = ${conversacionId} and mo."direction" = 'out' and mo."origin" = 'ai')`;
   const rows = await getDb()
     .select({
       total: sql<number>`count(*)::int`,
@@ -113,12 +123,13 @@ async function medianaPrimeraRespuesta(
   end: Date
 ): Promise<{ median: number | null; sample: number }> {
   const primerEntrante = sql`(select min(m1."created_at") from "message" m1
-    where m1."conversation_id" = ${conversacionId} and m1."direction" = 'in')`;
+    where m1."organization_id" = ${organizacionId} and m1."conversation_id" = ${conversacionId} and m1."direction" = 'in')`;
   const rows = await getDb()
     .select({
       segundos: sql<number | null>`extract(epoch from (
         (select min(m2."created_at") from "message" m2
-          where m2."conversation_id" = ${conversacionId}
+          where m2."organization_id" = ${organizacionId}
+            and m2."conversation_id" = ${conversacionId}
             and m2."direction" = 'out' and m2."origin" = 'ai'
             and m2."created_at" > ${primerEntrante})
         - ${primerEntrante}
@@ -230,7 +241,7 @@ async function coberturaDeFicha(organizationId: string, start: Date, end: Date) 
           organizationId,
           gte(schema.contact.createdAt, start),
           lt(schema.contact.createdAt, end),
-          notLabContact(schema.contact.id)
+          notLabContact(schema.contact.id, schema.contact.organizationId)
         )
       ),
     db
@@ -241,7 +252,7 @@ async function coberturaDeFicha(organizationId: string, start: Date, end: Date) 
           schema.contact.organizationId,
           organizationId,
           conFicha,
-          notLabContact(schema.contact.id)
+          notLabContact(schema.contact.id, schema.contact.organizationId)
         )
       ),
   ]);

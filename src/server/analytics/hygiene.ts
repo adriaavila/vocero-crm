@@ -89,7 +89,7 @@ async function leadsEnSilencio(organizationId: string, businessCurrency: string,
         organizationId,
         eq(schema.pipelineStage.kind, "open"),
         isNull(schema.contact.archivedAt),
-        notLabContact(schema.lead.contactId),
+        notLabContact(schema.lead.contactId, schema.lead.organizationId),
         // El instante va como texto con cast explícito: dentro de un
         // `coalesce` el tipo del parámetro es desconocido y el driver no sabe
         // serializar un Date contra "unknown".

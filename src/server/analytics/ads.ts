@@ -144,7 +144,7 @@ async function prospectosPorFuente(
         organizationId,
         gte(schema.lead.createdAt, start),
         lt(schema.lead.createdAt, end),
-        notLabContact(schema.lead.contactId)
+        notLabContact(schema.lead.contactId, schema.lead.organizationId)
       )
     )
     .groupBy(sql`1`);
@@ -243,7 +243,7 @@ async function prospectosPorAnuncio(
         organizationId,
         gte(schema.lead.createdAt, start),
         lt(schema.lead.createdAt, end),
-        notLabContact(schema.lead.contactId)
+        notLabContact(schema.lead.contactId, schema.lead.organizationId)
       )
     )
     .groupBy(llave);

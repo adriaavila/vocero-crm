@@ -105,7 +105,7 @@ async function contarNuevos(
         organizationId,
         gte(schema.lead.createdAt, start),
         lt(schema.lead.createdAt, end),
-        notLabContact(schema.lead.contactId)
+        notLabContact(schema.lead.contactId, schema.lead.organizationId)
       )
     );
   return rows[0]?.n ?? 0;
@@ -159,7 +159,7 @@ async function desenlacesDelPeriodo(
         organizationId,
         gte(schema.leadStageEvent.occurredAt, start),
         lt(schema.leadStageEvent.occurredAt, end),
-        notLabContact(schema.leadStageEvent.contactId)
+        notLabContact(schema.leadStageEvent.contactId, schema.leadStageEvent.organizationId)
       )
     )
     .orderBy(
@@ -259,7 +259,7 @@ async function serieTemporal(
           organizationId,
           gte(schema.lead.createdAt, start),
           lt(schema.lead.createdAt, end),
-          notLabContact(schema.lead.contactId)
+          notLabContact(schema.lead.contactId, schema.lead.organizationId)
         )
       )
       // GROUP BY 1 (posición), no la expresión repetida: `localDateExpr` lleva
@@ -363,7 +363,7 @@ async function embudoCohorte(
           organizationId,
           gte(schema.lead.createdAt, start),
           lt(schema.lead.createdAt, end),
-          notLabContact(schema.leadStageEvent.contactId)
+          notLabContact(schema.leadStageEvent.contactId, schema.leadStageEvent.organizationId)
         )
       )
       .groupBy(schema.leadStageEvent.leadId),
@@ -437,7 +437,7 @@ async function tiemposPorEtapa(
         eq(schema.leadStageEvent.approximate, false),
         gte(schema.leadStageEvent.occurredAt, start),
         lt(schema.leadStageEvent.occurredAt, end),
-        notLabContact(schema.leadStageEvent.contactId)
+        notLabContact(schema.leadStageEvent.contactId, schema.leadStageEvent.organizationId)
       )
     );
 
@@ -526,7 +526,7 @@ async function pipelineVivo(
         schema.lead.organizationId,
         organizationId,
         eq(schema.pipelineStage.kind, "open"),
-        notLabContact(schema.lead.contactId)
+        notLabContact(schema.lead.contactId, schema.lead.organizationId)
       )
     );
 

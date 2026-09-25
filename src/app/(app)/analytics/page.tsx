@@ -1,25 +1,14 @@
-import { requireOwnerSession } from "@/lib/auth/session";
-import { getAnalitica, isRango, type Rango } from "@/server/agencia/analitica";
-import { AnalyticsClient } from "@/components/agencia/analytics-client";
-
-export const dynamic = "force-dynamic";
-
-const DEFAULT_RANGO: Rango = 7;
+import { redirect } from "next/navigation";
 
 /**
- * Analítica: capa de agencia, pantalla propia (no toca `overview.ts`, que es
- * el tablero de puesta en marcha). Solo el propietario la ve — muestra
- * ingresos, igual que Agente y Laboratorio.
+ * 019 (upstream) — Resultados reemplaza a Analítica en el nav y mide más de
+ * lo que esta pantalla media.
+ *
+ * `/analytics` queda como redirección nada más: NO se borra
+ * `src/server/agencia/analitica.ts` ni `AnalyticsClient` (capa de agencia,
+ * ingresos) — puede volver a enlazarse si hace falta. Solo se desconecta del
+ * nav y de esta ruta.
  */
-export default async function AnalyticsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ rango?: string }>;
-}) {
-  const session = await requireOwnerSession();
-  const params = await searchParams;
-  const parsed = Number(params.rango);
-  const rango = isRango(parsed) ? parsed : DEFAULT_RANGO;
-  const data = await getAnalitica(session.organizationId, rango);
-  return <AnalyticsClient data={data} />;
+export default function AnalyticsPage() {
+  redirect("/results");
 }

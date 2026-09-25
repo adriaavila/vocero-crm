@@ -23,15 +23,28 @@ import type { PgColumn } from "drizzle-orm/pg-core";
  * que además tenga una conversación de laboratorio sigue contando: lo real pesa
  * más que lo simulado.
  */
-export function notLabContact(contactIdColumn: PgColumn): SQL {
+/**
+ * Fork — recibe también la columna de `organization_id` de la fila de
+ * afuera, y la suma a las dos subconsultas. `message` y `conversation` son
+ * tablas de TODOS los negocios: sin este filtro, cada llamada barre la tabla
+ * entera buscando por `contact_id` solo. Con él, la rama `real_conv` calza
+ * exacto con `conversation_org_contact_real_uq` (organization_id, contact_id
+ * WHERE is_test = false).
+ */
+export function notLabContact(
+  contactIdColumn: PgColumn,
+  organizationIdColumn: PgColumn
+): SQL {
   return sql`(
     not exists (
       select 1 from "conversation" lab
-      where lab."contact_id" = ${contactIdColumn} and lab."is_test" = true
+      where lab."organization_id" = ${organizationIdColumn}
+        and lab."contact_id" = ${contactIdColumn} and lab."is_test" = true
     )
     or exists (
       select 1 from "conversation" real_conv
-      where real_conv."contact_id" = ${contactIdColumn} and real_conv."is_test" = false
+      where real_conv."organization_id" = ${organizationIdColumn}
+        and real_conv."contact_id" = ${contactIdColumn} and real_conv."is_test" = false
     )
   )`;
 }

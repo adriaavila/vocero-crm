@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
 import {
   addDaysISO,
   isValidTimeZone,
@@ -48,16 +48,47 @@ export class PeriodError extends Error {
   }
 }
 
-export async function businessTimezone(organizationId: string): Promise<string> {
-  const rows = await getDb()
-    .select({ timezone: schema.calendarSettings.timezone })
-    .from(schema.calendarSettings)
-    .where(eq(schema.calendarSettings.organizationId, organizationId))
-    .limit(1);
-  const tz = rows[0]?.timezone;
+/**
+ * Fork — la zona CANÓNICA del negocio es la del agente
+ * (`agent_profile.business_timezone`, la misma que resuelve
+ * `getBusinessHours()` para decidir si está "abierto"): si Resultados y el
+ * horario de atención discreparan en qué zona es "la del negocio", cada
+ * pantalla contaría un día distinto para el mismo instante. `calendar_settings`
+ * es la agenda de upstream (015): se usa solo si no hay perfil de agente con
+ * zona válida, y el default si tampoco hay agenda.
+ *
+ * Separada de la consulta a la base para poder probarla sin una: la parte que
+ * puede salir mal (dos zonas guardadas, cuál gana) es lógica pura.
+ */
+export function pickBusinessTimezone(
+  agentProfileTimezone: string | null | undefined,
+  calendarSettingsTimezone: string | null | undefined
+): string {
+  if (agentProfileTimezone && isValidTimeZone(agentProfileTimezone)) {
+    return agentProfileTimezone;
+  }
   // Una zona inválida guardada en la base no puede tumbar la pantalla entera:
   // se cae a la de por defecto, que es lo mismo que hace la agenda.
-  return tz && isValidTimeZone(tz) ? tz : DEFAULT_TIMEZONE;
+  if (calendarSettingsTimezone && isValidTimeZone(calendarSettingsTimezone)) {
+    return calendarSettingsTimezone;
+  }
+  return DEFAULT_TIMEZONE;
+}
+
+export async function businessTimezone(organizationId: string): Promise<string> {
+  const [perfil, agenda] = await Promise.all([
+    getDb()
+      .select({ timezone: schema.agentProfile.businessTimezone })
+      .from(schema.agentProfile)
+      .where(scoped(schema.agentProfile.organizationId, organizationId))
+      .limit(1),
+    getDb()
+      .select({ timezone: schema.calendarSettings.timezone })
+      .from(schema.calendarSettings)
+      .where(scoped(schema.calendarSettings.organizationId, organizationId))
+      .limit(1),
+  ]);
+  return pickBusinessTimezone(perfil[0]?.timezone, agenda[0]?.timezone);
 }
 
 /** Días de diferencia entre dos fechas de calendario. */

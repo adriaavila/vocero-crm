@@ -226,6 +226,21 @@ try {
   });
   check("una sesión no puede abrir la página de otro tenant", crossPage.status() === 404);
 
+  // 019 (upstream, portado) — Resultados es owner+Pro (`withProOwner`), pero
+  // el cruce de tenant se corta ANTES de eso: `requireSession()` resuelve la
+  // membresía por el HOST, y con el host de otro negocio alpha no tiene
+  // ninguna — 401 sin importar plan ni rol.
+  for (const ruta of ["sales", "bot", "hygiene", "ads"]) {
+    const crossAnalytics = await alpha.request.get(`${base}/api/analytics/${ruta}`, {
+      headers: headers(betaHost),
+      maxRedirects: 0,
+    });
+    check(
+      `una sesión no puede leer /api/analytics/${ruta} de otro tenant`,
+      crossAnalytics.status() === 401
+    );
+  }
+
   const crossEvents = await alpha.request.get(`${base}/api/events`, {
     headers: headers(betaHost),
     maxRedirects: 0,

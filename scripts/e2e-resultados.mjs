@@ -254,8 +254,9 @@ async function main() {
   );
 
   // El modelo contesta a todos menos al que pidió un humano: a ése lo agarra
-  // el patrón de respaldo antes del modelo, le avisa que lo comunica con una
-  // persona y lo escala.
+  // el patrón de respaldo antes del modelo y lo escala (este fork no trae
+  // upstream e635378, así que el patrón escala EN SILENCIO, sin avisar antes
+  // — ver el bloque de abajo).
   const contestadas = await hasta(async () => {
     for (const [n] of siembra) {
       if (n === 6) continue;
@@ -270,15 +271,19 @@ async function main() {
     return convs.find((c) => c.id === conv[6]?.id)?.handoffReason === "cliente";
   });
   ok("la que pidió un humano quedó escalada por el cliente", escalada);
-  let aviso = [];
-  await hasta(async () => {
-    aviso = ((await api(`/api/conversations/${conv[6]?.id}/messages`)).json?.messages ?? [])
-      .filter((m) => m.direction === "out" && m.origin === "ai");
-    return aviso.length > 0;
-  });
+  // Fork — upstream (e635378, "pedir un humano ya no deja al cliente en
+  // silencio") manda un aviso fijo antes de traspasar; este fork no trae ese
+  // commit, así que el patrón de respaldo traspasa SIN mandar nada. Es el bug
+  // real que upstream reportó y arregló (#62) — no se porta aquí, así que el
+  // guion se deja fiel a lo que este fork hace HOY: silencio, no aviso.
+  // `escalada` ya confirmó que el traspaso quedó persistido, así que el turno
+  // completo (con cualquier envío que fuera a hacer) ya terminó: no hay nada
+  // que esperar con `hasta`.
+  const aviso = ((await api(`/api/conversations/${conv[6]?.id}/messages`)).json?.messages ?? [])
+    .filter((m) => m.direction === "out" && m.origin === "ai");
   ok(
-    "y recibió el aviso del traspaso, no silencio",
-    aviso.length === 1 && /persona del equipo/.test(aviso[0]?.text ?? ""),
+    "no manda aviso antes de traspasar (este fork no trae e635378): silencio, no un mensaje",
+    aviso.length === 0,
     JSON.stringify(aviso.map((m) => m.text))
   );
 
@@ -469,10 +474,13 @@ async function main() {
   ok("conversaciones nuevas: +9", d((f) => f.bot.conversations) === 9, `Δ=${d((f) => f.bot.conversations)}`);
   ok("«contestó el agente» se mide sobre las 9 con mensaje del cliente",
     d((f) => f.bot.aiReplyRate.sample) === 9, JSON.stringify(despues.bot.aiReplyRate));
-  // El aviso del traspaso es un saliente con origen IA: la escalada también
-  // tuvo respuesta del agente, y a los segundos.
-  ok("primera respuesta: +9 medidas (también la escalada: su aviso del traspaso)",
-    d((f) => f.bot.firstResponseSample) === 9 && despues.bot.firstResponseSeconds !== null,
+  // Fork — este repo no trae el aviso del traspaso (upstream e635378, "pedir
+  // un humano ya no deja al cliente en silencio"): un traspaso decidido por
+  // el patrón (FR-022, como la escalada de este guion) sale SIN mensaje de
+  // IA. Sin ese saliente, esa conversación no tiene "segundos hasta la
+  // primera respuesta" que medir, así que el muestreo es +8, no +9.
+  ok("primera respuesta: +8 medidas (la escalada no cuenta: este fork no manda su aviso)",
+    d((f) => f.bot.firstResponseSample) === 8 && despues.bot.firstResponseSeconds !== null,
     `Δ=${d((f) => f.bot.firstResponseSample)} mediana=${despues.bot.firstResponseSeconds}`);
   ok("pasó a un humano: +1 «El cliente pidió un humano»", d((f) => escalo(f, "cliente")) === 1,
     JSON.stringify(despues.bot.handoffs));
