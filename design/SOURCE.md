@@ -18,5 +18,11 @@ Acá se refleja en:
   2026-09-23). Lo copian `src/app/icon.svg`, `src/app/apple-icon.png` y los dos
   PNG de `public/`; `tests/unit/favicon.test.ts` falla si `icon.svg` se separa.
 
+**Dónde se ve.** En toda instalación: el SaaS y las dedicadas (la misma imagen
+con `ALLOK_SAAS_MODE` apagado). Lo decide `isAllokBrand()` en
+`src/lib/tenant-host.ts`, no el modo SaaS; `ALLOK_BRAND=off` deja una instancia
+con la marca Vocero de antes. El nombre `data-saas` del atributo es histórico:
+marca diseño, no inquilinos.
+
 Si la marca cambia allá, se cambian estos cuatro, los íconos y `design.md`. Reemplaza al
 sistema Dawn → Dusk (cielo magenta), que quedó retirado.

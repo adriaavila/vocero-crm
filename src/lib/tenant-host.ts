@@ -39,6 +39,19 @@ export function isAllokSaaSMode(): boolean {
   return process.env.ALLOK_SAAS_MODE === "true";
 }
 
+/**
+ * ¿Se ve como allok? Es la marca, no el modo: una instancia dedicada (la misma
+ * imagen con `ALLOK_SAAS_MODE` apagado) también lleva el diseño allok, con el
+ * nombre del negocio. `ALLOK_SAAS_MODE` sigue decidiendo lo que es del SaaS
+ * (inquilinos por subdominio, cobro, registro).
+ *
+ * Encendida por defecto: todas las instalaciones son de allok. `ALLOK_BRAND=off`
+ * deja la instancia con la marca Vocero de siempre, para quien la quiera así.
+ */
+export function isAllokBrand(): boolean {
+  return isAllokSaaSMode() || process.env.ALLOK_BRAND !== "off";
+}
+
 export function isReservedSubdomain(value: string): boolean {
   return RESERVED_SUBDOMAINS.has(value.trim().toLowerCase());
 }

@@ -3,7 +3,7 @@ import { DEFAULT_BRANDING, resolveAccentSet } from "@/lib/branding";
 import { ALLOK_MARK, faviconInitial } from "@/lib/favicon";
 import { getBranding } from "@/server/branding";
 import { headers } from "next/headers";
-import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
 export const alt = "CRM de WhatsApp";
@@ -20,8 +20,8 @@ export default async function Image() {
     ? Promise.resolve(DEFAULT_BRANDING)
     : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
   const { accent, fg } = resolveAccentSet(branding.accent);
-  // En el SaaS firma el símbolo de allok, como el favicon; en Vocero, la inicial.
-  const saas = isAllokSaaSMode();
+  // Con la marca allok firma su símbolo, como el favicon; en Vocero, la inicial.
+  const saas = isAllokBrand();
 
   return new ImageResponse(
     <div
