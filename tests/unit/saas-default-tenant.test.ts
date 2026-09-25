@@ -174,6 +174,24 @@ describe("new SaaS tenant with default settings", () => {
     expect(rowsOf(schema.conversation)[0]).toMatchObject({ aiEnabled: false });
   });
 
+  it("IMPORTANTE: with Nea configured, the owner's toggle still governs — getSystemState shows 'pausado' when profile.enabled is false, not 'allok contesta por ti'", async () => {
+    vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
+    const organizationId = await signUp();
+    Object.assign(rowsOf(schema.agentProfile)[0]!, { enabled: false });
+    Object.assign(rowsOf(schema.organization)[0]!, {
+      metadata: JSON.stringify({ allok: { billing: { plan: "basic", status: "active" } } }),
+    });
+    rowsOf(schema.metaCredentials).push({ organizationId, status: "connected" });
+
+    // Antes de este freno, `cerebroExternoAtiende` (isExternalBrainConfigured
+    // + Nea) forzaba `agentOn=true` aquí aunque el dueño hubiera apagado el
+    // agente — el punto y la barra lateral decían "allok contesta por ti" con
+    // nadie respondiendo de verdad, porque Nea SÍ mira `profile.enabled`
+    // (pipeline.ts) antes de despachar.
+    expect((await getSystemState(organizationId, true)).state).toBe("pausado");
+  });
+
   it("every SaaS tenant gets a queued turn now, principal included (the bug this migration fixes)", async () => {
     // Antes, un `BOT_API_KEY` configurado apagaba a este punto de enganche
     // por completo para el negocio heredado (`principal`) porque Nea
@@ -198,12 +216,22 @@ describe("new SaaS tenant with default settings", () => {
     expect(await cerebroExternoAtiende("org_any")).toBe(true);
   });
 
-  it("a dedicated instance with only BOT_API_KEY (no NEA_DISPATCH_URL) does NOT count as an external brain", async () => {
+  it("a dedicated instance with only BOT_API_KEY (no NEA_DISPATCH_URL) still counts as an external brain — NEA_DISPATCH_URL doesn't change this", async () => {
     vi.stubEnv("ALLOK_SAAS_MODE", "");
     vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
     vi.stubEnv("NEA_DISPATCH_URL", "");
 
-    expect(await cerebroExternoAtiende("org_any")).toBe(false);
+    expect(await cerebroExternoAtiende("org_any")).toBe(true);
+  });
+
+  it("in SaaS, BOT_API_KEY alone (no NEA_DISPATCH_URL) still only covers the legacy org — exactly like main", async () => {
+    vi.stubEnv("ALLOK_SAAS_MODE", "true");
+    vi.stubEnv("BOT_API_KEY", "clave-del-cerebro-externo-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "");
+    legacyOrganizationId = "org_principal";
+
+    expect(await cerebroExternoAtiende("org_principal")).toBe(true);
+    expect(await cerebroExternoAtiende("org_otro_negocio")).toBe(false);
   });
 
   it("legacy signup keeps the always-on agent without a schedule", async () => {

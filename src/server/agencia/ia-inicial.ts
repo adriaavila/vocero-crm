@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
-import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
+import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
 
 /**
  * Capa de agencia — ¿la IA nace encendida en una conversación nueva?
@@ -23,15 +23,21 @@ import { cerebroExternoAtiende } from "@/server/agencia/cerebro-externo";
  *   sin ningún cerebro            → NO puede responder, aunque la conversación
  *                                  nazca habilitada.
  *   agente interno encendido      → SÍ. Es lo que el dueño pidió.
- *   cerebro externo conectado     → SÍ. `BOT_API_KEY` configurada significa
- *                                   que hay un bot al mando; que hable o no
+ *   cerebro externo LEGADO        → SÍ. `BOT_API_KEY` sin despacho conectado
+ *     (sin Nea)                     significa que hay un bot que escucha su
+ *                                   propio webhook al mando; que hable o no
  *                                   lo decide él (allowlist, calificación).
- *                                   Sin esto, una instancia con Rei al frente
- *                                   —que es el caso normal de la agencia— y
- *                                   el agente interno apagado dejaba a TODOS
- *                                   los leads sin respuesta. En SaaS solo
- *                                   cuenta en el negocio que el bot atiende
+ *                                   Sin esto, una instancia con ese bot al
+ *                                   frente —el caso normal de la agencia
+ *                                   antes de Nea— y el agente interno
+ *                                   apagado dejaba a TODOS los leads sin
+ *                                   respuesta. En SaaS solo cuenta en el
+ *                                   negocio que el bot atiende
  *                                   (`cerebro-externo.ts`).
+ *   Nea configurada (despacho)    → como Rei: solo `profile.enabled`. Nea
+ *                                   respeta el freno del dueño igual que el
+ *                                   agente interno — el despacho en
+ *                                   `pipeline.ts` ya decide si contesta.
  *   + activación por mensajes
  *     configurados                → NO. En ese modo solo despiertan los
  *                                   mensajes exactos que el dueño definió,
@@ -51,10 +57,11 @@ export async function iaInicialPara(organizationId: string): Promise<boolean> {
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .limit(1);
   const perfil = rows[0];
-  // Sin perfil todavía: solo un cerebro externo puede decidir si responde.
-  if (!perfil) return cerebroExternoAtiende(organizationId);
+  // Sin perfil todavía: solo un cerebro externo LEGADO puede decidir si
+  // responde (Nea espera a que exista el perfil, igual que Rei).
+  if (!perfil) return cerebroExternoLegadoSiempreOn(organizationId);
   if (perfil.activationEnabled) return false;
-  return perfil.enabled || (await cerebroExternoAtiende(organizationId));
+  return perfil.enabled || (await cerebroExternoLegadoSiempreOn(organizationId));
 }
 
 /**

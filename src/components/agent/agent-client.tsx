@@ -38,14 +38,7 @@ type KbEntry = {
   content: string | null;
 };
 
-export function AgentClient({
-  saasMode = false,
-  brain = "rei",
-}: {
-  saasMode?: boolean;
-  /** Quién contesta si el agente está encendido (mensaje mínimo de honestidad). */
-  brain?: "nea" | "rei";
-}) {
+export function AgentClient({ saasMode = false }: { saasMode?: boolean }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [aiCredentials, setAiCredentials] = useState<AgencyAiCredentials | null>(null);
@@ -150,7 +143,7 @@ export function AgentClient({
 
       <p className="px-4 pt-3 text-sm text-muted-foreground sm:px-6">
         {profile.enabled
-          ? `${brain === "nea" ? "Nea" : "Rei"} responde por ti.`
+          ? `${profile.name?.trim() || "Tu agente"} está encendido y responde según tu horario de atención.`
           : "Agente apagado. Nadie responde automáticamente."}
       </p>
 

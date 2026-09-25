@@ -150,17 +150,84 @@ describe("dispatchToNea", () => {
     expect(init.headers["X-Signature"]).toBe(expectedSignature);
   });
 
-  it("respuesta no-2xx → lanza", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("boom", { status: 500 })));
-    await expect(dispatchToNea(PAYLOAD)).rejects.toThrow(/500/);
+  it("4xx → lanza SIN reintentar (el payload está mal, no la red)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("bad", { status: 422 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(dispatchToNea(PAYLOAD)).rejects.toThrow(/422/);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("timeout / fetch rechaza → lanza (no cuelga el turno)", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockRejectedValue(new DOMException("The operation was aborted", "TimeoutError"))
-    );
-    await expect(dispatchToNea(PAYLOAD)).rejects.toThrow(/Nea no respondió/);
+  it("5xx persistente → reintenta con backoff (~2s, ~5s) y termina lanzando", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = dispatchToNea(PAYLOAD);
+      const assertion = expect(result).rejects.toThrow(/500/);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+
+      expect(fetchMock).toHaveBeenCalledTimes(3); // intento + 2 reintentos
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("timeout / error de red persistente → reintenta y termina lanzando 'Nea no respondió' (no cuelga el turno)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockRejectedValue(new DOMException("The operation was aborted", "TimeoutError"));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = dispatchToNea(PAYLOAD);
+      const assertion = expect(result).rejects.toThrow(/Nea no respondió/);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await assertion;
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("un 5xx que se recupera al reintentar → NO lanza (el reintento salvó el turno)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(new Response("boom", { status: 502 }))
+        .mockResolvedValueOnce(new Response(null, { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      const result = dispatchToNea(PAYLOAD);
+      await vi.advanceTimersByTimeAsync(2_000);
+      await expect(result).resolves.toBeUndefined();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("firma con el BOT_API_KEY recortado (mismo valor que decide isNeaBrain)", async () => {
+    vi.stubEnv("BOT_API_KEY", "  clave-compartida-con-nea-larga  ");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await dispatchToNea(PAYLOAD);
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    const expectedBody = JSON.stringify(PAYLOAD);
+    const expectedSignature = `sha256=${createHmac("sha256", "clave-compartida-con-nea-larga")
+      .update(expectedBody)
+      .digest("hex")}`;
+    expect(init.headers["X-Signature"]).toBe(expectedSignature);
   });
 
   it("sin NEA_DISPATCH_URL → lanza sin tocar la red", async () => {

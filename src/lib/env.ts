@@ -151,26 +151,39 @@ export function isAiConfigured(): boolean {
 }
 
 /**
+ * true si esta instancia tiene un cerebro externo conectado por `/api/bot/*`
+ * — Nea u otro bot propio, sin importar si además está enganchado por
+ * despacho (`isNeaBrain()`). Idéntico al comportamiento de siempre: un
+ * `BOT_API_KEY` configurado significa "hay un bot al mando", y Rei se hace a
+ * un lado. Cambiar ESTO por algo condicionado a `NEA_DISPATCH_URL` fue el
+ * bug que hacía que una instancia dedicada con `BOT_API_KEY` + una clave de
+ * IA propia terminara con Rei respondiendo A LA VEZ que su bot externo.
+ */
+export function isExternalBrainConfigured(): boolean {
+  return (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
+}
+
+/**
  * true si Nea (el cerebro externo) está lista para recibir despachos:
  * necesita a dónde mandar el turno (`NEA_DISPATCH_URL`) y con qué firmarlo
- * (`BOT_API_KEY`, ≥16 caracteres). `BOT_API_KEY` sola ya no basta — antes
- * apagaba a Rei en toda la instancia aunque nadie estuviera despachando nada,
- * y una instancia sin `NEA_DISPATCH_URL` se quedaba sin ningún cerebro.
+ * (`BOT_API_KEY`, ≥16 caracteres — lo mismo que `isExternalBrainConfigured`,
+ * más específico). Sin `NEA_DISPATCH_URL`, un `BOT_API_KEY` configurado sigue
+ * significando "hay un cerebro externo LEGADO al mando" (`isExternalBrainConfigured`),
+ * no "no hay ningún cerebro": el trato con ese bot no cambia con este PR.
  */
 export function isNeaBrain(): boolean {
   const hasDispatchUrl = (process.env.NEA_DISPATCH_URL?.trim().length ?? 0) > 0;
-  const hasSigningKey = (process.env.BOT_API_KEY?.trim().length ?? 0) >= 16;
-  return hasDispatchUrl && hasSigningKey;
+  return hasDispatchUrl && isExternalBrainConfigured();
 }
 
-/** Rei (el agente interno) contesta salvo que Nea esté configurada. */
+/** El bot externo (Nea o legado) tiene prioridad para no responder dos veces al mismo mensaje. */
 export function shouldRunInternalAgent(): boolean {
-  return isAiConfigured() && !isNeaBrain();
+  return isAiConfigured() && !isExternalBrainConfigured();
 }
 
-/** true si responde el agente interno o Nea. */
+/** true si responde el agente interno o un cerebro externo autenticado. */
 export function isAgentConfigured(): boolean {
-  return isAiConfigured() || isNeaBrain();
+  return isAiConfigured() || isExternalBrainConfigured();
 }
 
 export function isWahaConfigured(): boolean {

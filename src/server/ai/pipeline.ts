@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -6,7 +6,12 @@ import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-
 import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import { getAiRuntimeConfig, hasConfiguredAiProvider } from "@/server/ai/credentials";
-import { buildNeaPayload, dispatchToNea, type NeaSourceMessage } from "@/server/ai/nea-dispatch";
+import {
+  buildNeaPayload,
+  dispatchToNea,
+  selectMessagesForNea,
+  type NeaSourceMessage,
+} from "@/server/ai/nea-dispatch";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -21,7 +26,7 @@ import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
-import { hasSaaSPlan } from "@/server/agencia/entitlements";
+import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAgentRespondNow } from "@/server/business-hours";
 
@@ -119,6 +124,10 @@ async function executeTurn(conversationId: string): Promise<void> {
     await runAgentTurn(conversationId);
   } catch (err) {
     console.error("[agente] turno falló:", err);
+    // Mismo trato que el worker de SaaS ante un fallo (p. ej. Nea caída tras
+    // sus reintentos): un humano se entera por el handoff en vez de que la
+    // conversación se quede pausada en silencio, sin nada que lo delate.
+    await applyHandoffOnFailure(conversationId).catch(() => {});
   } finally {
     entry.running = false;
     if (entry.pending) {
@@ -128,6 +137,18 @@ async function executeTurn(conversationId: string): Promise<void> {
       map.delete(conversationId);
     }
   }
+}
+
+/** Handoff `error` para el conversationId de un turno legado que reventó. */
+async function applyHandoffOnFailure(conversationId: string): Promise<void> {
+  const rows = await getDb()
+    .select({ organizationId: schema.conversation.organizationId })
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversationId))
+    .limit(1);
+  const organizationId = rows[0]?.organizationId;
+  if (!organizationId) return;
+  await applyHandoff(conversationId, organizationId, "error");
 }
 
 /**
@@ -349,6 +370,11 @@ async function runNeaAgentTurn(conversationId: string): Promise<void> {
   if (!profile) return;
 
   if (!conversation.isTest && !profile.enabled) return;
+  // Mismo freno de facturación que `sendText` aplica al entregar la respuesta
+  // de Rei: sin esto, una organización con la automatización pausada seguía
+  // recibiendo turnos despachados a Nea (que sí sabe cómo responder, así que
+  // el guard tiene que estar ANTES del despacho, no después).
+  if (!conversation.isTest && !(await canAutomate(organizationId))) return;
   if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
     return;
   }
@@ -364,7 +390,57 @@ async function runNeaAgentTurn(conversationId: string): Promise<void> {
   const contact = contactRows[0];
   if (!contact) return;
 
-  const messageRows = await db
+  const sourceMessages = conversation.isTest
+    ? await neaMessagesSinceLastOutbound(db, conversationId)
+    : await neaRecentInboundMessages(db, conversationId);
+
+  const payload = buildNeaPayload({
+    organizationId,
+    conversationId,
+    isTest: conversation.isTest,
+    contact: { identity: contact.waIdentity, name: contact.name },
+    messages: sourceMessages,
+  });
+  if (!payload.messages.length) return;
+
+  await dispatchToNea(payload);
+}
+
+type Db = ReturnType<typeof getDb>;
+
+function toNeaSourceMessages(
+  rows: {
+    id: string;
+    waMessageId: string | null;
+    direction: "in" | "out";
+    type: string;
+    text: string | null;
+    waTimestamp: Date | null;
+    createdAt: Date;
+    mediaWaId: string | null;
+  }[]
+): NeaSourceMessage[] {
+  return rows.map((m) => ({
+    id: m.id,
+    waMessageId: m.waMessageId,
+    direction: m.direction,
+    type: m.type,
+    text: m.text,
+    mediaWaId: m.mediaWaId,
+    timestamp: m.waTimestamp ?? m.createdAt,
+  }));
+}
+
+/**
+ * Laboratorio (`isTest`): los entrantes DESPUÉS del último saliente. Un
+ * mensaje de prueba nunca trae `wa_message_id` (siempre `null`), así que Nea
+ * no puede dedupearlos — hay que recortar exactamente a lo nuevo.
+ */
+async function neaMessagesSinceLastOutbound(
+  db: Db,
+  conversationId: string
+): Promise<NeaSourceMessage[]> {
+  const rows = await db
     .select({
       id: schema.message.id,
       waMessageId: schema.message.waMessageId,
@@ -380,28 +456,49 @@ async function runNeaAgentTurn(conversationId: string): Promise<void> {
     .where(eq(schema.message.conversationId, conversationId))
     .orderBy(desc(schema.message.createdAt))
     .limit(20);
-  messageRows.reverse();
+  rows.reverse();
+  return selectMessagesForNea(toNeaSourceMessages(rows));
+}
 
-  const sourceMessages: NeaSourceMessage[] = messageRows.map((m) => ({
-    id: m.id,
-    waMessageId: m.waMessageId,
-    direction: m.direction,
-    type: m.type,
-    text: m.text,
-    mediaWaId: m.mediaWaId,
-    timestamp: m.waTimestamp ?? m.createdAt,
-  }));
-
-  const payload = buildNeaPayload({
-    organizationId,
-    conversationId,
-    isTest: conversation.isTest,
-    contact: { identity: contact.waIdentity, name: contact.name },
-    messages: sourceMessages,
-  });
-  if (!payload.messages.length) return;
-
-  await dispatchToNea(payload);
+/**
+ * Conversación real: los últimos hasta 10 entrantes de las últimas 24h, SIN
+ * recortar por "desde el último saliente". Un mensaje que llega mientras el
+ * despacho anterior seguía en vuelo con "desde el último saliente" se perdía
+ * — nunca aparecía en ningún despacho porque para cuando Nea contestaba (y
+ * quedaba un saliente), ese entrante ya había quedado ANTES del corte de la
+ * siguiente selección. Mandar siempre la ventana completa (con su
+ * `wa_message_id`) y dejar que Nea dedupee por id es lo que garantiza que
+ * todo mensaje aparezca en al menos un despacho.
+ */
+async function neaRecentInboundMessages(
+  db: Db,
+  conversationId: string
+): Promise<NeaSourceMessage[]> {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      id: schema.message.id,
+      waMessageId: schema.message.waMessageId,
+      direction: schema.message.direction,
+      type: schema.message.type,
+      text: schema.message.text,
+      waTimestamp: schema.message.waTimestamp,
+      createdAt: schema.message.createdAt,
+      mediaWaId: schema.mediaAsset.waMediaId,
+    })
+    .from(schema.message)
+    .leftJoin(schema.mediaAsset, eq(schema.message.mediaAssetId, schema.mediaAsset.id))
+    .where(
+      and(
+        eq(schema.message.conversationId, conversationId),
+        eq(schema.message.direction, "in"),
+        gte(schema.message.createdAt, since)
+      )
+    )
+    .orderBy(desc(schema.message.createdAt))
+    .limit(10);
+  rows.reverse();
+  return toNeaSourceMessages(rows);
 }
 
 type Conversation = typeof schema.conversation.$inferSelect;

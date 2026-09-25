@@ -17,7 +17,13 @@ import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
  */
 
 export function requireBotKey(req: Request): Response | null {
-  const rl = checkRateLimit("bot-api", { windowMs: 60_000, max: 600 });
+  // ponytail: un solo bucket para TODA la superficie /api/bot/*, compartido
+  // por todas las organizaciones — correcto cuando el cerebro externo era una
+  // instancia por negocio, pero Nea es un servicio único para todo el SaaS:
+  // 600/min lo asfixiaba con pocos tenants activos a la vez. Si algún día un
+  // cerebro externo abusa, la solución es un bucket POR ORGANIZACIÓN, no bajar
+  // este número otra vez.
+  const rl = checkRateLimit("bot-api", { windowMs: 60_000, max: 3000 });
   if (!rl.allowed) return apiError(429, "rate_limited", "Demasiadas solicitudes");
 
   const expected = process.env.BOT_API_KEY;
