@@ -194,7 +194,9 @@ export function AppNav({
       data-allok-nav={allokBrand || undefined}
       className={cn(
         "fixed inset-y-0 left-0 z-50 flex w-[17rem] shrink-0 flex-col overflow-y-auto border-r bg-subtle px-3 pb-3.5 pt-4 transition-[transform,visibility] duration-200",
-        "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:overflow-visible lg:transition-none",
+        // Escritorio: la columna hace scroll propio. Si desborda, el foco en
+        // sus botones de abajo corría el shell entero y dejaba blanco debajo.
+        "lg:static lg:visible lg:z-auto lg:w-56 lg:translate-x-0 lg:transition-none",
         open ? "visible translate-x-0 shadow-pop" : "invisible -translate-x-full"
       )}
     >
