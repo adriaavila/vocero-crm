@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { isNeaBrain } from "@/lib/env";
 import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
@@ -11,8 +12,10 @@ import { getAiRuntimeConfig } from "@/server/ai/credentials";
 /**
  * Runner del Laboratorio (FR-030/FR-034): corrida en segundo plano DENTRO del
  * proceso (sin cola externa), turnos secuenciales con debounce 0, timeout
- * global de 10 minutos, y lock de concurrencia por índice parcial UNIQUE en
- * BD (máx. 1 corrida `running` por organización).
+ * global (10 minutos; 30 con Nea — un turno despachado puede tardar bastante
+ * más que una llamada directa al LLM, con reintentos incluidos), y lock de
+ * concurrencia por índice parcial UNIQUE en BD (máx. 1 corrida `running` por
+ * organización).
  *
  * Sandbox (FR-031): las conversaciones se crean con is_test=true; el pipeline
  * del agente persiste las respuestas sin tocar la API, y el sender real lanza
@@ -20,6 +23,7 @@ import { getAiRuntimeConfig } from "@/server/ai/credentials";
  */
 
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
+const RUN_TIMEOUT_MS_NEA = 30 * 60 * 1000;
 
 export class RunConflictError extends Error {}
 
@@ -64,14 +68,15 @@ async function executeRun(
   organizationId: string
 ): Promise<void> {
   const controller = new AbortController();
+  const timeoutMs = isNeaBrain() ? RUN_TIMEOUT_MS_NEA : RUN_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) =>
     (timer = setTimeout(
       () => {
         controller.abort();
-        reject(new Error("timeout de 10 minutos superado"));
+        reject(new Error(`timeout de ${Math.round(timeoutMs / 60_000)} minutos superado`));
       },
-      RUN_TIMEOUT_MS
+      timeoutMs
     ))
   );
   try {
@@ -136,10 +141,29 @@ async function runAllCases(
       .set({ status: "running" })
       .where(eq(schema.agentTestCase.id, testCase.id));
 
-    const { transcript, conversationId } = await runConversation(
-      organizationId,
-      persona
-    );
+    let transcript: { role: "cliente" | "agente"; text: string }[];
+    let conversationId: string;
+    try {
+      ({ transcript, conversationId } = await runConversation(
+        organizationId,
+        persona,
+        signal
+      ));
+    } catch (err) {
+      // Un despacho a Nea que agota sus reintentos (o cualquier otro fallo
+      // del turno) no debe tumbar la corrida entera: se marca ESTA persona y
+      // se sigue con las demás. No hay un status "failed" propio en el
+      // esquema — "judge_failed" ya significa "este caso se queda sin
+      // veredicto", que es exactamente lo que pasó aquí también.
+      console.error(`[lab] turno falló para ${persona.key}:`, err);
+      await db
+        .update(schema.agentTestCase)
+        .set({ status: "judge_failed" })
+        .where(eq(schema.agentTestCase.id, testCase.id));
+      done += 1;
+      publishProgress(organizationId, runId, "running", done, total);
+      continue;
+    }
     if (signal.aborted) return;
 
     const outcome = await judgeCase({
@@ -193,7 +217,8 @@ async function runAllCases(
 /** Conversa el guion completo contra el agente real; corta al primer handoff. */
 async function runConversation(
   organizationId: string,
-  persona: Persona
+  persona: Persona,
+  signal: AbortSignal
 ): Promise<{
   transcript: { role: "cliente" | "agente"; text: string }[];
   conversationId: string;
@@ -213,6 +238,9 @@ async function runConversation(
   });
 
   for (const line of persona.script) {
+    // El timeout de la corrida (o un cancel) puede llegar a mitad de guion —
+    // se revisa ANTES de cada turno, no solo entre personas.
+    if (signal.aborted) break;
     const now = new Date();
     await db.insert(schema.message).values({
       id: newId("message"),

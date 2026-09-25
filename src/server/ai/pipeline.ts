@@ -124,10 +124,15 @@ async function executeTurn(conversationId: string): Promise<void> {
     await runAgentTurn(conversationId);
   } catch (err) {
     console.error("[agente] turno falló:", err);
-    // Mismo trato que el worker de SaaS ante un fallo (p. ej. Nea caída tras
-    // sus reintentos): un humano se entera por el handoff en vez de que la
-    // conversación se quede pausada en silencio, sin nada que lo delate.
-    await applyHandoffOnFailure(conversationId).catch(() => {});
+    // Con Nea: mismo trato que el worker de SaaS ante un despacho que agotó
+    // sus reintentos — un humano se entera por el handoff en vez de que la
+    // conversación se quede pausada en silencio. Con Rei: EXACTAMENTE el
+    // comportamiento de `main`, solo log — un fallo del LLM interno no debe
+    // escalar a un humano solo, es lo que ya decide `applyHandoff("error")`
+    // más arriba en `runAgentTurn` cuando corresponde.
+    if (isNeaBrain()) {
+      await applyHandoffOnFailure(conversationId).catch(() => {});
+    }
   } finally {
     entry.running = false;
     if (entry.pending) {

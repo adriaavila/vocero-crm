@@ -57,6 +57,11 @@ const envSchema = z.object({
   GOOGLE_OAUTH_BASE_URL: z.string().url().default("https://oauth2.googleapis.com"),
   ALLOW_SIGNUP: z.string().optional(),
   AGENT_COALESCE_MS: z.coerce.number().int().min(0).default(6000),
+  // SaaS: cupo de turnos en paralelo del worker de agent_job (server/ai/
+  // worker.ts). Documentada aquí para que quede validada junto al resto del
+  // entorno; el worker la lee de `process.env` directamente (no de
+  // `getEnv()`) porque corre fuera del ciclo de una request.
+  AGENT_WORKER_CONCURRENCY: z.coerce.number().int().min(1).default(4),
   WA_MOCK_ENABLED: z.string().optional(),
   // API key de un cerebro externo que conduzca la conversación por /api/bot/*.
   // Sin ella, toda esa superficie responde 401. También firma el despacho a

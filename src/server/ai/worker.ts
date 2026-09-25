@@ -78,9 +78,17 @@ export async function claimUpToCapacity(state: WorkerState = workerState()): Pro
     const job = await claimNextJob(state.id);
     if (!job) break;
     state.inFlight++;
-    void processJob(job, state.id).finally(() => {
-      state.inFlight--;
-    });
+    // `processJob` ya atrapa el fallo del turno y lo convierte en
+    // `needs_review`, pero su PROPIA limpieza (el `update`/`applyHandoff` del
+    // catch) puede fallar a su vez — sin este `.catch`, eso se escapa como
+    // una promesa rechazada sin nadie que la maneje.
+    void processJob(job, state.id)
+      .catch((error) => {
+        console.error(`[agent-worker] limpieza del trabajo ${job.id} falló:`, error);
+      })
+      .finally(() => {
+        state.inFlight--;
+      });
   }
 }
 

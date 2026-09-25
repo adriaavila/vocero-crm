@@ -117,12 +117,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * POSTea el turno a Nea y espera su respuesta. Reintenta un error de red o
- * un 5xx hasta 2 veces con backoff (~2s, ~5s) — una salida corta de Nea no
- * debe pausar toda conversación en curso (`needs_review` + handoff `error`
- * en cada tenant que tuviera un turno en vuelo). Un 4xx NO reintenta: el
- * problema es el payload, no la red, y repetirlo no lo arregla. Lanza si
- * `NEA_DISPATCH_URL` no está configurada, o si se agotan los reintentos.
+ * POSTea el turno a Nea y espera su respuesta. Para conversaciones REALES
+ * reintenta un error de red o un 5xx hasta 2 veces con backoff (~2s, ~5s) —
+ * una salida corta de Nea no debe pausar toda conversación en curso
+ * (`needs_review` + handoff `error` en cada tenant que tuviera un turno en
+ * vuelo). Un 4xx NO reintenta: el problema es el payload, no la red, y
+ * repetirlo no lo arregla. El Laboratorio (`isTest`) NUNCA reintenta — ver
+ * el comentario sobre `attempts` más abajo. Lanza si `NEA_DISPATCH_URL` no
+ * está configurada, o si se agotan los intentos.
  */
 export async function dispatchToNea(payload: NeaDispatchPayload): Promise<void> {
   const url = process.env.NEA_DISPATCH_URL?.trim();
@@ -134,8 +136,15 @@ export async function dispatchToNea(payload: NeaDispatchPayload): Promise<void> 
     "X-Signature": sign(body),
   };
 
+  // El Laboratorio NUNCA reintenta: a diferencia de una conversación real (con
+  // ventana de WhatsApp y un cliente que no ve reintentos internos), aquí un
+  // reintento después de que Nea SÍ alcanzó a contestar (pero la respuesta se
+  // perdió en el camino de vuelta) duplicaría la respuesta persistida en la
+  // transcripción de la corrida.
+  const attempts = payload.isTest ? 1 : RETRY_DELAYS_MS.length + 1;
+
   let lastError: Error = new Error("Nea no respondió");
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1]!);
 
     let response: Response;

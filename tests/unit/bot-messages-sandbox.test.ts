@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `POST /api/bot/messages` sobre una conversación `is_test`: antes fallaba
- * con `sandbox_violation` (el sender real la rechaza, correctamente — FR-031)
- * porque la ruta llamaba a `sendText` sin mirar `isTest`. Con Nea como
- * cerebro por defecto, el Laboratorio pasa por esta misma ruta, así que debe
- * persistir el saliente de prueba (igual que el pipeline in-process) y JAMÁS
- * tocar la API real.
+ * `POST /api/bot/messages` sobre una conversación `is_test`.
+ *
+ * CON Nea (`isNeaBrain()`): se persiste como saliente de prueba (igual que
+ * el pipeline in-process) y JAMÁS toca la API real — el Laboratorio pasa
+ * por esta misma ruta cuando Nea contesta.
+ *
+ * SIN Nea (comportamiento de `main`, sin cambios): esas conversaciones no
+ * son alcanzables desde fuera a propósito, así que un cerebro externo que
+ * las tocara sigue recibiendo el guardarraíl duro de siempre —
+ * `sandbox_violation` vía `sendText` (aquí simulado, ya que `sendText` real
+ * es quien lo lanza).
  */
 
 const { sendText } = vi.hoisted(() => ({ sendText: vi.fn() }));
@@ -61,6 +66,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
 });
 
 import { resetRateLimit } from "@/lib/rate-limit";
+import { SendError } from "@/server/inbox/send";
 import { POST } from "@/app/api/bot/messages/route";
 
 const KEY = "clave-de-servicio-larga-0123456789abcdef";
@@ -83,7 +89,8 @@ describe("POST /api/bot/messages sobre una conversación de prueba", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("se persiste como saliente de prueba y responde {messageId}, sin llamar a sendText", async () => {
+  it("con Nea (NEA_DISPATCH_URL): se persiste como saliente de prueba y responde {messageId}, sin llamar a sendText", async () => {
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
     selectQueue.push([
       { id: "cv_lab", organizationId: "org_1", isTest: true, aiEnabled: true, handoffAt: null },
     ]);
@@ -101,6 +108,23 @@ describe("POST /api/bot/messages sobre una conversación de prueba", () => {
       aiGenerated: true,
       origin: "ai",
     });
+  });
+
+  it("SIN Nea (solo BOT_API_KEY, comportamiento de main): sigue yendo por sendText y responde 409 sandbox_violation", async () => {
+    selectQueue.push([
+      { id: "cv_lab", organizationId: "org_1", isTest: true, aiEnabled: true, handoffAt: null },
+    ]);
+    sendText.mockRejectedValue(
+      new SendError("sandbox_violation", "Conversación de prueba: el envío real está prohibido")
+    );
+
+    const res = await POST(req({ conversationId: "cv_lab", text: "hola" }));
+
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: { code?: string } };
+    expect(body.error?.code).toBe("sandbox_violation");
+    expect(sendText).toHaveBeenCalledTimes(1);
+    expect(inserts.some((i) => i.values.direction === "out")).toBe(false);
   });
 
   it("conversación real sigue yendo por sendText como antes", async () => {

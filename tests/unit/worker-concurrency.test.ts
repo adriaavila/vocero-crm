@@ -10,9 +10,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * anteriores terminen.
  */
 
-const { execute, runAgentTurn } = vi.hoisted(() => ({
+const { execute, runAgentTurn, cleanupState } = vi.hoisted(() => ({
   execute: vi.fn(),
   runAgentTurn: vi.fn(),
+  cleanupState: { throwOnUpdate: false },
 }));
 
 function selectChain(rows: unknown[] = []) {
@@ -24,7 +25,12 @@ function selectChain(rows: unknown[] = []) {
 function updateChain() {
   const c: Record<string, unknown> = {};
   c.set = () => c;
-  c.where = () => c;
+  c.where = () => {
+    if (cleanupState.throwOnUpdate) {
+      throw new Error("la BD se cayó justo al limpiar el trabajo");
+    }
+    return c;
+  };
   c.returning = () => Promise.resolve([]);
   return c;
 }
@@ -52,6 +58,7 @@ describe("claimUpToCapacity (cupo de concurrencia)", () => {
   beforeEach(() => {
     execute.mockReset();
     runAgentTurn.mockReset();
+    cleanupState.throwOnUpdate = false;
     deferreds = [];
     claimed = 0;
     // Cada llamada a `execute` simula el CTE de `claimNextJob`: un trabajo
@@ -116,5 +123,24 @@ describe("claimUpToCapacity (cupo de concurrencia)", () => {
 
     expect(execute).toHaveBeenCalledTimes(4);
     expect(runAgentTurn).toHaveBeenCalledTimes(4);
+  });
+
+  it("si la LIMPIEZA de un trabajo fallido también falla, no se escapa como una promesa sin manejar", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    runAgentTurn.mockImplementation(() => Promise.reject(new Error("Nea devolvió 500")));
+    cleanupState.throwOnUpdate = true;
+
+    await claimUpToCapacity();
+    // Deja correr la cadena `.catch().finally()` de `processJob` — si el
+    // `.catch()` que protege la limpieza no estuviera, esto se reportaría
+    // como un "Unhandled Rejection" y la suite fallaría, no esta aserción.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("limpieza del trabajo"),
+      expect.any(Error)
+    );
+    errorSpy.mockRestore();
   });
 });
