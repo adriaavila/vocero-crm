@@ -157,10 +157,10 @@
       "breakpoints": true
     },
     {
-      "idx": 22,
+      "idx": 9010,
       "version": "7",
-      "when": 1790394800999,
-      "tag": "0022_gasto_anuncios",
+      "when": 1790427283555,
+      "tag": "9010_gasto_anuncios",
       "breakpoints": true
     }
   ]
