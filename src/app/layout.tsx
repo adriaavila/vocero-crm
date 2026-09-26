@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
-import {
-  Archivo,
-  Geist,
-  IBM_Plex_Mono,
-  Instrument_Serif,
-  JetBrains_Mono,
-} from "next/font/google";
+import localFont from "next/font/local";
 import { accentCssVariables, DEFAULT_BRANDING, SAAS_BRANDING } from "@/lib/branding";
 import { faviconHref } from "@/lib/favicon";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
@@ -15,23 +9,29 @@ import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-hos
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import "./globals.css";
 
-// Las tres voces de la marca, las mismas de vocerocrm.com. next/font las
-// descarga en BUILD y las sirve self-hosted (sin CDN en runtime: soberanía).
-const archivo = Archivo({
-  subsets: ["latin"],
+// Las tres voces de la marca, las mismas de vocerocrm.com. Los woff2 (subset
+// latin) viven en ./fonts: el build no toca Google Fonts, que a veces devolvía
+// URLs sin extensión y rompía next/font/google.
+const archivo = localFont({
+  src: "./fonts/archivo-100-900.woff2",
+  weight: "100 900",
   variable: "--font-sans",
   display: "swap",
 });
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
+const instrumentSerif = localFont({
+  src: [
+    { path: "./fonts/instrument-serif-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/instrument-serif-400-italic.woff2", weight: "400", style: "italic" },
+  ],
   variable: "--font-serif",
   display: "swap",
 });
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const plexMono = localFont({
+  src: [
+    { path: "./fonts/ibm-plex-mono-400.woff2", weight: "400" },
+    { path: "./fonts/ibm-plex-mono-500.woff2", weight: "500" },
+    { path: "./fonts/ibm-plex-mono-600.woff2", weight: "600" },
+  ],
   variable: "--font-mono",
   display: "swap",
 });
@@ -41,14 +41,18 @@ const plexMono = IBM_Plex_Mono({
 // cuando algo las usa, y globals.css las engancha a --font-sans/--font-mono
 // únicamente bajo [data-saas="true"]: la instancia Vocero sigue en Archivo +
 // Plex Mono.
-const geist = Geist({
-  subsets: ["latin"],
+const geist = localFont({
+  src: "./fonts/geist-100-900.woff2",
+  weight: "100 900",
   variable: "--font-grotesk",
   display: "swap",
 });
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+// Google sirve el mismo archivo variable para 400 y 500.
+const jetbrainsMono = localFont({
+  src: [
+    { path: "./fonts/jetbrains-mono-400-500.woff2", weight: "400" },
+    { path: "./fonts/jetbrains-mono-400-500.woff2", weight: "500" },
+  ],
   variable: "--font-jetbrains",
   display: "swap",
 });
