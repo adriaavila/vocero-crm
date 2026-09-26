@@ -71,14 +71,19 @@ antes al ordenar (hoy es `9007`). Las reglas:
   edites un `prevId` a mano: la SQL ya salió contra la base equivocada.
 - **El `when` decide qué se aplica.** En las bases que ya existen, el migrador
   salta EN SILENCIO toda entrada cuyo `when` no supere al último aplicado.
-  Cada entrada nueva va al final y con `when` mayor. Si dos ramas traen
-  migración, la segunda en fusionar borra la suya (`.sql`, snapshot y
-  entrada) y la vuelve a generar sobre `main`.
+  Cada entrada nueva va al final y con `when` mayor (la prueba lo exige). Si
+  dos ramas traen migración, la segunda en fusionar borra la suya (`.sql`,
+  snapshot y entrada) y la vuelve a generar sobre `main`; si esa migración ya
+  corrió en alguna base, devuélvele su `when` original para que no se repita.
+- **No uses `drizzle-kit drop`**: busca el snapshot por el prefijo del `tag`,
+  que aquí no siempre coincide. Para deshacer una migración sin aplicar, borra
+  a mano su `.sql`, su snapshot y su entrada.
 - **De upstream se toma la `.sql`, nunca el snapshot**: el suyo describe un
   esquema sin la capa del fork y choca con esta cadena.
-  1. `git rm` de sus `drizzle/meta/00xx_snapshot.json` nuevos; en
+  1. `git rm -f` de sus `drizzle/meta/00xx_snapshot.json` nuevos; en
      `_journal.json` quedan solo las entradas del fork.
-  2. `pnpm db:generate`: sale un `9xxx_*.sql` con el mismo DDL de upstream y
+  2. Con `package.json` ya resuelto (si no, ni vitest ni pnpm cargan),
+     `pnpm db:generate`: sale un `9xxx_*.sql` con el mismo DDL de upstream y
      el `9xxx_snapshot.json` que lo absorbe.
   3. Borra ese `.sql` y pon el `tag` de upstream en su entrada, conservando
      su `idx` y su `when` (el de upstream suele ser más viejo que lo ya
