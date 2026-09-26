@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { AdSpendEntryDto } from "@/lib/analytics";
 import type { SourceValue } from "@/lib/types";
@@ -70,14 +70,18 @@ export function AdSpendDialog({
   // vista. Por eso este ref NO se limpia en un cleanup de useEffect.
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const notify = useToast();
+  const dialogRef = useRef<HTMLDialogElement>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // `showModal()` es lo que hace de esto un modal DE VERDAD: el navegador
+  // mismo atrapa el foco adentro (Tab/Shift+Tab ya no se escapan al resto de
+  // la página), pinta el `::backdrop` cubriendo el viewport completo (nada
+  // de una franja sin atenuar arriba) y, al cerrar con Esc, devuelve el foco
+  // solo al elemento que lo tenía antes de abrir — "Cargar gasto" en este
+  // caso. Nada de esto se puede imitar bien con un `<div>` fijo + JS propio
+  // (ver `activation-gate.tsx`, mismo patrón en este fork).
+  useLayoutEffect(() => {
+    dialogRef.current?.showModal();
+  }, []);
 
   const parsedCents = monto.trim() ? parseMoneyToCents(monto) : null;
   const montoInvalido = monto.trim().length > 0 && (parsedCents === null || parsedCents < 0);
@@ -175,16 +179,24 @@ export function AdSpendDialog({
   const visibles = entries.filter((e) => !pendientesDeBorrar.has(e.id));
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-overlay p-4"
-      onClick={onClose}
+    <dialog
+      ref={dialogRef}
+      aria-label="Cargar gasto de anuncios"
+      className="m-auto max-h-[85dvh] w-[min(32rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border bg-card p-0 text-foreground shadow-pop backdrop:bg-black/35"
+      onClose={onClose}
+      onClick={(e) => {
+        // Clic en el `::backdrop` (fuera del contenido): en un `<dialog>`
+        // eso llega como un clic sobre el propio elemento, nunca sobre un
+        // hijo — por eso comparar el target alcanza sin más manejo.
+        if (e.target === dialogRef.current) dialogRef.current?.close();
+      }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Cargar gasto de anuncios"
-        className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-pop"
-        onClick={(e) => e.stopPropagation()}
+      <form
+        className="p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void guardar();
+        }}
       >
         <h3 className="font-semibold">Cargar gasto</h3>
         <p className="mt-0.5 text-xs text-text-3">
@@ -292,10 +304,15 @@ export function AdSpendDialog({
         )}
 
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" className="h-11 sm:h-9" onClick={onClose}>
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-11 sm:h-9"
+            onClick={() => dialogRef.current?.close()}
+          >
             Cerrar
           </Button>
-          <Button className="h-11 sm:h-9" disabled={!listo} onClick={() => void guardar()}>
+          <Button type="submit" className="h-11 sm:h-9" disabled={!listo}>
             {estado.tipo === "guardando" ? "Guardando…" : "Guardar carga"}
           </Button>
         </div>
@@ -322,6 +339,7 @@ export function AdSpendDialog({
                     </p>
                   </div>
                   <Button
+                    type="button"
                     variant="ghost"
                     size="icon"
                     aria-label={`Borrar carga de ${FUENTES.find((f) => f.value === e.source)?.label ?? e.source}, ${e.periodStart} a ${e.periodEnd}`}
@@ -335,7 +353,7 @@ export function AdSpendDialog({
             </ul>
           )}
         </div>
-      </div>
-    </div>
+      </form>
+    </dialog>
   );
 }
