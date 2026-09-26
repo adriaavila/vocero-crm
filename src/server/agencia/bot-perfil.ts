@@ -1,4 +1,4 @@
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { partsInTz } from "@/lib/time/slots";
@@ -125,15 +125,34 @@ export type ProximaCita = {
  * horarios a quien ya tiene una. El agente que agenda dos veces al mismo lead
  * es el que peor se ve: el cliente cree que el negocio no se entera de nada.
  *
+ * Se mira desde una conversación porque las citas de prueba dependen de cuál:
+ *
+ *  · una conversación REAL jamás ve citas de prueba — ni aquí ni en
+ *    Resultados, que las filtra por su cuenta.
+ *  · una conversación del Laboratorio ve además las SUYAS. El Laboratorio
+ *    agenda de verdad (cita `is_test`); si su propia cita no apareciera, al
+ *    turno siguiente el agente "olvida" que ya agendó, la vuelve a ofrecer o
+ *    se contradice, y el juez le baja la nota por un fallo que no es suyo.
+ *    Solo las de ESA conversación: el contacto sintético de cada persona se
+ *    reutiliza entre corridas, y las citas de una corrida vieja no son de
+ *    esta.
+ *
  * Devuelve `null` con la agenda apagada — no es un error, es que aquí no hay
  * agenda.
  */
 export async function proximaCita(
   organizationId: string,
-  contactId: string,
+  conversation: { id: string; contactId: string; isTest: boolean },
   now = new Date()
 ): Promise<ProximaCita | null> {
   if (!agendaEnabled()) return null;
+
+  const citasVisibles = conversation.isTest
+    ? or(
+        eq(schema.booking.isTest, false),
+        eq(schema.booking.conversationId, conversation.id)
+      )
+    : eq(schema.booking.isTest, false);
 
   const rows = await getDb()
     .select({
@@ -147,9 +166,9 @@ export async function proximaCita(
         schema.booking.organizationId,
         organizationId,
         and(
-          eq(schema.booking.contactId, contactId),
+          eq(schema.booking.contactId, conversation.contactId),
           eq(schema.booking.status, "agendada"),
-          eq(schema.booking.isTest, false),
+          citasVisibles,
           gte(schema.booking.scheduledAt, now)
         )
       )
