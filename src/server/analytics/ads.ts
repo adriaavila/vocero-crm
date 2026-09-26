@@ -86,7 +86,13 @@ async function conversacionesPorFuente(
       n: sql<number>`count(*)::int`,
     })
     .from(schema.conversation)
-    .innerJoin(schema.contact, eq(schema.contact.id, schema.conversation.contactId))
+    .innerJoin(
+      schema.contact,
+      and(
+        eq(schema.contact.id, schema.conversation.contactId),
+        eq(schema.contact.organizationId, schema.conversation.organizationId)
+      )
+    )
     .where(
       scoped(
         schema.conversation.organizationId,
@@ -136,8 +142,20 @@ async function prospectosPorFuente(
       won: sql<number>`count(*) filter (where ${schema.pipelineStage.kind} = 'won')::int`,
     })
     .from(schema.lead)
-    .innerJoin(schema.contact, eq(schema.contact.id, schema.lead.contactId))
-    .innerJoin(schema.pipelineStage, eq(schema.pipelineStage.id, schema.lead.stageId))
+    .innerJoin(
+      schema.contact,
+      and(
+        eq(schema.contact.id, schema.lead.contactId),
+        eq(schema.contact.organizationId, schema.lead.organizationId)
+      )
+    )
+    .innerJoin(
+      schema.pipelineStage,
+      and(
+        eq(schema.pipelineStage.id, schema.lead.stageId),
+        eq(schema.pipelineStage.organizationId, schema.lead.organizationId)
+      )
+    )
     .where(
       scoped(
         schema.lead.organizationId,
@@ -190,6 +208,7 @@ async function conversacionesPorAnuncio(
       schema.conversation,
       and(
         eq(schema.conversation.id, schema.adAttribution.conversationId),
+        eq(schema.conversation.organizationId, schema.adAttribution.organizationId),
         eq(schema.conversation.isTest, false)
       )
     )
@@ -225,7 +244,13 @@ async function prospectosPorAnuncio(
       won: sql<number>`count(*) filter (where ${schema.pipelineStage.kind} = 'won')::int`,
     })
     .from(schema.lead)
-    .innerJoin(schema.pipelineStage, eq(schema.pipelineStage.id, schema.lead.stageId))
+    .innerJoin(
+      schema.pipelineStage,
+      and(
+        eq(schema.pipelineStage.id, schema.lead.stageId),
+        eq(schema.pipelineStage.organizationId, schema.lead.organizationId)
+      )
+    )
     .innerJoin(
       schema.adAttribution,
       and(

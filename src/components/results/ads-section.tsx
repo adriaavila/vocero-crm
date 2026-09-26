@@ -211,7 +211,7 @@ function Cell({ children }: { children: ReactNode }) {
  * chica (la nota al pie lo explica) para no ensanchar la columna.
  */
 function TasaCorta({ rate, conDenominador = true }: { rate: RateDto; conDenominador?: boolean }) {
-  if (rate.value === null) return <span className="text-text-3">—</span>;
+  if (rate.value === null) return <span className="text-text-3">Sin datos</span>;
   return (
     <span
       className={cn(!rate.reliable && "text-text-3")}

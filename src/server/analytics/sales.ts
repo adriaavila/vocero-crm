@@ -1,4 +1,4 @@
-import { asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { sumable } from "@/lib/money";
@@ -152,7 +152,13 @@ async function desenlacesDelPeriodo(
       currency: schema.lead.currency,
     })
     .from(schema.leadStageEvent)
-    .innerJoin(schema.lead, eq(schema.lead.id, schema.leadStageEvent.leadId))
+    .innerJoin(
+      schema.lead,
+      and(
+        eq(schema.lead.id, schema.leadStageEvent.leadId),
+        eq(schema.lead.organizationId, schema.leadStageEvent.organizationId)
+      )
+    )
     .where(
       scoped(
         schema.leadStageEvent.organizationId,
@@ -215,7 +221,13 @@ async function diasHastaGanar(
       dias: sql<number | null>`avg(extract(epoch from (${schema.leadStageEvent.occurredAt} - ${schema.lead.createdAt})) / 86400)::float`,
     })
     .from(schema.leadStageEvent)
-    .innerJoin(schema.lead, eq(schema.lead.id, schema.leadStageEvent.leadId))
+    .innerJoin(
+      schema.lead,
+      and(
+        eq(schema.lead.id, schema.leadStageEvent.leadId),
+        eq(schema.lead.organizationId, schema.leadStageEvent.organizationId)
+      )
+    )
     .where(
       scoped(
         schema.leadStageEvent.organizationId,
@@ -279,7 +291,13 @@ async function serieTemporal(
             cents: sql<number>`coalesce(max(case when ${schema.lead.amountCents} is not null and coalesce(${schema.lead.currency}, ${businessCurrency}) = ${businessCurrency} then ${schema.lead.amountCents} else 0 end), 0)::int`,
           })
           .from(schema.leadStageEvent)
-          .innerJoin(schema.lead, eq(schema.lead.id, schema.leadStageEvent.leadId))
+          .innerJoin(
+      schema.lead,
+      and(
+        eq(schema.lead.id, schema.leadStageEvent.leadId),
+        eq(schema.lead.organizationId, schema.leadStageEvent.organizationId)
+      )
+    )
           .where(
             scoped(
               schema.leadStageEvent.organizationId,
@@ -352,10 +370,19 @@ async function embudoCohorte(
         won: sql<number>`max(case when ${schema.leadStageEvent.toStageKind} = 'won' then 1 else 0 end)::int`,
       })
       .from(schema.leadStageEvent)
-      .innerJoin(schema.lead, eq(schema.lead.id, schema.leadStageEvent.leadId))
+      .innerJoin(
+      schema.lead,
+      and(
+        eq(schema.lead.id, schema.leadStageEvent.leadId),
+        eq(schema.lead.organizationId, schema.leadStageEvent.organizationId)
+      )
+    )
       .leftJoin(
         schema.pipelineStage,
-        eq(schema.pipelineStage.id, schema.leadStageEvent.toStageId)
+        and(
+          eq(schema.pipelineStage.id, schema.leadStageEvent.toStageId),
+          eq(schema.pipelineStage.organizationId, schema.leadStageEvent.organizationId)
+        )
       )
       .where(
         scoped(

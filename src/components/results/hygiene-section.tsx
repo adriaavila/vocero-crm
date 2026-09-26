@@ -23,7 +23,7 @@ export function HygieneSection({
   error: string | null;
   currency: string;
 }) {
-  const money = (c: number) => formatMoneyCents(c, currency) ?? "—";
+  const money = (c: number) => formatMoneyCents(c, currency, undefined, { compact: true }) ?? "Sin datos";
   const enLista = data ? Math.min(data.silent.length, 8) : 0;
 
   return (

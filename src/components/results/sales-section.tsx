@@ -21,7 +21,8 @@ export function SalesSection({
   error: string | null;
   currency: string;
 }) {
-  const money = (c: number | null) => formatMoneyCents(c, currency) ?? "—";
+  const money = (c: number | null) =>
+    formatMoneyCents(c, currency, undefined, { compact: true }) ?? "Sin datos";
   return (
     <Section
       id="ventas"

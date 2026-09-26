@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type {
   AdsBlockDto,
   BotBlockDto,
@@ -78,21 +78,52 @@ export function ResultsClient({
   const [bot, setBot] = useState<Block<BotBlockDto>>(inicial);
   const [hygiene, setHygiene] = useState<Block<HygieneBlockDto>>(inicial);
 
-  useEffect(() => {
+  // Un ref por sección: "Reintentar" y el efecto de rango comparten el mismo
+  // controlador. Sin esto, una respuesta lenta de un "Reintentar" que ya no
+  // corresponde al rango elegido (el dueño cambió el rango mientras esperaba)
+  // llegaba de todos modos y pisaba el dato correcto — el AbortController del
+  // efecto no sabía nada del que disparó "Reintentar".
+  const salesCtl = useRef<AbortController | null>(null);
+  const adsCtl = useRef<AbortController | null>(null);
+  const botCtl = useRef<AbortController | null>(null);
+  const hygieneCtl = useRef<AbortController | null>(null);
+
+  function pedir<T>(
+    ref: RefObject<AbortController | null>,
+    url: string,
+    set: (update: (prev: Block<T>) => Block<T>) => void
+  ) {
+    ref.current?.abort();
     const ctl = new AbortController();
+    ref.current = ctl;
+    void cargar(url, set, ctl.signal);
+  }
+
+  useEffect(() => {
     const q = `from=${range.from}&to=${range.to}`;
-    void cargar(`/api/analytics/sales?${q}`, setSales, ctl.signal);
-    void cargar(`/api/analytics/ads?${q}`, setAds, ctl.signal);
-    void cargar(`/api/analytics/bot?${q}`, setBot, ctl.signal);
-    return () => ctl.abort();
+    pedir(salesCtl, `/api/analytics/sales?${q}`, setSales);
+    pedir(adsCtl, `/api/analytics/ads?${q}`, setAds);
+    pedir(botCtl, `/api/analytics/bot?${q}`, setBot);
+    return () => {
+      salesCtl.current?.abort();
+      adsCtl.current?.abort();
+      botCtl.current?.abort();
+    };
   }, [range]);
 
   // La higiene describe el AHORA: no depende del rango elegido.
   useEffect(() => {
-    const ctl = new AbortController();
-    void cargar("/api/analytics/hygiene", setHygiene, ctl.signal);
-    return () => ctl.abort();
+    pedir(hygieneCtl, "/api/analytics/hygiene", setHygiene);
+    return () => hygieneCtl.current?.abort();
   }, []);
+
+  // "Reintentar" repite exactamente la misma petición que ya falló, sin
+  // recargar la página entera ni perder el rango elegido.
+  const q = `from=${range.from}&to=${range.to}`;
+  const reintentarSales = () => pedir(salesCtl, `/api/analytics/sales?${q}`, setSales);
+  const reintentarAds = () => pedir(adsCtl, `/api/analytics/ads?${q}`, setAds);
+  const reintentarBot = () => pedir(botCtl, `/api/analytics/bot?${q}`, setBot);
+  const reintentarHygiene = () => pedir(hygieneCtl, "/api/analytics/hygiene", setHygiene);
 
   return (
     <div className="flex h-full flex-col">

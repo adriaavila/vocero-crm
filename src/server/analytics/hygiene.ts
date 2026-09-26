@@ -74,12 +74,25 @@ async function leadsEnSilencio(organizationId: string, businessCurrency: string,
       totalCents: sql<string>`coalesce(sum(case when ${schema.lead.amountCents} is not null and coalesce(${schema.lead.currency}, ${businessCurrency}) = ${businessCurrency} then ${schema.lead.amountCents} end) over (), 0)::bigint`,
     })
     .from(schema.lead)
-    .innerJoin(schema.contact, eq(schema.contact.id, schema.lead.contactId))
-    .innerJoin(schema.pipelineStage, eq(schema.pipelineStage.id, schema.lead.stageId))
+    .innerJoin(
+      schema.contact,
+      and(
+        eq(schema.contact.id, schema.lead.contactId),
+        eq(schema.contact.organizationId, schema.lead.organizationId)
+      )
+    )
+    .innerJoin(
+      schema.pipelineStage,
+      and(
+        eq(schema.pipelineStage.id, schema.lead.stageId),
+        eq(schema.pipelineStage.organizationId, schema.lead.organizationId)
+      )
+    )
     .leftJoin(
       schema.conversation,
       and(
         eq(schema.conversation.contactId, schema.lead.contactId),
+        eq(schema.conversation.organizationId, schema.lead.organizationId),
         eq(schema.conversation.isTest, false)
       )
     )
@@ -137,6 +150,7 @@ async function mensajesFallidos(organizationId: string, now: Date) {
       schema.conversation,
       and(
         eq(schema.conversation.id, schema.message.conversationId),
+        eq(schema.conversation.organizationId, schema.message.organizationId),
         eq(schema.conversation.isTest, false)
       )
     )
@@ -178,7 +192,13 @@ async function ventanasPorVencer(organizationId: string, now: Date) {
       lastInboundAt: schema.conversation.lastInboundAt,
     })
     .from(schema.conversation)
-    .innerJoin(schema.contact, eq(schema.contact.id, schema.conversation.contactId))
+    .innerJoin(
+      schema.contact,
+      and(
+        eq(schema.contact.id, schema.conversation.contactId),
+        eq(schema.contact.organizationId, schema.conversation.organizationId)
+      )
+    )
     .where(
       scoped(
         schema.conversation.organizationId,
