@@ -88,17 +88,23 @@ export async function POST(req: Request) {
     })
     .where(eq(schema.conversation.id, conv.id));
 
-  // 2. El aviso, ya reactivada.
+  // 2. El aviso, ya reactivada — MEJOR ESFUERZO (item 9): que no se pueda
+  // mandar (horario fuera de rango, ventana cerrada, un envío ya en curso…)
+  // no debe abortar el reset entero. El reset en sí (reactivar, memoria,
+  // ofertas, ficha, etapa) es lo que de verdad importa — el aviso es una
+  // cortesía. `noticeSent` en la respuesta le dice al llamador si de verdad
+  // salió, para que pueda avisar por su cuenta si quiere.
+  let noticeSent = false;
   if (body.data.notice) {
-    if (conv.isTest && isNeaBrain()) {
-      // Laboratorio: jamás toca la API real (FR-031) — se persiste igual que
-      // Nea contestando por `/api/bot/messages`.
-      const messageId = body.data.dispatchId
-        ? neaMessageId(organizationId, conv.id, body.data.dispatchId, 0)
-        : undefined;
-      await persistTestOutbound(conv, body.data.notice, { messageId });
-    } else {
-      try {
+    try {
+      if (conv.isTest && isNeaBrain()) {
+        // Laboratorio: jamás toca la API real (FR-031) — se persiste igual
+        // que Nea contestando por `/api/bot/messages`.
+        const messageId = body.data.dispatchId
+          ? neaMessageId(organizationId, conv.id, body.data.dispatchId, 0)
+          : undefined;
+        await persistTestOutbound(conv, body.data.notice, { messageId });
+      } else {
         await sendText({
           conversationId: conv.id,
           organizationId,
@@ -107,18 +113,11 @@ export async function POST(req: Request) {
           dispatchId: body.data.dispatchId,
           seq: 0,
         });
-      } catch (err) {
-        if (err instanceof SendError) {
-          if (err.code === "ai_disabled") return apiError(409, "ai_paused", err.message);
-          if (err.code === "window_closed") return apiError(409, "window_closed", err.message);
-          if (err.code === "sandbox_violation") return apiError(409, "sandbox_violation", err.message);
-          if (err.code === "billing_inactive") return apiError(402, "billing_inactive", err.message);
-          if (err.code === "outside_hours") return apiError(409, "outside_hours", err.message);
-          if (err.code === "send_in_progress") return apiError(409, "send_in_progress", err.message);
-          return apiError(502, err.code, err.message);
-        }
-        throw err;
       }
+      noticeSent = true;
+    } catch (err) {
+      const reason = err instanceof SendError ? err.code : err;
+      console.warn(`[bot/reset] no se pudo mandar el aviso: ${reason}`);
     }
   }
 
@@ -195,5 +194,5 @@ export async function POST(req: Request) {
     type: "conversation.updated",
     data: { conversation: { id: conv.id } },
   });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, noticeSent });
 }

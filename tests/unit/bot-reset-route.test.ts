@@ -208,19 +208,39 @@ describe("POST /api/bot/reset", () => {
     expect(sendText).not.toHaveBeenCalled();
   });
 
-  it("el aviso falla por una razón AJENA al handoff (p. ej. fuera de horario) → 409, y NO llega a fijar memory_reset_at ni a limpiar ofertas", async () => {
-    selectQueue.push([CONV]);
+  it("item 9: el aviso falla (p. ej. fuera de horario) → el reset sigue de todos modos (200, memory_reset_at, ofertas limpias) con noticeSent:false", async () => {
+    pushHappyPath();
     sendText.mockRejectedValueOnce(new SendError("outside_hours", "Fuera de horario"));
 
     const res = await POST(req({ conversationId: "cv_1", notice: "Hola" }));
 
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { error?: { code?: string } };
-    expect(body.error?.code).toBe("outside_hours");
-    expect(clearOffers).not.toHaveBeenCalled();
-    expect(updates.some((u) => "memoryResetAt" in u)).toBe(false);
-    // Pero SÍ llegó a reactivar: eso pasa siempre, antes que nada.
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { ok: boolean; noticeSent: boolean };
+    expect(body).toEqual({ ok: true, noticeSent: false });
+    // El aviso no salió, pero el RESTO del reset sí terminó — no es best-effort
+    // a medias: nada de esto depende de que el aviso haya salido.
+    expect(clearOffers).toHaveBeenCalledWith("org_1", "cv_1");
+    expect(updates.some((u) => "memoryResetAt" in u)).toBe(true);
     expect(updates.some((u) => "aiEnabled" in u)).toBe(true);
+  });
+
+  it("item 9: el aviso SÍ sale → noticeSent:true", async () => {
+    pushHappyPath();
+
+    const res = await POST(req({ conversationId: "cv_1", notice: "Hola" }));
+
+    const body = (await res.json()) as { ok: boolean; noticeSent: boolean };
+    expect(body).toEqual({ ok: true, noticeSent: true });
+  });
+
+  it("item 9: sin notice pedido → noticeSent:false (no había nada que mandar)", async () => {
+    pushHappyPath();
+
+    const res = await POST(req({ conversationId: "cv_1" }));
+
+    const body = (await res.json()) as { ok: boolean; noticeSent: boolean };
+    expect(body).toEqual({ ok: true, noticeSent: false });
+    expect(sendText).not.toHaveBeenCalled();
   });
 
   it("conversación no encontrada → 404, sin tocar sendText/clearOffers/ningún update", async () => {
