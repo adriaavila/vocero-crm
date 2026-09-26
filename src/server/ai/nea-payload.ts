@@ -89,6 +89,9 @@ function toHistoryItem(row: JoinedRow, pendingIds: Set<string>): NeaHistoryItem 
           caption: media.caption,
           transcript: truncate(message.transcript, MAX_TRANSCRIPT_LEN),
           location: media.kind === "location" ? media.payload : null,
+          // Payload de Meta SIN TRANSFORMAR (`message.contacts` del webhook de
+          // WhatsApp) — ver el shape documentado en el tipo `NeaHistoryMedia`
+          // (`server/ai/nea-dispatch.ts`). No se normaliza aquí.
           contacts: media.kind === "contacts" ? media.payload : null,
         }
       : null,
