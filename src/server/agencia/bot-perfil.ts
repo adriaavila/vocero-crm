@@ -147,13 +147,6 @@ export async function proximaCita(
 ): Promise<ProximaCita | null> {
   if (!agendaEnabled()) return null;
 
-  const citasVisibles = conversation.isTest
-    ? or(
-        eq(schema.booking.isTest, false),
-        eq(schema.booking.conversationId, conversation.id)
-      )
-    : eq(schema.booking.isTest, false);
-
   const rows = await getDb()
     .select({
       id: schema.booking.id,
@@ -168,7 +161,7 @@ export async function proximaCita(
         and(
           eq(schema.booking.contactId, conversation.contactId),
           eq(schema.booking.status, "agendada"),
-          citasVisibles,
+          citasVisibles(conversation),
           gte(schema.booking.scheduledAt, now)
         )
       )
@@ -188,4 +181,22 @@ export async function proximaCita(
     label: `${parts.weekday} ${parts.date} a las ${parts.time}`,
     meetingLink: row.meetingLink,
   };
+}
+
+/**
+ * Qué citas ve una conversación: una real, ninguna de prueba; una del
+ * Laboratorio, además las SUYAS (por conversación, no por contacto). El
+ * porqué, en `proximaCita`.
+ *
+ * Reprogramar (`rescheduleForConversation`) usa esta misma regla: si moviera
+ * una cita distinta de la que el agente lee en `booking.next`, al turno
+ * siguiente el agente seguiría viendo la hora vieja y se contradiría.
+ */
+export function citasVisibles(conversation: { id: string; isTest: boolean }) {
+  return conversation.isTest
+    ? or(
+        eq(schema.booking.isTest, false),
+        eq(schema.booking.conversationId, conversation.id)
+      )
+    : eq(schema.booking.isTest, false);
 }
