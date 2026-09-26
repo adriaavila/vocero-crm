@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { apiError, parseBody, withOwner } from "@/lib/api";
-import {
-  atribucionDisabledResponse,
-  atribucionEnabled,
-} from "@/server/attribution/flag";
+import { withAtribucionFlag } from "@/server/attribution/flag";
 import {
   deleteCapiSettings,
   getCapiSettingsView,
@@ -18,18 +15,22 @@ export const dynamic = "force-dynamic";
  * 016 — La conexión del negocio con su dataset de Meta.
  *
  * Sin la bandera `ATRIBUCION` esto no existe: 404, no 403 — no hay nada que
- * revelar sobre un endpoint que esta instancia no tiene.
+ * revelar sobre un endpoint que esta instancia no tiene. `withAtribucionFlag`
+ * envuelve por FUERA de `withOwner` a propósito: si la bandera se revisara
+ * dentro del handler, un miembro con la bandera apagada vería un 403 (que
+ * confirma que el endpoint existe) en vez del 404 que debería ver cualquiera.
  *
  * `withOwner`, no `withAuth`: el dataset y el token publican en nombre del
  * negocio en Meta, igual que la conexión de WhatsApp — cualquier miembro
  * podía leerlos y cambiarlos, y esto no es distinto de esa credencial.
  */
 
-export const GET = withOwner(async (session) => {
-  if (!atribucionEnabled()) return atribucionDisabledResponse();
-  const capi = await getCapiSettingsView(session.organizationId);
-  return Response.json({ capi });
-});
+export const GET = withAtribucionFlag(
+  withOwner(async (session) => {
+    const capi = await getCapiSettingsView(session.organizationId);
+    return Response.json({ capi });
+  })
+);
 
 const putSchema = z.object({
   datasetId: z.string().trim().min(1),
@@ -43,9 +44,7 @@ const putSchema = z.object({
   qualifiedStageId: z.string().trim().min(1).nullish(),
 });
 
-export const PUT = withOwner(async (session, req: Request) => {
-  if (!atribucionEnabled()) return atribucionDisabledResponse();
-
+export const PUT = withAtribucionFlag(withOwner(async (session, req: Request) => {
   const body = await parseBody(req, putSchema);
   if (!body.ok) return body.response;
 
@@ -81,10 +80,11 @@ export const PUT = withOwner(async (session, req: Request) => {
     qualifiedStageId,
   });
   return Response.json({ ok: true });
-});
+}));
 
-export const DELETE = withOwner(async (session) => {
-  if (!atribucionEnabled()) return atribucionDisabledResponse();
-  await deleteCapiSettings(session.organizationId);
-  return Response.json({ ok: true });
-});
+export const DELETE = withAtribucionFlag(
+  withOwner(async (session) => {
+    await deleteCapiSettings(session.organizationId);
+    return Response.json({ ok: true });
+  })
+);

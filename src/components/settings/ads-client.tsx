@@ -74,7 +74,9 @@ function formatActivityAt(iso: string): string {
     month: "short",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    // `hour12: false` deja pasar "24:03" en algunos motores (mapea a h24, no
+    // h23). `hourCycle: "h23"` fija medianoche en "00:03".
+    hourCycle: "h23",
   });
 }
 
@@ -88,6 +90,10 @@ export function AdsClient() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // `qualifiedStageId` nace vacío mientras carga: sin esto, el aviso de
+  // "sin etapa elegida" parpadea un instante en cada visita, aunque la
+  // organización sí tenga una configurada.
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   const loadActivity = useCallback(async () => {
     const res = await fetch("/api/settings/capi/events").catch(() => null);
@@ -108,6 +114,7 @@ export function AdsClient() {
         setDatasetId(data.capi?.datasetId ?? "");
         setQualifiedStageId(data.capi?.qualifiedStageId ?? "");
       }
+      setSettingsLoaded(true);
       if (stg?.ok) {
         const data = (await stg.json()) as { stages: Stage[] };
         setStages(data.stages);
@@ -225,17 +232,21 @@ export function AdsClient() {
                   </option>
                 ))}
             </select>
-            {qualifiedStageId ? (
-              <p className="text-xs text-muted-foreground">
-                La venta se reporta sola cuando el trato entra a tu etapa
-                ganada.
-              </p>
-            ) : (
-              <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">
-                Sin etapa elegida no se reportan leads calificados. Las ventas
-                se siguen reportando igual.
-              </p>
-            )}
+            {/* Antes de que responda /api/settings/capi, qualifiedStageId
+                está vacío por default: mostrar el aviso ya sería mentir. */}
+            {settingsLoaded ? (
+              qualifiedStageId ? (
+                <p className="text-xs text-muted-foreground">
+                  La venta se reporta sola cuando el trato entra a tu etapa
+                  ganada.
+                </p>
+              ) : (
+                <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">
+                  Sin etapa elegida no se reportan leads calificados. Las
+                  ventas se siguen reportando igual.
+                </p>
+              )
+            ) : null}
           </div>
 
           {error ? (
@@ -288,9 +299,9 @@ export function AdsClient() {
               {/* Bajo sm no caben cinco columnas sin recortar el Detalle
                   (la razón de un fallo u omisión, lo que más importa): cada
                   fila se apila en vez de forzar scroll horizontal. */}
-              <div className="space-y-2 sm:hidden">
+              <ul className="space-y-2 sm:hidden">
                 {activity.map((row) => (
-                  <div key={row.id} className="rounded-md border p-3">
+                  <li key={row.id} className="rounded-md border p-3">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium">
                         {EVENT_LABEL[row.eventName] ?? row.eventName}
@@ -299,6 +310,12 @@ export function AdsClient() {
                         {STATUS_LABEL[row.status]}
                       </Badge>
                     </div>
+                    {/* Con qué lead se relaciona esto: sin esta línea, un
+                        "Venta · Enviado" suelto no se puede atar a nadie. */}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {row.contactName ?? "Sin contacto"}
+                      {row.adHeadline ? ` · ${row.adHeadline}` : ""}
+                    </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {formatActivityAt(row.at)}
                     </p>
@@ -312,9 +329,9 @@ export function AdsClient() {
                       {row.error ??
                         (row.fbTraceId ? `Referencia: ${row.fbTraceId}` : "—")}
                     </p>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
 
               <div className="hidden overflow-x-auto sm:block">
                 <table className="w-full text-sm">

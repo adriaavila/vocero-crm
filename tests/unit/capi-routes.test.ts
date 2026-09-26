@@ -52,6 +52,39 @@ describe("rutas de /api/settings/capi (propietario únicamente)", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
+  describe("con la bandera ATRIBUCION apagada", () => {
+    beforeEach(() => vi.stubEnv("ATRIBUCION", "off"));
+
+    it("un miembro recibe 404, no 403 (un 403 confirmaría que el endpoint existe)", async () => {
+      requireSession.mockResolvedValue(MEMBER);
+      const res = await GET();
+      expect(res.status).toBe(404);
+      // La bandera gana ANTES de resolver sesión: withOwner/withAuth nunca
+      // llegan a correr.
+      expect(requireSession).not.toHaveBeenCalled();
+      expect(settings.getCapiSettingsView).not.toHaveBeenCalled();
+    });
+
+    it("el propietario también recibe 404 — la bandera gana sobre cualquier rol", async () => {
+      requireSession.mockResolvedValue(OWNER);
+      const res = await GET();
+      expect(res.status).toBe(404);
+      expect(requireSession).not.toHaveBeenCalled();
+    });
+
+    it("los cuatro endpoints responden 404 para un miembro", async () => {
+      requireSession.mockResolvedValue(MEMBER);
+      const results = await Promise.all([
+        GET(),
+        PUT(putReq({ datasetId: "ds_1", token: "tok" })),
+        DELETE(),
+        GET_EVENTS(new Request("http://localhost/api/settings/capi/events")),
+      ]);
+      for (const res of results) expect(res.status).toBe(404);
+      expect(requireSession).not.toHaveBeenCalled();
+    });
+  });
+
   describe("un miembro (no propietario) recibe 403 y no toca nada", () => {
     beforeEach(() => requireSession.mockResolvedValue(MEMBER));
 

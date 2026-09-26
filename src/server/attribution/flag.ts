@@ -47,3 +47,22 @@ export function atribucionEnabled(): boolean {
 export function atribucionDisabledResponse(): Response {
   return new Response(null, { status: 404 });
 }
+
+/**
+ * Envuelve un handler para que la bandera se revise ANTES que la sesión.
+ *
+ * `withOwner`/`withAuth` resuelven el rol primero: si el chequeo de la
+ * bandera vive DENTRO del handler que envuelven, un miembro (no propietario)
+ * con la bandera apagada recibe 403 en vez de 404 — y un 403 le confirma que
+ * el endpoint existe, justo lo que el 404 de arriba existe para no revelar.
+ * Poniendo esto AFUERA de `withOwner`/`withAuth`, la bandera apagada siempre
+ * gana, sin importar quién pregunte.
+ */
+export function withAtribucionFlag<Args extends unknown[]>(
+  handler: (...args: Args) => Promise<Response>
+): (...args: Args) => Promise<Response> {
+  return async (...args: Args) => {
+    if (!atribucionEnabled()) return atribucionDisabledResponse();
+    return handler(...args);
+  };
+}

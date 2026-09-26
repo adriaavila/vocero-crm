@@ -26,7 +26,10 @@ export default async function SettingsLayout({
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
         <SettingsNav
           agenda={agendaEnabled()}
-          atribucion={atribucionEnabled()}
+          // El dataset y el token de Meta son de propietario (misma razón que
+          // WhatsApp); un miembro que la viera solo llegaría a un 403 y una
+          // pantalla vacía que parece un bug, no un permiso.
+          atribucion={atribucionEnabled() && session.role === "owner"}
           messenger={isChannelEnabled("messenger")}
           saas={saas}
           saasPro={saasPro}

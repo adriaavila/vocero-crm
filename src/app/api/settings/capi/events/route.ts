@@ -1,8 +1,5 @@
 import { withOwner } from "@/lib/api";
-import {
-  atribucionDisabledResponse,
-  atribucionEnabled,
-} from "@/server/attribution/flag";
+import { withAtribucionFlag } from "@/server/attribution/flag";
 import { listConversionActivity } from "@/server/attribution/conversions";
 
 export const dynamic = "force-dynamic";
@@ -16,15 +13,17 @@ export const dynamic = "force-dynamic";
  *
  * `withOwner`, no `withAuth`: misma superficie que la configuración del
  * dataset — quien puede ver el dataset y el token puede ver a quién se le
- * reportó.
+ * reportó. `withAtribucionFlag` por FUERA: la bandera apagada gana sobre
+ * cualquier rol (ver la nota en settings/capi/route.ts).
  */
-export const GET = withOwner(async (session, req: Request) => {
-  if (!atribucionEnabled()) return atribucionDisabledResponse();
-  const raw = new URL(req.url).searchParams.get("limit");
-  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-  // Un límite fuera de rango se recorta, no falla: es un panel, no un contrato
-  // de paginación.
-  const limit = Number.isFinite(parsed) ? parsed : undefined;
-  const events = await listConversionActivity(session.organizationId, limit);
-  return Response.json({ events });
-});
+export const GET = withAtribucionFlag(
+  withOwner(async (session, req: Request) => {
+    const raw = new URL(req.url).searchParams.get("limit");
+    const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+    // Un límite fuera de rango se recorta, no falla: es un panel, no un
+    // contrato de paginación.
+    const limit = Number.isFinite(parsed) ? parsed : undefined;
+    const events = await listConversionActivity(session.organizationId, limit);
+    return Response.json({ events });
+  })
+);
