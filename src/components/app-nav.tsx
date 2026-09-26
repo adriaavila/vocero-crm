@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  BarChart3,
   CalendarDays,
+  ChartColumn,
   CircleUserRound,
   Gauge,
   FlaskConical,
@@ -59,10 +59,11 @@ const NAV: NavItem[] = [
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/agent", label: "Agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Laboratorio", icon: FlaskConical, owner: true },
-  // Capa de agencia: muestra ingresos, igual que Agente y Laboratorio — solo
-  // el propietario. Pantalla propia (`src/server/agencia/analitica.ts`),
-  // `/overview` sigue siendo el tablero de puesta en marcha.
-  { href: "/analytics", label: "Analítica", icon: BarChart3, owner: true },
+  // 019 (upstream) — Resultados reemplaza a Analítica: mide lo mismo que le
+  // importaba a esa pantalla (y más — origen, ventas, agente) sin la capa de
+  // agencia. La pantalla vieja se borró (ver src/app/(app)/analytics/page.tsx,
+  // que solo redirige aquí).
+  { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
 ];
 
 const ALLOK_NAV: NavItem[] = [
@@ -72,14 +73,44 @@ const ALLOK_NAV: NavItem[] = [
   // horario). Sin esta entrada, /agent solo se alcanzaba escribiendo la URL.
   { href: "/agent", label: "Tu agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Probar allok", icon: FlaskConical, owner: true },
-  { href: "/settings", label: "Configuración", icon: Settings, owner: true },
 ];
+
+// Decisión de Adrian: Configuración va AL FINAL de todo, después de lo Pro
+// (Ventas, Resultados, Agenda, Equipo) — es ajustes, no el destino de nadie.
+// Vive aparte de ALLOK_NAV para que un plan gratis (sin ALLOK_PRO_NAV) siga
+// viéndola última, y no en medio de la nada.
+const CONFIGURACION_ITEM: NavItem = {
+  href: "/settings",
+  label: "Configuración",
+  icon: Settings,
+  owner: true,
+};
 
 const ALLOK_PRO_NAV: NavItem[] = [
   { href: "/pipeline", label: "Ventas", icon: Kanban },
+  // 019 (upstream) — "primero se atiende y se organiza [Ventas], luego se
+  // mide": no hay una entrada "Contactos" en el nav allok (va dentro de
+  // Ventas), así que Resultados va justo después de Ventas y antes de la
+  // logística (Agenda, Equipo). Solo dueño, y solo Pro: ya lo filtra
+  // `saasPlan === "pro"` más abajo.
+  { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
   { href: "/bookings", label: "Agenda", icon: CalendarDays },
   { href: "/settings/team", label: "Equipo", icon: Users, owner: true },
 ];
+
+/**
+ * El nav allok completo, en el orden que decidió Adrian: Configuración
+ * SIEMPRE al final, incluso sin Pro (donde no hay nada de `ALLOK_PRO_NAV`
+ * que la empuje). Exportada y pura para poder probar el orden sin renderizar
+ * el componente — ver tests/unit/app-nav-order.test.ts.
+ */
+export function buildAllokNav(pro: boolean, agenda: boolean): NavItem[] {
+  return [
+    ...ALLOK_NAV,
+    ...(pro ? ALLOK_PRO_NAV.filter((item) => item.href !== "/bookings" || agenda) : []),
+    CONFIGURACION_ITEM,
+  ];
+}
 
 /** 015 — "Citas" solo existe si esta instancia encendió la agenda. */
 const AGENDA_ITEM: NavItem = {
@@ -164,14 +195,7 @@ export function AppNav({
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const esPropietario = role === "owner";
-  const sourceNav = saasMode
-    ? [
-        ...ALLOK_NAV,
-        ...(saasPlan === "pro"
-          ? ALLOK_PRO_NAV.filter((item) => item.href !== "/bookings" || agenda)
-          : []),
-      ]
-    : NAV;
+  const sourceNav = saasMode ? buildAllokNav(saasPlan === "pro", agenda) : NAV;
   const items = (agenda && !saasMode
     ? [...sourceNav.slice(0, 2), AGENDA_ITEM, ...sourceNav.slice(2)]
     : sourceNav

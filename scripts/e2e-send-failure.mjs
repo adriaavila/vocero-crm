@@ -111,7 +111,14 @@ await page
   .getByText("mensaje que Meta va a rechazar")
   .last()
   .waitFor({ timeout: 15000 });
-await page.waitForTimeout(800);
+// El texto de la burbuja llega antes que el banner de "No se entregó": el
+// mensaje se pinta al recibir el mensaje, el banner depende de que el status
+// "failed" (mandado arriba por webhook) ya haya llegado al cliente por SSE.
+// Un `waitForTimeout` fijo aquí era una carrera: con la suite más pesada
+// (más filas ya sembradas, más scripts corridos antes) 800ms deja de
+// alcanzar y el check lee el hilo ANTES de que el banner aparezca — no es que
+// el banner no llegue, es que se mira demasiado pronto.
+await page.getByText("No se entregó", { exact: false }).first().waitFor({ timeout: 15000 });
 
 const thread = await page.locator("main, body").first().innerText();
 ok("el hilo dice 'No se entregó'", thread.includes("No se entregó"), "");

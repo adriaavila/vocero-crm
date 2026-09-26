@@ -1,25 +1,15 @@
-import { requireOwnerSession } from "@/lib/auth/session";
-import { getAnalitica, isRango, type Rango } from "@/server/agencia/analitica";
-import { AnalyticsClient } from "@/components/agencia/analytics-client";
-
-export const dynamic = "force-dynamic";
-
-const DEFAULT_RANGO: Rango = 7;
+import { redirect } from "next/navigation";
 
 /**
- * Analítica: capa de agencia, pantalla propia (no toca `overview.ts`, que es
- * el tablero de puesta en marcha). Solo el propietario la ve — muestra
- * ingresos, igual que Agente y Laboratorio.
+ * 019 (upstream) — Resultados reemplaza a Analítica en el nav y mide más de
+ * lo que esa pantalla medía.
+ *
+ * `/analytics` queda como redirección nada más. La pantalla vieja (capa de
+ * agencia, ingresos) sí se borró — `src/server/agencia/analitica.ts`,
+ * `AnalyticsClient` y su guion e2e — porque nada la seguía enlazando y
+ * `pnpm test:e2e` (que corre cada `scripts/e2e-*.mjs` por glob) la
+ * ejercitaba contra una ruta que ya no existe.
  */
-export default async function AnalyticsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ rango?: string }>;
-}) {
-  const session = await requireOwnerSession();
-  const params = await searchParams;
-  const parsed = Number(params.rango);
-  const rango = isRango(parsed) ? parsed : DEFAULT_RANGO;
-  const data = await getAnalitica(session.organizationId, rango);
-  return <AnalyticsClient data={data} />;
+export default function AnalyticsPage() {
+  redirect("/results");
 }
