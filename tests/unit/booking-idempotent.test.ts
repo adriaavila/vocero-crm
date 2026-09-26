@@ -75,6 +75,8 @@ function chain(rows: unknown[]) {
  * día tanto un INSERT recién hecho como el test, cuando arranca de una fila
  * ya existente (reprogramar) en vez de crear una nueva. */
 let currentRow: Record<string, unknown> = {};
+/** Item 6: simula la violación única del índice de horario en el INSERT. */
+let nextInsertViolatesUnique = false;
 
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
@@ -82,6 +84,14 @@ vi.mock("@/lib/db", () => ({
     insert: () => ({
       values: (v: Record<string, unknown>) => ({
         returning: () => {
+          if (nextInsertViolatesUnique) {
+            nextInsertViolatesUnique = false;
+            const err = new Error("duplicate key value violates unique constraint") as Error & {
+              code: string;
+            };
+            err.code = "23505";
+            throw err;
+          }
           inserted.push(v);
           currentRow = { ...v, scheduledAt: new Date(SLOT), externalRef: null, linkPending: false };
           return Promise.resolve([currentRow]);
@@ -134,6 +144,7 @@ describe("bookings idempotentes por llave natural (dispatch v2)", () => {
     selectRows.length = 0;
     inserted.length = 0;
     currentRow = {};
+    nextInsertViolatesUnique = false;
     createMeeting.mockClear();
     updateMeeting.mockClear();
     bindConnector.mockClear();
@@ -184,6 +195,47 @@ describe("bookings idempotentes por llave natural (dispatch v2)", () => {
       expect(getOffers).toHaveBeenCalledOnce();
       expect(inserted).toHaveLength(1);
       expect(result.booking.id).not.toBe("bk_existente");
+    });
+
+    it("item 6: el insert choca con una violación única, pero el ganador de la carrera fue el MISMO reintento → devuelve esa cita en vez de slot_taken", async () => {
+      const { createSessionBooking } = await import("@/server/agenda/service");
+      selectRows.push([]); // idempotencia de ENTRADA: todavía no hay coincidencia
+      selectRows.push([{ contactId: "ct_1", isTest: false }]); // la conversación
+      selectRows.push([{ name: "Ana" }]); // el contacto
+      selectRows.push([]); // sin lead
+      nextInsertViolatesUnique = true; // otro proceso ganó la carrera del insert justo antes
+      selectRows.push([EXISTENTE]); // re-chequeo por llave natural DENTRO del catch: SÍ hay coincidencia ahora
+
+      const result = await createSessionBooking({
+        organizationId: "org_1",
+        conversationId: "cv_1",
+        startUtc: SLOT,
+        source: "ai",
+        requireOffer: true,
+      });
+
+      expect(result.booking.id).toBe("bk_existente");
+      expect(inserted).toHaveLength(0); // nunca se completó un insert propio
+    });
+
+    it("item 6: violación única SIN que la llave natural coincida (una carrera de verdad) → sigue devolviendo slot_taken", async () => {
+      const { createSessionBooking, BookingError } = await import("@/server/agenda/service");
+      selectRows.push([]); // idempotencia de ENTRADA
+      selectRows.push([{ contactId: "ct_1", isTest: false }]); // la conversación
+      selectRows.push([{ name: "Ana" }]); // el contacto
+      selectRows.push([]); // sin lead
+      nextInsertViolatesUnique = true;
+      selectRows.push([]); // re-chequeo DENTRO del catch: nadie de ESTE turno lo ganó
+
+      await expect(
+        createSessionBooking({
+          organizationId: "org_1",
+          conversationId: "cv_1",
+          startUtc: SLOT,
+          source: "ai",
+          requireOffer: true,
+        })
+      ).rejects.toMatchObject({ code: "slot_taken" } satisfies Partial<InstanceType<typeof BookingError>>);
     });
 
     it("sin conversationId (camino manual con contactId) no consulta idempotencia", async () => {
@@ -239,6 +291,33 @@ describe("bookings idempotentes por llave natural (dispatch v2)", () => {
       expect(findSlot).toHaveBeenCalledOnce();
       expect(clearOffers).toHaveBeenCalledOnce();
       expect(result.booking.scheduledAt.toISOString()).toBe(new Date(SLOT).toISOString());
+    });
+
+    it("item 7: hay DOS citas activas — una más temprana sin relación, y la que este reintento movió ya está en el instante pedido → la devuelve, sin tocar la otra", async () => {
+      const { rescheduleForConversation } = await import("@/server/agenda/service");
+      const otraCitaMasTemprana = {
+        ...EXISTENTE,
+        id: "bk_otra_sin_relacion",
+        scheduledAt: new Date("2026-08-05T13:00:00.000Z"), // antes que SLOT — sería rows[0]
+      };
+      const yaMovida = { ...EXISTENTE, id: "bk_ya_movida", scheduledAt: new Date(SLOT) };
+      selectRows.push([{ contactId: "ct_1" }]); // la conversación
+      // orden ascendente real: la más temprana primero — SI el código solo
+      // mirara rows[0] (la convención anterior), compararía la temprana
+      // contra SLOT, no encontraría coincidencia, e intentaría mover la
+      // equivocada.
+      selectRows.push([otraCitaMasTemprana, yaMovida]);
+
+      const result = await rescheduleForConversation({
+        organizationId: "org_1",
+        conversationId: "cv_1",
+        startUtc: SLOT,
+      });
+
+      expect(result.booking.id).toBe("bk_ya_movida");
+      expect(getOffers).not.toHaveBeenCalled();
+      expect(findSlot).not.toHaveBeenCalled();
+      expect(clearOffers).not.toHaveBeenCalled();
     });
 
     it("sin cita activa y sin oferta → sigue rechazando con slot_not_offered (comportamiento previo intacto)", async () => {
