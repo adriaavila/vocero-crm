@@ -427,14 +427,26 @@ function KbSection({
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [block, setBlock] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  // Si el guardado falla, el texto se queda en el campo y se dice por qué:
+  // antes se borraba igual y el paso "Añade información" seguía pendiente.
+  async function saveEntry(body: Record<string, string>) {
+    setError(null);
+    const response = await fetch("/api/kb", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).catch(() => null);
+    if (response?.ok) return true;
+    const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
+    setError(payload?.error?.message ?? "No se pudo guardar. Revisa el texto y vuelve a intentarlo.");
+    return false;
+  }
 
   async function addQa() {
     if (!question.trim() || !answer.trim()) return;
-    await fetch("/api/kb", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "qa", question, answer }),
-    }).catch(() => null);
+    if (!(await saveEntry({ kind: "qa", question, answer }))) return;
     setQuestion("");
     setAnswer("");
     onChanged();
@@ -442,11 +454,7 @@ function KbSection({
 
   async function addBlock() {
     if (!block.trim()) return;
-    await fetch("/api/kb", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind: "block", content: block }),
-    }).catch(() => null);
+    if (!(await saveEntry({ kind: "block", content: block }))) return;
     setBlock("");
     onChanged();
   }
@@ -461,7 +469,7 @@ function KbSection({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Knowledge base</CardTitle>
+            <CardTitle>Información del negocio</CardTitle>
             <CardDescription>
               La única fuente de verdad del agente: lo que no está aquí, no lo
               afirma.
@@ -481,6 +489,7 @@ function KbSection({
         )}
       </CardHeader>
       <CardContent className="space-y-4">
+        {error && <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">{error}</p>}
         <div className="space-y-2 rounded-md border p-3">
           <p className="text-sm font-medium">Nueva pregunta / respuesta</p>
           <Input
