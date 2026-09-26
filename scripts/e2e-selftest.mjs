@@ -100,22 +100,32 @@ async function main() {
   );
   await api("/api/dev/wa-mock/outbox", { method: "DELETE" });
 
+  // Sufijo por corrida, como en 016: wa_message_id es UNIQUE, así que con
+  // wamids fijos la re-corrida contra la MISMA base deduplica el inbound, no
+  // refresca last_inbound_at y mide la corrida anterior (pasadas 24 h la
+  // ventana queda cerrada y el envío falla). Los inbounds estrenan wamid y,
+  // donde un check busca por teléfono/nombre o cuenta mensajes, también lead.
+  const SUF = String(Date.now()).slice(-6);
+
   console.log("\n== us-bsuid: inbound sin wa_id ==");
+  const BSUID = `bsu_e2e_${SUF}`;
+  const BSUID_NOMBRE = `Dueña Dental ${SUF}`;
+  const BSUID_WAMID = `wamid.e2e.bsuid.${SUF}.1`;
   const inb1 = await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
-      fromUserId: "bsu_e2e_1",
-      name: "Dueña Dental",
+      fromUserId: BSUID,
+      name: BSUID_NOMBRE,
       text: "hola, vi su anuncio",
-      waMessageId: "wamid.e2e.bsuid.1",
+      waMessageId: BSUID_WAMID,
     }),
   });
   ok("inbound BSUID entregado", inb1.res.ok, JSON.stringify(inb1.json));
   await sleep(1200);
 
   let convs = (await api("/api/conversations")).json?.conversations ?? [];
-  const bsuidConv = convs.find((c) => c.contact.name === "Dueña Dental");
+  const bsuidConv = convs.find((c) => c.contact.name === BSUID_NOMBRE);
   ok("conversación con nombre de perfil (no el BSUID crudo)", !!bsuidConv);
   ok("contacto BSUID sin teléfono", bsuidConv?.contact.phone === null);
 
@@ -128,19 +138,19 @@ async function main() {
   const outbox = (await api("/api/dev/wa-mock/outbox")).json?.outbox ?? [];
   ok(
     "el destinatario del envío es el BSUID",
-    outbox.some((o) => o.to === "bsu_e2e_1"),
+    outbox.some((o) => o.to === BSUID),
     JSON.stringify(outbox.map((o) => o.to))
   );
 
-  // Idempotencia: re-entrega del mismo wa_message_id
+  // Idempotencia: re-entrega del mismo wa_message_id (el de esta corrida)
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
-      fromUserId: "bsu_e2e_1",
-      name: "Dueña Dental",
+      fromUserId: BSUID,
+      name: BSUID_NOMBRE,
       text: "hola, vi su anuncio",
-      waMessageId: "wamid.e2e.bsuid.1",
+      waMessageId: BSUID_WAMID,
     }),
   });
   await sleep(800);
@@ -184,20 +194,22 @@ async function main() {
   // reporta: si se reescribiera, dejaría de casar con el `wa_id` de cada
   // webhook y el contacto se partiría en dos.
   console.log("\n== us-bsuid: destinatario argentino (549 → 54) ==");
-  const AR_REPORTADO = "5491122334455";
+  const AR_REPORTADO = `54911${SUF}55`; // 549 + 10 dígitos
+  const AR_CABLE = `5411${SUF}55`; // sin el 9
+  const AR_NOMBRE = `Lead AR ${SUF}`;
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
       from: AR_REPORTADO,
-      name: "Lead AR",
+      name: AR_NOMBRE,
       text: "hola desde Argentina",
-      waMessageId: "wamid.e2e.ar.1",
+      waMessageId: `wamid.e2e.ar.${SUF}.1`,
     }),
   });
   await sleep(1200);
   const convAr = ((await api("/api/conversations")).json?.conversations ?? []).find(
-    (c) => c.contact.name === "Lead AR"
+    (c) => c.contact.name === AR_NOMBRE
   );
   ok("la conversación argentina se creó", Boolean(convAr));
   ok(
@@ -223,7 +235,7 @@ async function main() {
     ).slice(outboxAntes);
     ok(
       "por el cable viaja SIN el 9 (lo que la lista de permitidos acepta)",
-      outboxAr.some((o) => o.to === "541122334455"),
+      outboxAr.some((o) => o.to === AR_CABLE),
       JSON.stringify(outboxAr.map((o) => o.to))
     );
     ok(
@@ -783,7 +795,11 @@ async function main() {
   );
 
   console.log("\n== 008: paridad inbox — echoes de coexistence (US1) ==");
-  const LEAD = "5214627008001"; // canónica: 524627008001
+  // Con lead y wamids fijos (ver SUF arriba) el echo ya no pausaba la IA a la
+  // tercera corrida. Cada corrida estrena lead, número nuevo y wamids.
+  const LEAD = `521462${SUF}1`;
+  const LEAD_CANON = `52462${SUF}1`; // 521 → 52 al canonizar
+  const ECHO_1 = `wamid.e2e.008.echo.${SUF}.1`;
 
   // Un inbound primero: la conversación existe y la ventana queda abierta.
   await api("/api/dev/wa-mock/inbound", {
@@ -793,13 +809,13 @@ async function main() {
       from: LEAD,
       name: "Lead 008",
       text: "hola, quiero informes",
-      waMessageId: "wamid.e2e.008.in.1",
+      waMessageId: `wamid.e2e.008.in.${SUF}.1`,
     }),
   });
   await sleep(1200);
   const findConv008 = async () =>
     (((await api("/api/conversations")).json?.conversations) ?? []).find(
-      (c) => c.contact.phone === "524627008001"
+      (c) => c.contact.phone === LEAD_CANON
     );
   let conv008 = await findConv008();
   ok("conversación del lead 008 creada", Boolean(conv008), "sin conversación");
@@ -812,7 +828,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "te contesto yo, dame un minuto",
-      waMessageId: "wamid.e2e.008.echo.1",
+      waMessageId: ECHO_1,
     }),
   });
   ok("echo entregado al webhook", echo1.res.ok, JSON.stringify(echo1.json));
@@ -838,14 +854,14 @@ async function main() {
     `${inboundAtBefore} → ${conv008?.lastInboundAt}`
   );
 
-  // Idempotencia: el mismo echo otra vez no duplica.
+  // Idempotencia: el mismo echo (mismo wamid de esta corrida) otra vez no duplica.
   await api("/api/dev/wa-mock/echo", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
       to: LEAD,
       text: "te contesto yo, dame un minuto",
-      waMessageId: "wamid.e2e.008.echo.1",
+      waMessageId: ECHO_1,
     }),
   });
   await sleep(700);
@@ -862,7 +878,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "segundo mensaje manual",
-      waMessageId: "wamid.e2e.008.echo.2",
+      waMessageId: `wamid.e2e.008.echo.${SUF}.2`,
       useMessagesKey: true,
     }),
   });
@@ -878,14 +894,14 @@ async function main() {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
-      to: "5214627008002",
+      to: `521462${SUF}2`,
       text: "hola, te escribo del anuncio",
-      waMessageId: "wamid.e2e.008.echo.3",
+      waMessageId: `wamid.e2e.008.echo.${SUF}.3`,
     }),
   });
   await sleep(700);
   const convNew = (((await api("/api/conversations")).json?.conversations) ?? []).find(
-    (c) => c.contact.phone === "524627008002"
+    (c) => c.contact.phone === `52462${SUF}2`
   );
   ok("echo a número nuevo crea contacto y conversación", Boolean(convNew));
 
@@ -986,7 +1002,7 @@ async function main() {
       type: "image",
       mediaId: "media-e2e-img-1",
       caption: "foto de mi negocio",
-      waMessageId: "wamid.e2e.008.in.img",
+      waMessageId: `wamid.e2e.008.in.${SUF}.img`,
     }),
   });
   await sleep(1600); // ingesta + descarga in-process del binario
@@ -1012,7 +1028,7 @@ async function main() {
       from: LEAD,
       type: "location",
       location: { latitude: 20.5, longitude: -100.8, name: "Mi taller" },
-      waMessageId: "wamid.e2e.008.in.loc",
+      waMessageId: `wamid.e2e.008.in.${SUF}.loc`,
     }),
   });
   await sleep(900);
@@ -1033,7 +1049,7 @@ async function main() {
       from: LEAD,
       type: "image",
       mediaId: "broken-no-url",
-      waMessageId: "wamid.e2e.008.in.broken",
+      waMessageId: `wamid.e2e.008.in.${SUF}.broken`,
     }),
   });
   await sleep(1600);
@@ -1060,7 +1076,7 @@ async function main() {
       type: "image",
       mediaId: "media-e2e-echo-img",
       caption: "así quedaría tu logo",
-      waMessageId: "wamid.e2e.008.echo.img",
+      waMessageId: `wamid.e2e.008.echo.${SUF}.img`,
     }),
   });
   await sleep(1600);
@@ -1173,7 +1189,11 @@ async function agendaChecks() {
   );
 
   console.log("\n== 015: las dos garantías (US3) ==");
-  const LEAD_A = "5214627015001";
+  // Leads y wamids por corrida, como en 016: se buscan por teléfono y cargan
+  // citas propias; con wamids fijos el inbound se deduplica y no reabre la
+  // ventana de 24 h.
+  const SUF = String(Date.now()).slice(-6);
+  const LEAD_A = `521462${SUF}5`;
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
@@ -1181,10 +1201,10 @@ async function agendaChecks() {
       from: LEAD_A,
       name: "Lead agenda A",
       text: "quiero agendar",
-      waMessageId: "wamid.e2e.015.a.1",
+      waMessageId: `wamid.e2e.015.a.${SUF}.1`,
     }),
   });
-  const LEAD_B = "5214627015002";
+  const LEAD_B = `521462${SUF}6`;
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
@@ -1192,14 +1212,14 @@ async function agendaChecks() {
       from: LEAD_B,
       name: "Lead agenda B",
       text: "yo también quiero",
-      waMessageId: "wamid.e2e.015.b.1",
+      waMessageId: `wamid.e2e.015.b.${SUF}.1`,
     }),
   });
   await sleep(1500);
 
   const convsAgenda = (await api("/api/conversations")).json?.conversations ?? [];
-  const convA = convsAgenda.find((c) => c.contact.phone === "524627015001");
-  const convB = convsAgenda.find((c) => c.contact.phone === "524627015002");
+  const convA = convsAgenda.find((c) => c.contact.phone === `52462${SUF}5`);
+  const convB = convsAgenda.find((c) => c.contact.phone === `52462${SUF}6`);
   ok("dos conversaciones de prueba listas", Boolean(convA && convB));
   if (!convA || !convB) return;
 
