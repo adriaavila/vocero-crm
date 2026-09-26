@@ -81,12 +81,27 @@ export function AdsSection({
     >
       {data && (
         <div className="space-y-6">
+          <div>
+            <Subhead>Gasto y retorno</Subhead>
+            {spend.error ? (
+              <p className="text-sm text-danger-text">{spend.error}</p>
+            ) : !spend.data ? (
+              <p className="text-sm text-text-3">Calculando…</p>
+            ) : (
+              <GastoCards resumen={spend.data.summary} currency={currency} />
+            )}
+            <p className="mt-2 text-[11px] text-text-3">
+              El costo y el retorno son del total, no por anuncio: el gasto se carga por
+              fuente y periodo, y repartirlo entre creativos sería inventar.
+            </p>
+          </div>
+
           {data.empty ? (
-            <p className="text-sm text-text-3">
+            <p className="border-t pt-4 text-sm text-text-3">
               No empezó ninguna conversación en este periodo.
             </p>
           ) : (
-            <>
+            <div className="space-y-6 border-t pt-4">
               <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-xl">
                 <StatCard
                   label="Conversaciones nuevas"
@@ -142,23 +157,8 @@ export function AdsSection({
                   «Anuncio» cuando Meta dijo de qué anuncio llegó.
                 </p>
               </div>
-            </>
+            </div>
           )}
-
-          <div className="border-t pt-4">
-            <Subhead>Gasto y retorno</Subhead>
-            {spend.error ? (
-              <p className="text-sm text-danger-text">{spend.error}</p>
-            ) : !spend.data ? (
-              <p className="text-sm text-text-3">Calculando…</p>
-            ) : (
-              <GastoCards resumen={spend.data.summary} currency={currency} />
-            )}
-            <p className="mt-2 text-[11px] text-text-3">
-              El costo y el retorno son del total, no por anuncio: el gasto se carga por
-              fuente y periodo, y repartirlo entre creativos sería inventar.
-            </p>
-          </div>
         </div>
       )}
     </Section>

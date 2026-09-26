@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { AdSpendEntryDto } from "@/lib/analytics";
 import type { SourceValue } from "@/lib/types";
@@ -8,6 +8,19 @@ import { formatMoneyCents, parseMoneyToCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/toast-provider";
+
+/** Ventana para deshacer un borrado antes de que sea de verdad al servidor. */
+const UNDO_MS = 5000;
+
+/** Hoy - 29 días, para que el diálogo abra con el mismo rango que Resultados
+ * suele mirar por default — casi siempre es lo que el dueño quiere cargar. */
+function rangoPorDefecto(): { from: string; to: string } {
+  const hoy = new Date();
+  const hace30 = new Date(hoy.getTime() - 29 * 86_400_000);
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  return { from: iso(hace30), to: iso(hoy) };
+}
 
 const FUENTES: { value: SourceValue; label: string }[] = [
   { value: "anuncio", label: "Anuncio" },
@@ -21,7 +34,6 @@ type Estado =
   | { tipo: "idle" }
   | { tipo: "guardando" }
   | { tipo: "guardado" }
-  | { tipo: "borrando"; id: string }
   | { tipo: "error"; mensaje: string };
 
 /**
@@ -46,11 +58,18 @@ export function AdSpendDialog({
   onChanged: () => void;
 }) {
   const [source, setSource] = useState<SourceValue>("anuncio");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [from, setFrom] = useState(() => rangoPorDefecto().from);
+  const [to, setTo] = useState(() => rangoPorDefecto().to);
   const [monto, setMonto] = useState("");
   const [note, setNote] = useState("");
   const [estado, setEstado] = useState<Estado>({ tipo: "idle" });
+  const [pendientesDeBorrar, setPendientesDeBorrar] = useState<Set<string>>(new Set());
+  // `setTimeout` no depende de que el componente siga montado: si el dueño
+  // cierra el diálogo dentro de la ventana de "Deshacer", el borrado real
+  // igual se hace más tarde — nunca se pierde, solo ya sin el toast a la
+  // vista. Por eso este ref NO se limpia en un cleanup de useEffect.
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const notify = useToast();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -107,18 +126,53 @@ export function AdSpendDialog({
     setTimeout(() => setEstado((e) => (e.tipo === "guardado" ? { tipo: "idle" } : e)), 2000);
   }
 
-  async function borrar(id: string) {
-    setEstado({ tipo: "borrando", id });
-    const res = await fetch(`/api/analytics/spend?id=${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    }).catch(() => null);
-    if (!res?.ok) {
-      setEstado({ tipo: "error", mensaje: "No se pudo borrar esa carga." });
-      return;
-    }
-    setEstado({ tipo: "idle" });
-    onChanged();
+  /**
+   * Borrado optimista: desaparece de la lista AHORA (se siente instantáneo),
+   * pero el DELETE de verdad espera `UNDO_MS` — tiempo para arrepentirse
+   * antes de que sea definitivo. "Deshacer" solo cancela ese timer local; no
+   * hay que deshacer nada en el servidor porque nunca se le pidió el borrado.
+   */
+  function borrar(entrada: AdSpendEntryDto) {
+    setPendientesDeBorrar((prev) => new Set(prev).add(entrada.id));
+    const timer = setTimeout(async () => {
+      timers.current.delete(entrada.id);
+      const res = await fetch(`/api/analytics/spend?id=${encodeURIComponent(entrada.id)}`, {
+        method: "DELETE",
+      }).catch(() => null);
+      if (!res?.ok) {
+        // No se pudo: se devuelve a la lista en vez de dejarla desaparecida
+        // sin haberse borrado en verdad.
+        setPendientesDeBorrar((prev) => {
+          const next = new Set(prev);
+          next.delete(entrada.id);
+          return next;
+        });
+        notify("No se pudo borrar esa carga.", "error");
+        return;
+      }
+      onChanged();
+    }, UNDO_MS);
+    timers.current.set(entrada.id, timer);
+
+    const etiqueta = FUENTES.find((f) => f.value === entrada.source)?.label ?? entrada.source;
+    notify(`Carga de ${etiqueta} borrada.`, "success", {
+      label: "Deshacer",
+      onClick: () => {
+        const t = timers.current.get(entrada.id);
+        if (t) {
+          clearTimeout(t);
+          timers.current.delete(entrada.id);
+        }
+        setPendientesDeBorrar((prev) => {
+          const next = new Set(prev);
+          next.delete(entrada.id);
+          return next;
+        });
+      },
+    });
   }
+
+  const visibles = entries.filter((e) => !pendientesDeBorrar.has(e.id));
 
   return (
     <div
@@ -129,7 +183,7 @@ export function AdSpendDialog({
         role="dialog"
         aria-modal="true"
         aria-label="Cargar gasto de anuncios"
-        className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-xl"
+        className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-lg border bg-card p-5 shadow-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-semibold">Cargar gasto</h3>
@@ -248,11 +302,11 @@ export function AdSpendDialog({
 
         <div className="mt-5 border-t pt-4">
           <p className="text-xs font-medium text-text-2">Cargas registradas</p>
-          {entries.length === 0 ? (
+          {visibles.length === 0 ? (
             <p className="mt-2 text-xs text-text-3">Todavía no hay ninguna.</p>
           ) : (
             <ul className="mt-2 max-h-52 space-y-1.5 overflow-y-auto">
-              {entries.map((e) => (
+              {visibles.map((e) => (
                 <li
                   key={e.id}
                   className="flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs"
@@ -272,8 +326,7 @@ export function AdSpendDialog({
                     size="icon"
                     aria-label={`Borrar carga de ${FUENTES.find((f) => f.value === e.source)?.label ?? e.source}, ${e.periodStart} a ${e.periodEnd}`}
                     className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
-                    disabled={estado.tipo === "borrando" && estado.id === e.id}
-                    onClick={() => void borrar(e.id)}
+                    onClick={() => borrar(e)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
