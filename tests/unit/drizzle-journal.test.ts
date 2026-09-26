@@ -10,10 +10,11 @@ import { describe, expect, it } from "vitest";
  * `when` fuera de orden puede hacer que una migración se aplique antes que
  * otra de la que depende, o que `drizzle-kit` calcule mal cuál es "la última".
  *
- * `idx` en cambio SÍ puede tener huecos a propósito: 0021_nea_sin_estado se
- * agregó con `idx: 21` mientras el PR paralelo que reserva `idx: 20`
- * (`0014_anuncio_de_origen`) no había llegado a `origin/main` — Adrian
- * reconcilia el hueco al fusionar. Este test no exige `idx` consecutivo.
+ * `idx` en cambio SÍ puede tener huecos a propósito: los PRs paralelos que se
+ * fusionan por separado (idx 20, el nuestro) usan la convención `9xxx` —
+ * `drizzle-kit generate` los numera contra el `origin/main` real de cada uno,
+ * así que el propio (`9009_nea_sin_estado`) se generó DESPUÉS de rebasear
+ * sobre los idx 9007/9008 ya fusionados. Este test no exige `idx` consecutivo.
  */
 
 const JOURNAL_PATH = path.resolve(
@@ -47,18 +48,17 @@ describe("drizzle/meta/_journal.json", () => {
     }
   });
 
-  it("0021_nea_sin_estado existe, viene después de 0019 y su `when` > el reservado para idx 20 (0014_anuncio_de_origen, 1790048470717)", () => {
+  it("9009_nea_sin_estado existe, viene después de 0019 y de los idx 9007/9008 ya fusionados", () => {
     const entries = readJournal();
-    const idx19 = entries.findIndex((e) => e.tag === "0019_rei_saas_ai_credentials");
-    const propio = entries.findIndex((e) => e.tag === "0021_nea_sin_estado");
+    const idx19 = entries.findIndex((e) => e.tag === "9007_rei_saas_ai_credentials");
+    const idx9008 = entries.findIndex((e) => e.idx === 9008);
+    const propio = entries.findIndex((e) => e.tag === "9009_nea_sin_estado");
 
     expect(idx19).toBeGreaterThanOrEqual(0);
-    expect(propio).toBeGreaterThan(idx19);
-    expect(entries[propio]!.idx).toBe(21);
-    // El PR paralelo (3a) reserva idx 20 con when=1790048470717; el nuestro
-    // tiene que quedar después de ese instante aunque su entrada todavía no
-    // esté en el journal.
-    expect(entries[propio]!.when).toBeGreaterThan(1790048470717);
+    expect(idx9008).toBeGreaterThan(idx19);
+    expect(propio).toBeGreaterThan(idx9008);
+    expect(entries[propio]!.idx).toBe(9009);
+    expect(entries[propio]!.when).toBeGreaterThan(entries[idx9008]!.when);
   });
 
   it("cada tag del journal tiene su archivo .sql correspondiente", () => {

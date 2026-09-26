@@ -108,7 +108,7 @@ describe("buildBotContext", () => {
 
     const result = await buildBotContext("org_1", "cv_1");
 
-    expect(proximaCita).toHaveBeenCalledWith("org_1", "ct_1");
+    expect(proximaCita).toHaveBeenCalledWith("org_1", CONV);
     expect(result?.booking).toEqual({ next: cita });
   });
 

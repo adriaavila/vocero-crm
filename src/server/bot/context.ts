@@ -96,7 +96,7 @@ export async function buildBotContext(
 
   const [agentAccess, booking, agentHasSpoken, adAttributionRows] = await Promise.all([
     accesoDeAgencia(organizationId),
-    proEnabled ? proximaCita(organizationId, contact.id) : Promise.resolve(null),
+    proEnabled ? proximaCita(organizationId, conversation) : Promise.resolve(null),
     hasAgentSpoken(organizationId, conversationId, conversation.memoryResetAt),
     db
       .select({

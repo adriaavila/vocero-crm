@@ -1,6 +1,6 @@
 {
-  "id": "515ab31d-24ce-42ef-ac0b-935817c709d1",
-  "prevId": "51177a16-3ee7-4675-b0b0-6ed832048b4c",
+  "id": "2d2a459c-1773-4657-a610-f5860f62ae67",
+  "prevId": "54a0384e-335a-48a5-87d6-91126fda3c9d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -181,6 +181,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "image_asset_id": {
+          "name": "image_asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "raw": {
           "name": "raw",
           "type": "jsonb",
@@ -237,6 +243,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "ad_attribution_org_source_idx": {
+          "name": "ad_attribution_org_source_idx",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -277,6 +304,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "ad_attribution_image_asset_id_media_asset_id_fk": {
+          "name": "ad_attribution_image_asset_id_media_asset_id_fk",
+          "tableFrom": "ad_attribution",
+          "tableTo": "media_asset",
+          "columnsFrom": [
+            "image_asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -1733,6 +1773,18 @@
           "notNull": true,
           "default": 0
         },
+        "agent_cursor_at": {
+          "name": "agent_cursor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "memory_reset_at": {
+          "name": "memory_reset_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1746,18 +1798,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "agent_cursor_at": {
-          "name": "agent_cursor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "memory_reset_at": {
-          "name": "memory_reset_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -3200,6 +3240,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "transcript": {
+          "name": "transcript",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "wa_timestamp": {
           "name": "wa_timestamp",
           "type": "timestamp",
@@ -3212,12 +3258,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "transcript": {
-          "name": "transcript",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
