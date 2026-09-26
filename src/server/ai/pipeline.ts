@@ -410,14 +410,14 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
 
   let state = initial;
   let lastError: Error = new Error("Nea no respondió");
-  // Los ids pendientes del ÚLTIMO intento que de verdad se posteó — es lo que
-  // se usa para avanzar el cursor si un intento posterior descubre que esa
-  // respuesta ya había llegado (bloque `attempt > 0` de abajo). El snapshot
-  // FRESCO de un intento que se salta por eso nunca sirve para esto: puede
-  // traer mensajes que llegaron después de que Nea ya contestó, y que
-  // todavía nadie le mandó — avanzar el cursor hasta ahí los perdería para
-  // siempre.
-  let lastPostedPendingIds: string[] | null = null;
+  // Los ids pendientes del PRIMER intento que de verdad se posteó (siempre
+  // el intento 0 — nunca se salta el primero). Fix-27b: es lo único seguro
+  // para avanzar el cursor cuando un reintento descubre que la respuesta
+  // determinista YA EXISTE — puede ser el eco de CUALQUIER intento anterior,
+  // no necesariamente el último, así que se asume el conjunto MÁS CHICO
+  // posible (el del primero) en vez de adivinar. Ver el comentario en
+  // `neaReplyExists`.
+  let firstPostedPendingIds: string[] | null = null;
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) {
@@ -452,45 +452,26 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
     if (attempt > 0) {
       // Un reintento puede caer DESPUÉS de que Nea ya contestó — solo se
       // perdió la confirmación HTTP de vuelta. El id determinista de la
-      // respuesta lo delata — pero solo cuenta si de verdad se ENTREGÓ (tiene
-      // wamid, o en el Laboratorio quedó `sent`): una reserva todavía en
-      // vuelo o muerta (sin wamid) no es una respuesta completada.
+      // respuesta lo delata. Regla conservadora (fix-27b): en cuanto la fila
+      // EXISTE (con o sin wamid todavía — ver `neaReplyExists`), se deja de
+      // insistir en este turno y se avanza el cursor SOLO hasta el primer
+      // intento posteado — nunca se intenta dispatchear de nuevo asumiendo
+      // que "total, si ya existe seguro está completa": si de verdad sigue
+      // en vuelo, este turno se rinde y el próximo (worker) la retoma.
       const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
-      if (await neaReplyLanded(organizationId, conversationId, replyId, conversation.isTest)) {
-        if (lastPostedPendingIds) {
-          await advanceCursor(organizationId, conversationId, lastPostedPendingIds);
+      if (await neaReplyExists(organizationId, conversationId, replyId)) {
+        if (firstPostedPendingIds) {
+          await advanceCursor(organizationId, conversationId, firstPostedPendingIds);
         }
         return;
       }
     }
 
-    // Se marca ANTES del POST — es el punto de referencia para distinguir,
-    // si este intento vuelve con 2xx, una respuesta de VERDAD fresca de un
-    // eco de una respuesta VIEJA que llegó justo en la carrera de abajo.
-    const postedAt = new Date();
     const result = await dispatchToNea(snapshot.payload);
     const thisAttemptPendingIds = snapshot.pendingIds;
+    if (attempt === 0) firstPostedPendingIds = thisAttemptPendingIds;
     if (result.kind === "ok") {
-      let pendingIdsToAdvance = thisAttemptPendingIds;
-      if (attempt > 0) {
-        // Carrera entre el chequeo de "¿ya contestó?" de arriba y este POST:
-        // la respuesta del intento ANTERIOR pudo terminar de aterrizar justo
-        // en ese hueco. Nea, al recibir este intento con el mismo id
-        // determinista (seq 0), choca contra esa reserva ya completada
-        // (`sendTextIdempotent` → `duplicate:true`) y devuelve 2xx SIN haber
-        // armado una respuesta nueva que de verdad cubra TODO lo pendiente de
-        // ESTE intento — es un eco, no una respuesta fresca. Se distingue por
-        // `created_at` de la fila de la respuesta contra `postedAt`: si es
-        // ANTERIOR a este POST, no pudo haberla creado este intento.
-        const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
-        const repliedAt = await neaReplyCreatedAt(organizationId, conversationId, replyId);
-        if (repliedAt && repliedAt < postedAt) {
-          pendingIdsToAdvance = lastPostedPendingIds ?? [];
-        }
-      }
-      if (pendingIdsToAdvance.length > 0) {
-        await advanceCursor(organizationId, conversationId, pendingIdsToAdvance);
-      }
+      await advanceCursor(organizationId, conversationId, thisAttemptPendingIds);
       await applyNeaResponse({
         organizationId,
         conversationId,
@@ -506,7 +487,6 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
       // + handoff en el debounce legado).
       throw new Error(result.message);
     }
-    lastPostedPendingIds = thisAttemptPendingIds; // se posteó de verdad; sirve de referencia al próximo intento.
     lastError = new Error(result.message); // retryable: 5xx o red — sigue el loop.
   }
   throw lastError;
@@ -559,51 +539,35 @@ async function loadNeaGateState(conversationId: string): Promise<NeaGateState | 
 }
 
 /**
- * true si la respuesta con este id determinista de verdad se ENTREGÓ. No
- * basta con que la fila exista: una reserva sin `wa_message_id` puede seguir
- * en vuelo (Graph todavía no respondió) o estar muerta (el proceso se cayó
- * antes de borrarla tras un fallo) — ninguna de las dos es una respuesta que
- * Nea haya completado. El Laboratorio nunca tiene wamid (jamás toca Graph):
- * ahí `status='sent'` ES la confirmación.
+ * true si YA EXISTE una fila para esta respuesta determinista (seq 0) — sin
+ * importar si de verdad "aterrizó" (wamid) o sigue siendo una reserva en
+ * vuelo/muerta. Fix-27b (review de la carrera de reintentos): distinguir por
+ * timestamp ("¿es más vieja que el POST de este intento?") o por
+ * aterrizaje ("¿tiene wamid?") deja huecos reales —
+ *
+ *  - una respuesta puede tardar VARIOS intentos en completarse (un timeout
+ *    de 90s o un 502/504 de gateway no significa que Nea se detuvo: puede
+ *    seguir procesando en segundo plano) y aterrizar recién en el tercer
+ *    intento, con un id determinista que choca contra el de CUALQUIER
+ *    intento anterior — no necesariamente el inmediatamente previo;
+ *  - un `created_at` que cae DESPUÉS del POST de este mismo intento no
+ *    prueba que ESTE intento la causó: puede ser el resultado tardío de un
+ *    intento MÁS VIEJO completándose justo en esa ventana.
+ *
+ * La regla conservadora: en cuanto la fila EXISTE (con o sin wamid) en un
+ * reintento, se asume que la respuesta pertenece a AL MENOS el primer
+ * intento posteado — nunca se intenta adivinar a cuál exactamente. El peor
+ * caso es volver a mandarle a Nea un pendiente que en los hechos ya
+ * contestó (se reintenta en el próximo turno); nunca se da por contestado
+ * uno que Nea nunca vio.
  */
-async function neaReplyLanded(
-  organizationId: string,
-  conversationId: string,
-  replyId: string,
-  isTest: boolean
-): Promise<boolean> {
-  const rows = await getDb()
-    .select({ waMessageId: schema.message.waMessageId, status: schema.message.status })
-    .from(schema.message)
-    .where(
-      and(
-        eq(schema.message.id, replyId),
-        eq(schema.message.organizationId, organizationId),
-        eq(schema.message.conversationId, conversationId)
-      )
-    )
-    .limit(1);
-  const row = rows[0];
-  if (!row) return false;
-  return isTest ? row.status === "sent" : row.waMessageId !== null;
-}
-
-/**
- * `created_at` de la fila de la respuesta (seq 0), si existe — sin importar
- * si ya "aterrizó" del todo (ver `neaReplyLanded`). La usa el fix-27b: un 2xx
- * en un reintento (`attempt > 0`) puede ser un ECO de una respuesta que un
- * intento ANTERIOR ya posteó de verdad (colisión de dedupe por el mismo id
- * determinista), no una respuesta fresca para el pendiente COMPLETO de este
- * intento — se distingue comparando este `created_at` contra el instante en
- * que se mandó el POST de este intento.
- */
-async function neaReplyCreatedAt(
+async function neaReplyExists(
   organizationId: string,
   conversationId: string,
   replyId: string
-): Promise<Date | null> {
+): Promise<boolean> {
   const rows = await getDb()
-    .select({ createdAt: schema.message.createdAt })
+    .select({ id: schema.message.id })
     .from(schema.message)
     .where(
       and(
@@ -613,7 +577,7 @@ async function neaReplyCreatedAt(
       )
     )
     .limit(1);
-  return rows[0]?.createdAt ?? null;
+  return rows.length > 0;
 }
 
 /**

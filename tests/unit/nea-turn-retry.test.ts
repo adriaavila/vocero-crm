@@ -237,41 +237,90 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(cursorUpdate).toBeDefined(); // el cursor SÍ avanzó
   });
 
-  it("fix-27b item 1: un 2xx en un reintento que es ECO de la respuesta del intento anterior (colisión de dedupe) avanza el cursor SOLO hasta lo que ese intento anterior posteó, nunca hasta el pendiente fresco completo", async () => {
+  it("fix-27b item 1: en un reintento, la respuesta determinista YA EXISTE (con o sin wamid) → se rinde sin volver a POSTear y avanza el cursor SOLO hasta lo que el PRIMER intento posteó", async () => {
     vi.useFakeTimers();
     pushGates();
-    // intento 0: solo A pendiente — falla (retryable), pero Nea SÍ alcanzó a
-    // reservar/mandar la respuesta por su cuenta (created_at queda de ESTE
-    // instante, mucho antes del POST del intento 1).
+    // intento 0: solo A pendiente — falla (retryable), pero Nea alcanzó a
+    // reservar la respuesta por su cuenta (sigue sin wamid: puede seguir en
+    // vuelo, no importa — lo único que cuenta es que la fila YA EXISTE).
     buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
     dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "Nea devolvió 500" });
     pushAttempt();
 
     pushGateReread();
-    // intento 1: el snapshot FRESCO ya trae A y B — pero el reply todavía no
-    // tiene wamid en el chequeo de "¿ya contestó?" de arriba (replyLanded
-    // devuelve false): sigue de largo y despacha {A,B}.
+    // intento 1: el snapshot FRESCO ya trae A y B — pero `neaReplyExists`
+    // encuentra la fila (regla conservadora, fix-27b): se rinde AQUÍ, sin
+    // llegar a despachar este intento.
     buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
-    // replyLanded (sin wamid todavía) + neaReplyCreatedAt (SÍ existe la fila,
-    // con un created_at bien viejo — de cuando el intento 0 la reservó).
-    pushAttempt([INBOUND_MESSAGE], [{ waMessageId: null, status: "pending" }]);
-    selectQueue.push([{ createdAt: new Date("2020-01-01T00:00:00.000Z") }]);
-    // Nea choca contra su propia reserva (ya completada para cuando procesa
-    // este intento) y solo confirma — 2xx, sin responder de verdad a B.
+    pushAttempt([INBOUND_MESSAGE], [{ id: "msg_reply_seq0" }]);
+
+    const turn = runAgentTurn("cv_1", "aj_1");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await turn;
+
+    expect(dispatchToNea).toHaveBeenCalledTimes(1); // NUNCA se posteó el intento 1
+    const cursorUpdate = updates.find((u) => "agentCursorAt" in u.values);
+    expect(cursorUpdate).toBeDefined();
+    // avanza SOLO hasta lo que el intento 0 (el PRIMERO posteado) mandó —
+    // nunca hasta el pendiente fresco completo del intento 1.
+    expect(inArraySpy).toHaveBeenCalledTimes(1);
+    expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]);
+  });
+
+  it("fix-27b item 1 (tres intentos): un eco de la respuesta del intento 0 llega recién en el intento 2 → avanza hasta lo del intento 0 (firstPostedPendingIds), NUNCA hasta lo del intento 1 (que ya no se recuerda)", async () => {
+    vi.useFakeTimers();
+    pushGates();
+    // intento 0: {A} — falla.
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
+    dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "500" });
+    pushAttempt();
+
+    // intento 1: {A,B} — la respuesta de Nea sigue sin aparecer (todavía en
+    // vuelo desde el intento 0) → NO existe la fila → se despacha de nuevo,
+    // y TAMBIÉN falla.
+    pushGateReread();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
+    pushAttempt([INBOUND_MESSAGE], []); // neaReplyExists: fila vacía → no existe
+    dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 502, message: "502" });
+
+    // intento 2: {A,B,C} — AHORA sí existe la fila (la respuesta lenta del
+    // intento 0 por fin aterrizó) → se rinde. Si se usara `lastPosted`
+    // (lo último posteado, intento 1: {A,B}) en vez de `firstPosted`
+    // (intento 0: {A}), B se marcaría contestado sin haberlo estado nunca.
+    pushGateReread();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b", "msg_c"] });
+    pushAttempt([INBOUND_MESSAGE], [{ id: "msg_reply_seq0" }]);
+
+    const turn = runAgentTurn("cv_1", "aj_1");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await turn;
+
+    expect(dispatchToNea).toHaveBeenCalledTimes(2); // intento 2 NUNCA se posteó
+    expect(inArraySpy).toHaveBeenCalledTimes(1);
+    expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]); // SOLO lo del intento 0
+  });
+
+  it("fix-27b item 1: la fila NO existe (respuesta genuinamente fresca en el intento 1) → SÍ despacha y avanza el cursor con TODO el pendiente de ese intento", async () => {
+    vi.useFakeTimers();
+    pushGates();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
+    dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "500" });
+    pushAttempt();
+
+    pushGateReread();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
+    pushAttempt([INBOUND_MESSAGE], []); // neaReplyExists: no existe ninguna fila todavía
     dispatchToNea.mockResolvedValueOnce({ kind: "ok", body: { ok: true, action: "replied" } });
 
     const turn = runAgentTurn("cv_1", "aj_1");
     await vi.advanceTimersByTimeAsync(2_000);
     await turn;
 
-    expect(dispatchToNea).toHaveBeenCalledTimes(2);
-    const cursorUpdate = updates.find((u) => "agentCursorAt" in u.values);
-    expect(cursorUpdate).toBeDefined();
-    // `advanceCursor` solo se llama UNA vez por turno — su `inArray` debe
-    // llevar exactamente lo que el intento 0 posteó, no el pendiente fresco
-    // completo del intento 1.
+    expect(dispatchToNea).toHaveBeenCalledTimes(2); // el intento 1 SÍ se posteó
     expect(inArraySpy).toHaveBeenCalledTimes(1);
-    expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]);
+    // avance COMPLETO: {A,B} — es una respuesta de verdad fresca, no un eco.
+    expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a", "msg_b"]);
   });
 
   it("nada pendiente (buildNeaTurnSnapshot → null) → no despacha, sin importar el intento", async () => {
