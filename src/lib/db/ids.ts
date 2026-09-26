@@ -36,6 +36,8 @@ const prefixes = {
   aiCredential: "aic",
   // Nea sin estado (dispatch v2)
   dispatch: "dsp",
+  // Fork — gasto de anuncios cargado a mano (Cloud lo tiene, upstream no).
+  adSpend: "asp",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

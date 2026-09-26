@@ -230,7 +230,7 @@ try {
   // el cruce de tenant se corta ANTES de eso: `requireSession()` resuelve la
   // membresía por el HOST, y con el host de otro negocio alpha no tiene
   // ninguna — 401 sin importar plan ni rol.
-  for (const ruta of ["sales", "bot", "hygiene", "ads"]) {
+  for (const ruta of ["sales", "bot", "hygiene", "ads", "spend"]) {
     const crossAnalytics = await alpha.request.get(`${base}/api/analytics/${ruta}`, {
       headers: headers(betaHost),
       maxRedirects: 0,
