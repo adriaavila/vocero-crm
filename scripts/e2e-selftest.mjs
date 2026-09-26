@@ -783,7 +783,15 @@ async function main() {
   );
 
   console.log("\n== 008: paridad inbox — echoes de coexistence (US1) ==");
-  const LEAD = "5214627008001"; // canónica: 524627008001
+  // Sufijo por corrida, como en 016: wa_message_id es UNIQUE, así que con lead
+  // y wamids fijos la re-corrida contra la MISMA base no insertaba nada y
+  // medía la corrida anterior: el echo ya no pausaba la IA (a la tercera
+  // corrida fallaba) y el inbound no reabría la ventana de 24 h. Cada corrida
+  // estrena lead, número nuevo y wamids.
+  const SUF = String(Date.now()).slice(-6);
+  const LEAD = `521462${SUF}1`;
+  const LEAD_CANON = `52462${SUF}1`; // 521 → 52 al canonizar
+  const ECHO_1 = `wamid.e2e.008.echo.${SUF}.1`;
 
   // Un inbound primero: la conversación existe y la ventana queda abierta.
   await api("/api/dev/wa-mock/inbound", {
@@ -793,13 +801,13 @@ async function main() {
       from: LEAD,
       name: "Lead 008",
       text: "hola, quiero informes",
-      waMessageId: "wamid.e2e.008.in.1",
+      waMessageId: `wamid.e2e.008.in.${SUF}.1`,
     }),
   });
   await sleep(1200);
   const findConv008 = async () =>
     (((await api("/api/conversations")).json?.conversations) ?? []).find(
-      (c) => c.contact.phone === "524627008001"
+      (c) => c.contact.phone === LEAD_CANON
     );
   let conv008 = await findConv008();
   ok("conversación del lead 008 creada", Boolean(conv008), "sin conversación");
@@ -812,7 +820,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "te contesto yo, dame un minuto",
-      waMessageId: "wamid.e2e.008.echo.1",
+      waMessageId: ECHO_1,
     }),
   });
   ok("echo entregado al webhook", echo1.res.ok, JSON.stringify(echo1.json));
@@ -838,14 +846,14 @@ async function main() {
     `${inboundAtBefore} → ${conv008?.lastInboundAt}`
   );
 
-  // Idempotencia: el mismo echo otra vez no duplica.
+  // Idempotencia: el mismo echo (mismo wamid de esta corrida) otra vez no duplica.
   await api("/api/dev/wa-mock/echo", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
       to: LEAD,
       text: "te contesto yo, dame un minuto",
-      waMessageId: "wamid.e2e.008.echo.1",
+      waMessageId: ECHO_1,
     }),
   });
   await sleep(700);
@@ -862,7 +870,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "segundo mensaje manual",
-      waMessageId: "wamid.e2e.008.echo.2",
+      waMessageId: `wamid.e2e.008.echo.${SUF}.2`,
       useMessagesKey: true,
     }),
   });
@@ -878,14 +886,14 @@ async function main() {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
-      to: "5214627008002",
+      to: `521462${SUF}2`,
       text: "hola, te escribo del anuncio",
-      waMessageId: "wamid.e2e.008.echo.3",
+      waMessageId: `wamid.e2e.008.echo.${SUF}.3`,
     }),
   });
   await sleep(700);
   const convNew = (((await api("/api/conversations")).json?.conversations) ?? []).find(
-    (c) => c.contact.phone === "524627008002"
+    (c) => c.contact.phone === `52462${SUF}2`
   );
   ok("echo a número nuevo crea contacto y conversación", Boolean(convNew));
 
@@ -986,7 +994,7 @@ async function main() {
       type: "image",
       mediaId: "media-e2e-img-1",
       caption: "foto de mi negocio",
-      waMessageId: "wamid.e2e.008.in.img",
+      waMessageId: `wamid.e2e.008.in.${SUF}.img`,
     }),
   });
   await sleep(1600); // ingesta + descarga in-process del binario
@@ -1012,7 +1020,7 @@ async function main() {
       from: LEAD,
       type: "location",
       location: { latitude: 20.5, longitude: -100.8, name: "Mi taller" },
-      waMessageId: "wamid.e2e.008.in.loc",
+      waMessageId: `wamid.e2e.008.in.${SUF}.loc`,
     }),
   });
   await sleep(900);
@@ -1033,7 +1041,7 @@ async function main() {
       from: LEAD,
       type: "image",
       mediaId: "broken-no-url",
-      waMessageId: "wamid.e2e.008.in.broken",
+      waMessageId: `wamid.e2e.008.in.${SUF}.broken`,
     }),
   });
   await sleep(1600);
@@ -1060,7 +1068,7 @@ async function main() {
       type: "image",
       mediaId: "media-e2e-echo-img",
       caption: "así quedaría tu logo",
-      waMessageId: "wamid.e2e.008.echo.img",
+      waMessageId: `wamid.e2e.008.echo.${SUF}.img`,
     }),
   });
   await sleep(1600);
