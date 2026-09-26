@@ -18,6 +18,8 @@ const schema = z
     name: z.string().optional(),
     type: z.string().optional(),
     text: z.string().optional(),
+    // Respuesta a botón: `type: "interactive"` + descripción → fila de lista.
+    description: z.string().optional(),
     waMessageId: z.string().optional(),
     timestamp: z.number().optional(),
     // 008 — adjuntos simulados

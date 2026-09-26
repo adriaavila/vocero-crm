@@ -37,6 +37,16 @@ export function mediaLabel(type: string): string {
   return MEDIA_LABELS[type] ?? "Contenido";
 }
 
+/**
+ * Tipos que el hilo pinta como texto. Las respuestas a botones (`button`,
+ * `interactive`) llegan con la etiqueta que eligió el cliente.
+ */
+const TEXT_TYPES = new Set(["text", "template", "button", "interactive"]);
+
+export function isTextType(type: string): boolean {
+  return TEXT_TYPES.has(type);
+}
+
 /** 008 — Tamaño humano de un adjunto. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

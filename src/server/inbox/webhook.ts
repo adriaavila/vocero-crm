@@ -94,6 +94,14 @@ export type WebhookMessage = {
   sticker?: WebhookMediaPayload;
   location?: WebhookLocation;
   contacts?: unknown[];
+  /** Tap en una respuesta rápida de plantilla (`type: "button"`). */
+  button?: { text?: string; payload?: string };
+  /** Respuesta a un mensaje interactivo: botón o fila de lista. */
+  interactive?: {
+    type?: string;
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string; description?: string };
+  };
   /** 016: origen del anuncio, cuando la conversación nació de uno. */
   referral?: WebhookReferral;
 };

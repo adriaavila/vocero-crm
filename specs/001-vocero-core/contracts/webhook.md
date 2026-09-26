@@ -43,8 +43,12 @@ Reglas de procesamiento:
 - Ruteo por `metadata.phone_number_id` → `meta_credentials.phone_number_id` → org. Sin
   match → `200` e ignorar.
 - `messages[]` → ingesta idempotente (`wa_message_id` UNIQUE; duplicado → no-op).
-  Tipos no-texto → mensaje con `type` correspondiente y body NULL (chip). Tipos
-  desconocidos → `unsupported`, sin error.
+  Tipos no-texto → mensaje con `type` correspondiente y body NULL (chip).
+  Respuestas a botones (`button`; `interactive` con `button_reply` o
+  `list_reply`) → mensaje con su `type` y como body la opción elegida (en
+  listas, título y descripción): cuentan como entrante para la ventana y el
+  agente. Tipos desconocidos (reacciones, Flows, productos) → se ignoran, sin
+  error.
 - `statuses[]` → upgrade monotónico del estado (`sent<delivered<read`; nunca degradar;
   `failed` registra `error_detail`).
 - `field: "message_template_status_update"` → `value: { event: "APPROVED"|"REJECTED"|"PENDING",

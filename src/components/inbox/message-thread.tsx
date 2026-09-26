@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import type { MessageDto, MessageMediaDto } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { formatBytes, mediaLabel } from "./helpers";
+import { formatBytes, isTextType, mediaLabel } from "./helpers";
 
 function StatusTicks({ status }: { status: MessageDto["status"] }) {
   const cls = "h-[13px] w-[13px]";
@@ -243,7 +243,7 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
                       </span>
                     )}
                   </span>
-                ) : m.type === "text" || m.type === "template" ? (
+                ) : isTextType(m.type) ? (
                   <span className="whitespace-pre-wrap break-words">
                     {m.text}
                   </span>

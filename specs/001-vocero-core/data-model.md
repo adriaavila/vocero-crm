@@ -82,7 +82,7 @@ real por contacto; las de test son N).
 | organization_id | text NOT NULL FK CASCADE | |
 | conversation_id | text NOT NULL FK→conversation CASCADE | índice `(conversation_id, created_at)` |
 | direction | text NOT NULL | `in` \| `out` |
-| type | text NOT NULL default 'text' | `text` \| `image` \| `audio` \| `video` \| `document` \| `sticker` \| `template` \| `unsupported` |
+| type | text NOT NULL default 'text' | `text` \| `image` \| `audio` \| `video` \| `document` \| `sticker` \| `location` \| `contacts` \| `template` \| `button` \| `interactive` (respuestas a botones: body = la opción elegida) \| `unsupported` (solo Messenger) |
 | body | text | texto o cuerpo renderizado de plantilla |
 | wa_message_id | text UNIQUE NULL | idempotencia (los `is_test` no llevan) |
 | status | text NOT NULL default 'pending' | out: `pending`→`sent`→`delivered`→`read` \| `failed`; in: `received` |

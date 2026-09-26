@@ -38,6 +38,32 @@ const SUPPORTED_TYPES = new Set([
   "contacts",
 ]);
 
+/**
+ * Respuestas a botones: `button` = tap en una respuesta rápida de plantilla;
+ * `interactive` = botón o fila de lista de un mensaje interactivo. Solo
+ * existen como entrantes (los echoes siguen con SUPPORTED_TYPES).
+ */
+const REPLY_TYPES = new Set(["button", "interactive"]);
+
+/**
+ * Texto legible de un entrante. Tocar un botón es un mensaje real del cliente:
+ * entra con la etiqueta que eligió (en una lista, título y descripción de la
+ * fila) para que el inbox y el agente lo lean como texto. El id/payload del
+ * botón no se guarda: `message` no tiene columna de crudo. Un `interactive`
+ * sin respuesta legible (Flows, producto) → null.
+ */
+export function inboundText(msg: WebhookMessage): string | null {
+  if (msg.type === "button") return msg.button?.text || null;
+  if (msg.type === "interactive") {
+    const row = msg.interactive?.list_reply;
+    if (row?.title) {
+      return row.description ? `${row.title}\n${row.description}` : row.title;
+    }
+    return msg.interactive?.button_reply?.title || null;
+  }
+  return msg.text?.body ?? null;
+}
+
 /** Tipos con archivo binario en Graph (008). */
 const BINARY_MEDIA_TYPES = new Set([
   "image",
@@ -240,7 +266,9 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
   }
 
   for (const msg of value.messages ?? []) {
-    if (!SUPPORTED_TYPES.has(msg.type)) continue; // reacciones, etc.: ignorar
+    const text = inboundText(msg);
+    const isReply = REPLY_TYPES.has(msg.type) && text !== null;
+    if (!SUPPORTED_TYPES.has(msg.type) && !isReply) continue; // reacciones, etc.: ignorar
     const resolved = resolveIdentity(msg, value.contacts);
     if (!resolved) {
       // Mensaje sin NINGUNA identidad utilizable (ni teléfono ni BSUID):
@@ -255,7 +283,7 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       identity: resolved,
       waMessageId: msg.id,
       type: msg.type,
-      text: msg.text?.body ?? null,
+      text,
       timestamp: msg.timestamp,
       media: mediaInputFrom(msg),
       // 018: normalizado aquí, en el adaptador del canal; la ingesta no sabe
