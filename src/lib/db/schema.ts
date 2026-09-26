@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -1192,4 +1193,48 @@ export const capiSettings = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("capi_settings_org_uq").on(t.organizationId)]
+);
+
+/* ============================================================
+ * Gasto de anuncios (fork — Cloud lo tiene, upstream open source no)
+ * ============================================================ */
+
+/**
+ * Lo que el dueño cargó a mano por fuente y periodo. No hay conector de
+ * anuncios en el núcleo (Soberanía II): el gasto real vive en Meta Ads y
+ * aquí solo se anota lo que el dueño dice que gastó, para poder mostrar
+ * costo por prospecto/cliente y retorno en Resultados.
+ *
+ * Por FUENTE, no por anuncio ni creativo: el gasto de Meta se factura por
+ * conjunto/campaña, no por `source_id` individual, y repartirlo entre
+ * creativos sería inventar un número que nadie cargó.
+ */
+export const adSpend = pgTable(
+  "ad_spend",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    source: text("source", {
+      enum: ["anuncio", "organico", "referido", "conocido", "otro"],
+    }).notNull(),
+    // `mode: "string"` explícito (ya es el default): se compara y se prorratea
+    // como fecha de calendario `YYYY-MM-DD`, igual que `PeriodDto.from`/`to` —
+    // nunca como instante, que traería la zona horaria de vuelta al problema
+    // que `period.ts` ya resolvió.
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    /** INCLUSIVO, como `from`/`to` en el resto de Resultados. */
+    periodEnd: date("period_end", { mode: "string" }).notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    /** La del negocio (`getBranding().currency`): un solo gasto, una sola moneda. */
+    currency: text("currency").notNull(),
+    note: text("note"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("ad_spend_org_period_idx").on(t.organizationId, t.periodStart),
+    check("ad_spend_amount_cents_ck", sql`${t.amountCents} >= 0`),
+  ]
 );

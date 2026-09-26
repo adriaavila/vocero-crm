@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type {
+  AdSpendListDto,
   AdsBlockDto,
   BotBlockDto,
   HygieneBlockDto,
@@ -77,16 +78,19 @@ export function ResultsClient({
   const [ads, setAds] = useState<Block<AdsBlockDto>>(inicial);
   const [bot, setBot] = useState<Block<BotBlockDto>>(inicial);
   const [hygiene, setHygiene] = useState<Block<HygieneBlockDto>>(inicial);
+  // Fork — gasto de anuncios cargado a mano (Cloud lo tiene, upstream no).
+  const [spend, setSpend] = useState<Block<AdSpendListDto>>(inicial);
 
-  // Un ref por sección: "Reintentar" y el efecto de rango comparten el mismo
-  // controlador. Sin esto, una respuesta lenta de un "Reintentar" que ya no
-  // corresponde al rango elegido (el dueño cambió el rango mientras esperaba)
-  // llegaba de todos modos y pisaba el dato correcto — el AbortController del
-  // efecto no sabía nada del que disparó "Reintentar".
+  // Un ref por sección: "Reintentar"/"recargar" y el efecto de rango
+  // comparten el mismo controlador. Sin esto, una respuesta lenta de una
+  // llamada que ya no corresponde al rango elegido (el dueño cambió el rango,
+  // o recargó el gasto, mientras esperaba) llegaba de todos modos y pisaba el
+  // dato correcto — el AbortController del efecto no sabía nada del otro.
   const salesCtl = useRef<AbortController | null>(null);
   const adsCtl = useRef<AbortController | null>(null);
   const botCtl = useRef<AbortController | null>(null);
   const hygieneCtl = useRef<AbortController | null>(null);
+  const spendCtl = useRef<AbortController | null>(null);
 
   function pedir<T>(
     ref: RefObject<AbortController | null>,
@@ -104,10 +108,12 @@ export function ResultsClient({
     pedir(salesCtl, `/api/analytics/sales?${q}`, setSales);
     pedir(adsCtl, `/api/analytics/ads?${q}`, setAds);
     pedir(botCtl, `/api/analytics/bot?${q}`, setBot);
+    pedir(spendCtl, `/api/analytics/spend?${q}`, setSpend);
     return () => {
       salesCtl.current?.abort();
       adsCtl.current?.abort();
       botCtl.current?.abort();
+      spendCtl.current?.abort();
     };
   }, [range]);
 
@@ -117,13 +123,15 @@ export function ResultsClient({
     return () => hygieneCtl.current?.abort();
   }, []);
 
-  // "Reintentar" repite exactamente la misma petición que ya falló, sin
-  // recargar la página entera ni perder el rango elegido.
+  // "Reintentar"/"recargar" repite exactamente la misma petición que ya
+  // falló (o que acaba de cambiar el gasto), sin recargar la página entera
+  // ni perder el rango elegido.
   const q = `from=${range.from}&to=${range.to}`;
   const reintentarSales = () => pedir(salesCtl, `/api/analytics/sales?${q}`, setSales);
   const reintentarAds = () => pedir(adsCtl, `/api/analytics/ads?${q}`, setAds);
   const reintentarBot = () => pedir(botCtl, `/api/analytics/bot?${q}`, setBot);
   const reintentarHygiene = () => pedir(hygieneCtl, "/api/analytics/hygiene", setHygiene);
+  const reloadSpend = () => pedir(spendCtl, `/api/analytics/spend?${q}`, setSpend);
 
   return (
     <div className="flex h-full flex-col">
@@ -139,7 +147,13 @@ export function ResultsClient({
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-6">
         <SalesSection {...sales} currency={currency} onRetry={reintentarSales} />
-        <AdsSection {...ads} onRetry={reintentarAds} />
+        <AdsSection
+          {...ads}
+          spend={spend}
+          currency={currency}
+          onSpendChanged={reloadSpend}
+          onRetry={reintentarAds}
+        />
         <BotSection {...bot} agenda={agenda} onRetry={reintentarBot} />
         <HygieneSection {...hygiene} currency={currency} onRetry={reintentarHygiene} />
       </div>

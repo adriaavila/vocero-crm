@@ -303,6 +303,96 @@ export type HygieneBlockDto = {
   clean: boolean;
 };
 
+/* ── Gasto de anuncios (fork — Cloud lo tiene, upstream no) ─────── */
+
+/**
+ * Centavos por unidad de un conteo (prospecto, cliente…), con su muestra —
+ * mismo principio que `RateDto`: **la UI no divide**, y nunca enseña un
+ * número de dinero sin decir sobre cuántos casos sale.
+ */
+export type MoneyPerUnitDto = {
+  /** `null` sin denominador (cero prospectos o clientes en la fuente). */
+  cents: number | null;
+  sample: number;
+  reliable: boolean;
+};
+
+export function moneyPerUnit(totalCents: number, count: number): MoneyPerUnitDto {
+  if (count <= 0) return { cents: null, sample: 0, reliable: false };
+  return {
+    cents: Math.round(totalCents / count),
+    sample: count,
+    reliable: count >= MIN_SAMPLE,
+  };
+}
+
+/**
+ * Cuánto volvió por lo gastado, como múltiplo (2.5 = "2.5x"): la convención
+ * de Meta Ads para ROAS, no un porcentaje que se confunda con una tasa de
+ * cierre. La muestra es cuántos tratos ganados hay detrás del dinero, no los
+ * centavos gastados — eso es lo que decide si el número es firme o anécdota.
+ */
+export type AdReturnDto = {
+  /** `null` sin gasto (nada que dividir). */
+  multiple: number | null;
+  sample: number;
+  reliable: boolean;
+};
+
+export function adReturn(
+  wonCents: number,
+  spendCents: number,
+  wonCount: number
+): AdReturnDto {
+  if (spendCents <= 0) return { multiple: null, sample: 0, reliable: false };
+  return {
+    multiple: Math.round((wonCents / spendCents) * 10) / 10,
+    sample: wonCount,
+    reliable: wonCount >= MIN_SAMPLE,
+  };
+}
+
+export type AdSpendEntryDto = {
+  id: string;
+  source: SourceValue;
+  periodStart: string;
+  periodEnd: string;
+  amountCents: number;
+  currency: string;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type AdSpendSourceSummaryDto = {
+  source: SourceValue;
+  label: string;
+  spendCents: number;
+  prospects: number;
+  costPerProspect: MoneyPerUnitDto;
+  customers: number;
+  costPerCustomer: MoneyPerUnitDto;
+  wonCents: number;
+  return: AdReturnDto;
+};
+
+export type AdSpendSummaryDto = {
+  period: PeriodDto;
+  totalSpendCents: number;
+  costPerProspect: MoneyPerUnitDto;
+  costPerCustomer: MoneyPerUnitDto;
+  return: AdReturnDto;
+  bySource: AdSpendSourceSummaryDto[];
+  /** true = ninguna carga de gasto toca este periodo, por ninguna fuente. */
+  empty: boolean;
+};
+
+/** Respuesta de `/api/analytics/spend`: todas las cargas + el resumen del periodo. */
+export type AdSpendListDto = {
+  entries: AdSpendEntryDto[];
+  summary: AdSpendSummaryDto;
+};
+
 /* ── Etiquetas ──────────────────────────────────────────────────── */
 
 /** Mismas palabras que la ficha del contacto y el panel de la bandeja. */
