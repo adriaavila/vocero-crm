@@ -1,6 +1,6 @@
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { headers } from "next/headers";
-import { getDb, schema } from "@/lib/db";
+import { getDb, getSql } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { APP_VERSION, resolveBuildCommit } from "@/lib/version";
 import { isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
@@ -18,21 +18,15 @@ const STALE_QUEUED_WINDOW_MS = 5 * 60 * 1000;
  * para monitoreo, no el propio healthcheck: nunca debe ser lo que lo cuelgue. */
 const AGENT_QUEUE_QUERY_TIMEOUT_MS = 750;
 
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("agent_queue_check_timeout")), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err) => {
-        clearTimeout(timer);
-        reject(err);
-      }
-    );
-  });
-}
+type AgentQueueRow = { needsReview: boolean; staleQueued: boolean };
+
+/**
+ * Comparte una sola consulta en vuelo por proceso: si algo golpea
+ * `/api/health` varias veces seguidas (el propio healthcheck de Coolify, un
+ * monitor externo), no hace falta que cada petición dispare su propia ida a
+ * `agent_job` — se resuelven todas con la misma.
+ */
+let inFlightCheck: Promise<"ok" | "degraded" | "n/a"> | null = null;
 
 /**
  * Salud del worker del agente, para monitoreo — nunca para decidir si esta
@@ -40,51 +34,67 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * worker in-process corre de verdad); en Vocero self-hosted la respuesta es
  * `"n/a"` sin tocar la base.
  *
- * Ambas consultas reusan `agent_job_claim_idx` (status, available_at,
- * locked_at) — el mismo índice que usa `claimNextJob` — así que son tan
- * baratas como esa: igualdad en `status`, rango en la segunda, `limit(1)`
- * para no contar más de lo necesario. El endpoint es público: solo sale el
- * enum, nunca ids, conteos ni datos de la organización.
+ * Una sola consulta (dos `exists()` en la misma ida a la base), no dos: cada
+ * consulta abierta sostiene una conexión del pool, y este chequeo corre en
+ * cada healthcheck. El de "queued viejo" sí usa `agent_job_claim_idx`
+ * (status, available_at, locked_at) de punta a punta —igualdad en `status`,
+ * rango en `available_at`—, igual que `claimNextJob`. El de "needs_review
+ * reciente" solo aprovecha `status` (la columna líder del mismo índice) para
+ * descartar el resto de la tabla; `updated_at` se filtra fila por fila
+ * DESPUÉS de eso, sin índice propio. Barato hoy porque `needs_review` es un
+ * estado raro (algo que el worker no logró resolver solo), no porque haya un
+ * índice pensado para él — si ese estado deja de ser raro, esto necesita el
+ * suyo.
+ *
+ * La consulta corre por `getSql()` (el cliente `postgres` crudo, no el
+ * `.execute()` de drizzle) y se CANCELA de verdad si tarda: un `Promise.race`
+ * contra un timeout solo deja de ESPERARLA, pero la consulta sigue viva en el
+ * servidor sosteniendo su conexión hasta que termine sola. Bajo un lock largo
+ * sobre `agent_job`, unos pocos healthchecks así bastan para agotar el pool
+ * (`max: 10`) y colgar hasta el `select 1` de esta misma ruta — reproducido
+ * en revisión. `query.cancel()` manda un cancel real a Postgres y libera la
+ * conexión de inmediato; cualquier error o cancelación reporta `"degraded"`
+ * en vez de un `"ok"` falso.
  */
 async function agentQueueStatus(): Promise<"ok" | "degraded" | "n/a"> {
   if (!isAllokSaaSMode()) return "n/a";
+  if (inFlightCheck) return inFlightCheck;
+
+  inFlightCheck = runAgentQueueCheck().finally(() => {
+    inFlightCheck = null;
+  });
+  return inFlightCheck;
+}
+
+async function runAgentQueueCheck(): Promise<"ok" | "degraded"> {
+  const needsReviewCutoff = new Date(Date.now() - NEEDS_REVIEW_WINDOW_MS).toISOString();
+  const staleQueuedCutoff = new Date(Date.now() - STALE_QUEUED_WINDOW_MS).toISOString();
+
+  const client = getSql();
+  const query = client<AgentQueueRow[]>`
+    select
+      exists(
+        select 1 from agent_job
+        where status = 'needs_review' and updated_at >= ${needsReviewCutoff}::timestamp
+      ) as "needsReview",
+      exists(
+        select 1 from agent_job
+        where status = 'queued' and available_at <= ${staleQueuedCutoff}::timestamp
+      ) as "staleQueued"
+  `;
+
+  const timer = setTimeout(() => {
+    void query.cancel();
+  }, AGENT_QUEUE_QUERY_TIMEOUT_MS);
 
   try {
-    const db = getDb();
-    const needsReviewCutoff = new Date(Date.now() - NEEDS_REVIEW_WINDOW_MS);
-    const staleQueuedCutoff = new Date(Date.now() - STALE_QUEUED_WINDOW_MS);
-
-    const [needsReview, staleQueued] = await withTimeout(
-      Promise.all([
-        db
-          .select({ id: schema.agentJob.id })
-          .from(schema.agentJob)
-          .where(
-            and(
-              eq(schema.agentJob.status, "needs_review"),
-              gte(schema.agentJob.updatedAt, needsReviewCutoff)
-            )
-          )
-          .limit(1),
-        db
-          .select({ id: schema.agentJob.id })
-          .from(schema.agentJob)
-          .where(
-            and(
-              eq(schema.agentJob.status, "queued"),
-              lte(schema.agentJob.availableAt, staleQueuedCutoff)
-            )
-          )
-          .limit(1),
-      ]),
-      AGENT_QUEUE_QUERY_TIMEOUT_MS
-    );
-
-    return needsReview.length > 0 || staleQueued.length > 0 ? "degraded" : "ok";
+    const rows = await query;
+    const row = rows[0];
+    return row?.needsReview || row?.staleQueued ? "degraded" : "ok";
   } catch {
-    // Sin poder consultarlo (timeout o error de BD) no se afirma "ok": mejor
-    // una señal de más en monitoreo que un verde falso.
     return "degraded";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
