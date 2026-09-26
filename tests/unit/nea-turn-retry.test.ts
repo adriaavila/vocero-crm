@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { PENDING_LIMIT } from "@/server/ai/nea-payload";
 
 /**
  * El loop de reintentos de `runNeaAgentTurn` (dispatch v2, Nea sin estado):
@@ -252,7 +253,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     // encuentra la fila (regla conservadora, fix-27b): se rinde AQUÍ, sin
     // llegar a despachar este intento.
     buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
-    pushAttempt([INBOUND_MESSAGE], [{ id: "msg_reply_seq0" }]);
+    pushAttempt([INBOUND_MESSAGE], [{ waMessageId: "wamid.seq0", status: "sent" }]);
 
     const turn = runAgentTurn("cv_1", "aj_1");
     await vi.advanceTimersByTimeAsync(2_000);
@@ -289,7 +290,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     // (intento 0: {A}), B se marcaría contestado sin haberlo estado nunca.
     pushGateReread();
     buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b", "msg_c"] });
-    pushAttempt([INBOUND_MESSAGE], [{ id: "msg_reply_seq0" }]);
+    pushAttempt([INBOUND_MESSAGE], [{ waMessageId: "wamid.seq0", status: "sent" }]);
 
     const turn = runAgentTurn("cv_1", "aj_1");
     await vi.advanceTimersByTimeAsync(2_000);
@@ -310,8 +311,9 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
 
     pushGateReread();
     buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
-    pushAttempt([INBOUND_MESSAGE], []); // neaReplyExists: no existe ninguna fila todavía
+    pushAttempt([INBOUND_MESSAGE], []); // neaReplyExists PRE-POST: no existe ninguna fila todavía
     dispatchToNea.mockResolvedValueOnce({ kind: "ok", body: { ok: true, action: "replied" } });
+    selectQueue.push([]); // neaReplyExists RE-CHEQUEO tras el 2xx: tampoco encuentra nada — de verdad fresca
 
     const turn = runAgentTurn("cv_1", "aj_1");
     await vi.advanceTimersByTimeAsync(2_000);
@@ -321,6 +323,31 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(inArraySpy).toHaveBeenCalledTimes(1);
     // avance COMPLETO: {A,B} — es una respuesta de verdad fresca, no un eco.
     expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a", "msg_b"]);
+  });
+
+  it("fix-27b item 3: el chequeo PREVIO al POST no encuentra nada, pero el 2xx que vuelve es un eco (la carrera terminó DURANTE este POST) → el re-chequeo lo detecta y avanza SOLO hasta lo del intento 0", async () => {
+    vi.useFakeTimers();
+    pushGates();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
+    dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "500" });
+    pushAttempt();
+
+    pushGateReread();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
+    pushAttempt([INBOUND_MESSAGE], []); // PRE-POST: todavía no existía nada — se decide despachar
+    // Durante la espera del POST, el intento 0 por fin aterriza — Nea choca
+    // con esa reserva y contesta 2xx sin haber armado nada para B.
+    dispatchToNea.mockResolvedValueOnce({ kind: "ok", body: { ok: true, action: "replied" } });
+    selectQueue.push([{ waMessageId: "wamid.seq0", status: "sent" }]); // RE-CHEQUEO: SÍ aterrizó
+
+    const turn = runAgentTurn("cv_1", "aj_1");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await turn;
+
+    expect(dispatchToNea).toHaveBeenCalledTimes(2); // el intento 1 SÍ se posteó (el pre-chequeo no lo evitó)
+    expect(inArraySpy).toHaveBeenCalledTimes(1);
+    // pero el avance queda LIMITADO a lo del intento 0 — B nunca se le mandó de verdad.
+    expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]);
   });
 
   it("nada pendiente (buildNeaTurnSnapshot → null) → no despacha, sin importar el intento", async () => {
@@ -347,6 +374,31 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     const sqlText = JSON.stringify(cursorUpdate!.values.agentCursorAt);
     expect(sqlText.toLowerCase()).toContain("greatest");
     expect(sqlText.toLowerCase()).toContain("coalesce");
+  });
+
+  it("fix-27b item 2: el pendiente se cortó en el límite (10) → leftover:true, aunque el intento haya sido 2xx en el primero", async () => {
+    buildNeaTurnSnapshot.mockResolvedValueOnce({
+      ...snapshotWith(),
+      pendingIds: Array.from({ length: PENDING_LIMIT }, (_, i) => `msg_${i}`),
+    });
+    dispatchToNea.mockResolvedValue({ kind: "ok", body: { ok: true, action: "noop" } });
+    pushGates();
+    pushAttempt();
+
+    const result = await runAgentTurn("cv_1");
+
+    expect(result).toEqual({ leftover: true });
+  });
+
+  it("un pendiente por debajo del límite y sin reintentos → leftover:false", async () => {
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
+    dispatchToNea.mockResolvedValue({ kind: "ok", body: { ok: true, action: "noop" } });
+    pushGates();
+    pushAttempt();
+
+    const result = await runAgentTurn("cv_1");
+
+    expect(result).toEqual({ leftover: false });
   });
 
   it("4xx → falla en el PRIMER intento, sin reintentar (propaga para que needs_review/handoff lo agarren)", async () => {

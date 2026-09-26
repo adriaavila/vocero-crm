@@ -76,7 +76,7 @@ describe("timeout del Laboratorio", () => {
     const { runAgentTurn: mockedTurn } = await import("@/server/ai/pipeline");
     const turnSpy = vi.mocked(mockedTurn);
     turnSpy.mockImplementation(
-      () => new Promise<void>((resolve) => (releaseTurn = resolve))
+      () => new Promise<{ leftover: boolean }>((resolve) => (releaseTurn = () => resolve({ leftover: false })))
     );
     selectQueue.push(
       [{ id: "case_1", persona: "comprador_decidido", createdAt: new Date() }],

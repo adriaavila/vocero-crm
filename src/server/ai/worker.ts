@@ -161,11 +161,15 @@ async function processJob(
   workerId: string,
 ): Promise<void> {
   const claimedAt = job.lockedAt ?? new Date();
+  let leftover = false;
   try {
     // Dispatch v2: `job.id` es el `dispatchId` — estable entre los reintentos
     // que `runNeaAgentTurn` hace DENTRO de este mismo turno (no se genera uno
-    // nuevo por intento).
-    await runAgentTurn(job.conversationId, job.id);
+    // nuevo por intento). `leftover`: el turno mismo pudo NO cubrir todo lo
+    // pendiente (la regla conservadora de la carrera de reintentos, o el
+    // límite de 10 por despacho) — la contabilidad de abajo lo usa además
+    // del chequeo de entrantes frescos.
+    ({ leftover } = await runAgentTurn(job.conversationId, job.id));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido";
     await getDb()
@@ -196,21 +200,17 @@ async function processJob(
       .set({ status: "done", lockedAt: null, lockedBy: null, updatedAt: new Date() })
       .where(and(eq(schema.agentJob.id, job.id), eq(schema.agentJob.lockedBy, workerId)));
 
-    // Fix-27b: comparar contra `claimedAt` (cuándo arrancó el turno) se
-    // quedaba corto — el turno mismo pudo NO haber avanzado el cursor hasta
-    // ahí (la regla conservadora de la carrera de reintentos, o el límite de
-    // 10 pendientes del payload) y dejar mensajes sin contestar que de todos
-    // modos son "viejos" respecto a `claimedAt`. Comparar contra
-    // `agent_cursor_at` de verdad (lo que el turno SÍ terminó cubriendo)
-    // reprograma siempre que quede algo pendiente, sea un leftover de más de
-    // 10 o un mensaje que el turno tuvo que dejar sin tocar por prudencia.
-    const convRows = await getDb()
-      .select({ agentCursorAt: schema.conversation.agentCursorAt })
-      .from(schema.conversation)
-      .where(eq(schema.conversation.id, job.conversationId))
-      .limit(1);
-    const cursorAt = convRows[0]?.agentCursorAt ?? claimedAt;
-
+    // `agent_cursor_at` se lee de vuelta como un `Date` de JS — trunca los
+    // microsegundos que Postgres guarda en `created_at`, así que comparar
+    // `created_at > agentCursorAt` sale verdadero para el PROPIO mensaje
+    // recién contestado casi siempre (round-trip con pérdida de precisión:
+    // ver el comentario de `advanceCursor`) — una conversación YA contestada
+    // se reprogramaría sola para siempre. `claimedAt` (cuándo arrancó ESTE
+    // turno) no tiene ese problema: es un instante de JS de punta a punta,
+    // nunca se compara contra una columna de microsegundos. Lo que el turno
+    // no llegó a cubrir hasta `claimedAt` lo señala `leftover` en su lugar
+    // (la regla conservadora de la carrera de reintentos, o el límite de 10
+    // pendientes por despacho) — nunca comparando contra el cursor.
     const freshInbound = await getDb()
       .select({ id: schema.message.id })
       .from(schema.message)
@@ -218,11 +218,11 @@ async function processJob(
         and(
           eq(schema.message.conversationId, job.conversationId),
           eq(schema.message.direction, "in"),
-          gt(schema.message.createdAt, cursorAt),
+          gt(schema.message.createdAt, claimedAt),
         )
       )
       .limit(1);
-    if (freshInbound[0]) await scheduleAgentTurn(job.conversationId);
+    if (freshInbound[0] || leftover) await scheduleAgentTurn(job.conversationId);
   } catch (error) {
     console.error(`[agent-worker] cierre del trabajo ${job.id} falló (el turno sí corrió):`, error);
   }

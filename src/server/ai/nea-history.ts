@@ -14,7 +14,10 @@ import type { NeaHistoryItem, NeaHistoryRole } from "@/server/ai/nea-dispatch";
  */
 
 const HISTORY_LIMIT = 20;
-const PENDING_LIMIT = 10;
+/** Exportado: `pipeline.ts` lo usa para saber si el pendiente de un intento
+ *  pudo haberse cortado (fix-27b, `leftover` de `runNeaAgentTurn`) — si
+ *  `pendingIds.length === PENDING_LIMIT`, puede haber más después del corte. */
+export const PENDING_LIMIT = 10;
 const MAX_TEXT_LEN = 2000;
 const MAX_TRANSCRIPT_LEN = 4000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;

@@ -1,22 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * Fix-27b: la contabilidad del worker, tras un turno, reprogramaba solo si
- * llegó un entrante MÁS NUEVO que `claimedAt` (cuándo arrancó el turno). Pero
- * el turno mismo puede terminar SIN cubrir todo hasta `claimedAt` — la regla
- * conservadora de la carrera de reintentos (item 1) o el límite de 10
- * pendientes por despacho (item 2) pueden dejar el cursor MÁS ATRÁS de
- * `claimedAt` con mensajes de verdad sin contestar entre medio. Comparar
- * contra `agent_cursor_at` (lo que el turno de verdad terminó cubriendo) en
- * vez de `claimedAt` cierra ese hueco: cualquier entrante posterior al
- * cursor real dispara la reprogramación, sea un leftover de más de 10 o uno
- * que el turno tuvo que dejar sin tocar por prudencia.
+ * Fix-27b (segunda ronda de review): la contabilidad del worker, tras un
+ * turno, reprograma si llegó un entrante MÁS NUEVO que `claimedAt` (cuándo
+ * arrancó el turno) — eso NO cambia (comparar contra `agent_cursor_at` en su
+ * lugar se revirtió: esa columna vuelve como `Date` de JS, truncando los
+ * microsegundos de `created_at`, así que una conversación YA contestada se
+ * reprogramaría sola casi siempre — 999 de cada 1000 veces).
+ *
+ * Lo que SÍ es nuevo: `runAgentTurn` devuelve `{leftover}` — true cuando el
+ * turno mismo NO llegó a cubrir todo lo pendiente (la regla conservadora de
+ * la carrera de reintentos, o el límite de 10 pendientes por despacho). El
+ * worker reprograma si CUALQUIERA de los dos dice que hace falta —
+ * `freshInbound` (algo llegó después de que arrancó el turno) o `leftover`
+ * (el turno mismo dejó algo sin cubrir, aunque nada nuevo haya llegado
+ * después).
  */
 
-const { execute, runAgentTurn, scheduleAgentTurn, selectQueue } = vi.hoisted(() => ({
+const { execute, runAgentTurn, scheduleAgentTurn, applyHandoff, selectQueue } = vi.hoisted(() => ({
   execute: vi.fn(),
   runAgentTurn: vi.fn(),
   scheduleAgentTurn: vi.fn(),
+  applyHandoff: vi.fn(),
   selectQueue: [] as unknown[][],
 }));
 
@@ -36,45 +41,33 @@ vi.mock("@/lib/db", () => ({
   schema: { agentJob: {}, message: {}, conversation: { agentCursorAt: "agentCursorAt", id: "id" } },
 }));
 vi.mock("@/server/ai/pipeline", () => ({
-  applyHandoff: vi.fn(),
+  applyHandoff,
   runAgentTurn,
   scheduleAgentTurn,
 }));
 
 import { claimUpToCapacity, resetWorkerStateForTests } from "@/server/ai/worker";
 
-describe("worker: reprogramar tras el turno mira agent_cursor_at, no claimedAt (fix-27b)", () => {
+describe("worker: reprogramar tras el turno — freshInbound (claimedAt) o leftover (fix-27b)", () => {
   beforeEach(() => {
     execute.mockReset();
-    runAgentTurn.mockReset().mockResolvedValue(undefined);
+    runAgentTurn.mockReset();
     scheduleAgentTurn.mockReset();
+    applyHandoff.mockReset().mockResolvedValue(undefined);
     selectQueue.length = 0;
     let served = false;
     execute.mockImplementation(async () => {
       if (served) return [];
       served = true;
-      // `locked_at` = claimedAt = 12:00:00 — el turno arrancó aquí.
       return [{ id: "job_1", conversationId: "conv_1", lockedAt: "2026-09-26T12:00:00.000Z" }];
     });
     resetWorkerStateForTests();
     vi.stubEnv("AGENT_WORKER_CONCURRENCY", "1");
   });
 
-  it("un mensaje llegó ANTES de claimedAt pero DESPUÉS del cursor real (el turno no llegó a cubrirlo) → SÍ reprograma", async () => {
-    // agent_cursor_at quedó en 11:59:00 — antes de claimedAt (12:00:00), pero
-    // el mensaje de abajo (11:59:30) es más nuevo que ESO, aunque más viejo
-    // que claimedAt. La comparación vieja (contra claimedAt) lo hubiera
-    // ignorado — la nueva (contra agent_cursor_at) lo encuentra.
-    selectQueue.push([{ agentCursorAt: new Date("2026-09-26T11:59:00.000Z") }]);
-    selectQueue.push([{ id: "msg_leftover" }]); // freshInbound: SÍ hay algo después del cursor
-
-    await claimUpToCapacity();
-    await vi.waitFor(() => expect(scheduleAgentTurn).toHaveBeenCalledWith("conv_1"));
-  });
-
-  it("nada después del cursor real → NO reprograma", async () => {
-    selectQueue.push([{ agentCursorAt: new Date("2026-09-26T12:00:00.000Z") }]);
-    selectQueue.push([]); // freshInbound: nada
+  it("una conversación YA CONTESTADA (leftover:false, nada llegó después de claimedAt) → NO reprograma", async () => {
+    runAgentTurn.mockResolvedValue({ leftover: false });
+    selectQueue.push([]); // freshInbound: nada después de claimedAt
 
     await claimUpToCapacity();
     await vi.waitFor(() => expect(runAgentTurn).toHaveBeenCalled());
@@ -82,9 +75,30 @@ describe("worker: reprogramar tras el turno mira agent_cursor_at, no claimedAt (
     expect(scheduleAgentTurn).not.toHaveBeenCalled();
   });
 
-  it("conversación sin cursor todavía (agent_cursor_at NULL) → cae a claimedAt, como antes", async () => {
-    selectQueue.push([{ agentCursorAt: null }]);
-    selectQueue.push([{ id: "msg_tras_claim" }]);
+  it("una conversación en HANDOFF (el turno ni corrió, leftover:false) → NO reprograma", async () => {
+    // `loadNeaGateState` devolvió null (handoff activo): el turno se rinde
+    // de entrada con leftover:false — nunca debe auto-reprogramarse solo
+    // porque un humano tomó el control.
+    runAgentTurn.mockResolvedValue({ leftover: false });
+    selectQueue.push([]); // tampoco hay entrantes frescos
+
+    await claimUpToCapacity();
+    await vi.waitFor(() => expect(runAgentTurn).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(scheduleAgentTurn).not.toHaveBeenCalled();
+  });
+
+  it("leftover:true (la regla conservadora, o el límite de 10) → SÍ reprograma, aunque no haya entrantes frescos", async () => {
+    runAgentTurn.mockResolvedValue({ leftover: true });
+    selectQueue.push([]); // nada nuevo llegó — el ÚNICO motivo es leftover
+
+    await claimUpToCapacity();
+    await vi.waitFor(() => expect(scheduleAgentTurn).toHaveBeenCalledWith("conv_1"));
+  });
+
+  it("freshInbound (algo llegó después de claimedAt) con leftover:false → también reprograma", async () => {
+    runAgentTurn.mockResolvedValue({ leftover: false });
+    selectQueue.push([{ id: "msg_fresh" }]);
 
     await claimUpToCapacity();
     await vi.waitFor(() => expect(scheduleAgentTurn).toHaveBeenCalledWith("conv_1"));
