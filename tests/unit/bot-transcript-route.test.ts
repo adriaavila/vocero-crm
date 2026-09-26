@@ -12,6 +12,9 @@ vi.mock("@/server/bot/auth", async (importOriginal) => {
   return { ...actual, resolveInstanceOrg: async () => "org_1" };
 });
 
+const { publish } = vi.hoisted(() => ({ publish: vi.fn() }));
+vi.mock("@/server/events/bus", () => ({ publish }));
+
 /** Tabla `message` en memoria, keyed por id. */
 const messages = new Map<string, Record<string, unknown>>();
 
@@ -92,8 +95,10 @@ function seed(id: string, over: Record<string, unknown> = {}) {
   messages.set(id, {
     id,
     organizationId: "org_1",
+    conversationId: "cv_1",
     direction: "in",
     type: "audio",
+    status: "delivered",
     transcript: null,
     ...over,
   });
@@ -105,6 +110,7 @@ describe("POST /api/bot/messages/[id]/transcript", () => {
     resetRateLimit();
     messages.clear();
     currentLookupId = null;
+    publish.mockClear();
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -153,6 +159,28 @@ describe("POST /api/bot/messages/[id]/transcript", () => {
     const body = (await second.json()) as { transcript?: string };
     expect(body.transcript).toBe("primera transcripción"); // la de antes, no la nueva
     expect(messages.get("msg_audio_2")?.transcript).toBe("primera transcripción");
+  });
+
+  it("item 10: una escritura que SÍ guarda publica message.status con la transcripción (mismo evento del hilo)", async () => {
+    seed("msg_audio_5", { conversationId: "cv_9", status: "delivered" });
+    await POST(req("msg_audio_5", { text: "hola transcrito" }), ctx("msg_audio_5"));
+
+    expect(publish).toHaveBeenCalledWith("org_1", {
+      type: "message.status",
+      data: {
+        conversationId: "cv_9",
+        messageId: "msg_audio_5",
+        status: "delivered",
+        transcript: "hola transcrito",
+      },
+    });
+  });
+
+  it("item 10: ya estaba transcrito (atajo de arriba) → NO publica de nuevo, nada cambió", async () => {
+    seed("msg_audio_6", { transcript: "ya estaba" });
+    await POST(req("msg_audio_6", { text: "otra cosa" }), ctx("msg_audio_6"));
+
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("body vacío → 422 (no guarda nada)", async () => {

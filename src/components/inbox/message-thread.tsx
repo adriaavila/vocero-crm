@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -26,6 +26,44 @@ function StatusTicks({ status }: { status: MessageDto["status"] }) {
   if (status === "read")
     return <CheckCheck className={cn(cls, "text-[#53bdeb]")} strokeWidth={1.7} />;
   return <AlertTriangle className={cn(cls, "text-destructive")} strokeWidth={1.7} />;
+}
+
+/**
+ * Item 10 — una transcripción larga no debe empujar el resto del hilo: se
+ * clampea a 4 líneas con un "Ver más" que expande. El clamp se mide de
+ * verdad (`scrollHeight` contra `clientHeight`) en vez de adivinar por
+ * cantidad de caracteres — el ancho real de la burbuja varía con la pantalla.
+ */
+function TranscriptText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setOverflowing(el.scrollHeight > el.clientHeight + 1);
+  }, [text]);
+
+  return (
+    <span className="mt-1 block text-[12.5px] text-text-3">
+      <span
+        ref={ref}
+        className={cn("whitespace-pre-wrap break-words", !expanded && "line-clamp-4")}
+      >
+        Transcripción: {text}
+      </span>
+      {overflowing && !expanded && (
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="mt-0.5 font-medium text-brand hover:underline"
+        >
+          Ver más
+        </button>
+      )}
+    </span>
+  );
 }
 
 type LocationPayload = {
@@ -149,11 +187,7 @@ function MediaBlock({
     return (
       <span className="block">
         <audio controls preload="metadata" src={src} className="max-w-full" />
-        {transcript && (
-          <span className="mt-1 block whitespace-pre-wrap break-words text-[12.5px] text-text-3">
-            Transcripción: {transcript}
-          </span>
-        )}
+        {transcript && <TranscriptText text={transcript} />}
       </span>
     );
   }

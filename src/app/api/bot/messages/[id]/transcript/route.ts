@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
+import { publish } from "@/server/events/bus";
 
 export const dynamic = "force-dynamic";
 
@@ -43,8 +44,10 @@ export async function POST(
   const rows = await db
     .select({
       id: schema.message.id,
+      conversationId: schema.message.conversationId,
       direction: schema.message.direction,
       type: schema.message.type,
+      status: schema.message.status,
       transcript: schema.message.transcript,
     })
     .from(schema.message)
@@ -72,6 +75,18 @@ export async function POST(
     .where(and(eq(schema.message.id, id), isNull(schema.message.transcript)))
     .returning({ transcript: schema.message.transcript });
   if (updated[0]) {
+    // Item 10: el mismo evento que usa el resto del hilo para actualizar un
+    // mensaje ya pintado (`message.status`, con `status` sin cambiar) — así
+    // el inbox abierto pinta la transcripción sin esperar un refetch.
+    publish(organizationId, {
+      type: "message.status",
+      data: {
+        conversationId: message.conversationId,
+        messageId: message.id,
+        status: message.status,
+        transcript: updated[0].transcript,
+      },
+    });
     return Response.json({ transcript: updated[0].transcript });
   }
 

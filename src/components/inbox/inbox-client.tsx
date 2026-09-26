@@ -133,7 +133,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
       // Un entrante nuevo puede crear/mover el lead: refresca el panel.
       setDetailRev((v) => v + 1);
     },
-    onMessageStatus: ({ conversationId, messageId, status, error }) => {
+    onMessageStatus: ({ conversationId, messageId, status, error, transcript }) => {
       if (selectedIdRef.current !== conversationId) return;
       setMessages((prev) =>
         prev.map((m) =>
@@ -142,6 +142,9 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                 ...m,
                 status: status as MessageDto["status"],
                 error: error ?? null,
+                // Nea transcribió un adjunto (item 10): el hilo lo pinta sin
+                // esperar a un refetch completo.
+                ...(transcript !== undefined ? { transcript } : {}),
               }
             : m
         )

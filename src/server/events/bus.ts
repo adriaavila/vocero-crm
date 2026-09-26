@@ -16,6 +16,13 @@ export type SseEvent =
         status: string;
         /** Motivo del fallo, presente solo cuando status = "failed". */
         error?: string | null;
+        /**
+         * Nea sin estado — la transcripción que acaba de guardar
+         * `POST /api/bot/messages/{id}/transcript` (item 10): el mismo
+         * evento de "actualización de un mensaje ya en el hilo", solo con
+         * este campo además de `status` (que viaja sin cambiar).
+         */
+        transcript?: string | null;
       };
     }
   | { type: "conversation.updated"; data: { conversation: unknown } }
