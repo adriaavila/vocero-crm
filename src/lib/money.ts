@@ -26,7 +26,7 @@ export const CURRENCIES = [
 
 export type Currency = (typeof CURRENCIES)[number];
 
-export const DEFAULT_CURRENCY: Currency = "MXN";
+export const DEFAULT_CURRENCY: Currency = "USD";
 
 export function isCurrency(v: unknown): v is Currency {
   return typeof v === "string" && (CURRENCIES as readonly string[]).includes(v);
