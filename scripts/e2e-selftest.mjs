@@ -100,22 +100,32 @@ async function main() {
   );
   await api("/api/dev/wa-mock/outbox", { method: "DELETE" });
 
+  // Sufijo por corrida, como en 016: wa_message_id es UNIQUE, así que con
+  // wamids fijos la re-corrida contra la MISMA base deduplica el inbound, no
+  // refresca last_inbound_at y mide la corrida anterior (pasadas 24 h la
+  // ventana queda cerrada y el envío falla). Los inbounds estrenan wamid y,
+  // donde un check busca por teléfono/nombre o cuenta mensajes, también lead.
+  const SUF = String(Date.now()).slice(-6);
+
   console.log("\n== us-bsuid: inbound sin wa_id ==");
+  const BSUID = `bsu_e2e_${SUF}`;
+  const BSUID_NOMBRE = `Dueña Dental ${SUF}`;
+  const BSUID_WAMID = `wamid.e2e.bsuid.${SUF}.1`;
   const inb1 = await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
-      fromUserId: "bsu_e2e_1",
-      name: "Dueña Dental",
+      fromUserId: BSUID,
+      name: BSUID_NOMBRE,
       text: "hola, vi su anuncio",
-      waMessageId: "wamid.e2e.bsuid.1",
+      waMessageId: BSUID_WAMID,
     }),
   });
   ok("inbound BSUID entregado", inb1.res.ok, JSON.stringify(inb1.json));
   await sleep(1200);
 
   let convs = (await api("/api/conversations")).json?.conversations ?? [];
-  const bsuidConv = convs.find((c) => c.contact.name === "Dueña Dental");
+  const bsuidConv = convs.find((c) => c.contact.name === BSUID_NOMBRE);
   ok("conversación con nombre de perfil (no el BSUID crudo)", !!bsuidConv);
   ok("contacto BSUID sin teléfono", bsuidConv?.contact.phone === null);
 
@@ -128,19 +138,19 @@ async function main() {
   const outbox = (await api("/api/dev/wa-mock/outbox")).json?.outbox ?? [];
   ok(
     "el destinatario del envío es el BSUID",
-    outbox.some((o) => o.to === "bsu_e2e_1"),
+    outbox.some((o) => o.to === BSUID),
     JSON.stringify(outbox.map((o) => o.to))
   );
 
-  // Idempotencia: re-entrega del mismo wa_message_id
+  // Idempotencia: re-entrega del mismo wa_message_id (el de esta corrida)
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
-      fromUserId: "bsu_e2e_1",
-      name: "Dueña Dental",
+      fromUserId: BSUID,
+      name: BSUID_NOMBRE,
       text: "hola, vi su anuncio",
-      waMessageId: "wamid.e2e.bsuid.1",
+      waMessageId: BSUID_WAMID,
     }),
   });
   await sleep(800);
@@ -184,20 +194,22 @@ async function main() {
   // reporta: si se reescribiera, dejaría de casar con el `wa_id` de cada
   // webhook y el contacto se partiría en dos.
   console.log("\n== us-bsuid: destinatario argentino (549 → 54) ==");
-  const AR_REPORTADO = "5491122334455";
+  const AR_REPORTADO = `54911${SUF}55`; // 549 + 10 dígitos
+  const AR_CABLE = `5411${SUF}55`; // sin el 9
+  const AR_NOMBRE = `Lead AR ${SUF}`;
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
       phoneNumberId: PN,
       from: AR_REPORTADO,
-      name: "Lead AR",
+      name: AR_NOMBRE,
       text: "hola desde Argentina",
-      waMessageId: "wamid.e2e.ar.1",
+      waMessageId: `wamid.e2e.ar.${SUF}.1`,
     }),
   });
   await sleep(1200);
   const convAr = ((await api("/api/conversations")).json?.conversations ?? []).find(
-    (c) => c.contact.name === "Lead AR"
+    (c) => c.contact.name === AR_NOMBRE
   );
   ok("la conversación argentina se creó", Boolean(convAr));
   ok(
@@ -223,7 +235,7 @@ async function main() {
     ).slice(outboxAntes);
     ok(
       "por el cable viaja SIN el 9 (lo que la lista de permitidos acepta)",
-      outboxAr.some((o) => o.to === "541122334455"),
+      outboxAr.some((o) => o.to === AR_CABLE),
       JSON.stringify(outboxAr.map((o) => o.to))
     );
     ok(
@@ -783,12 +795,8 @@ async function main() {
   );
 
   console.log("\n== 008: paridad inbox — echoes de coexistence (US1) ==");
-  // Sufijo por corrida, como en 016: wa_message_id es UNIQUE, así que con lead
-  // y wamids fijos la re-corrida contra la MISMA base no insertaba nada y
-  // medía la corrida anterior: el echo ya no pausaba la IA (a la tercera
-  // corrida fallaba) y el inbound no reabría la ventana de 24 h. Cada corrida
-  // estrena lead, número nuevo y wamids.
-  const SUF = String(Date.now()).slice(-6);
+  // Con lead y wamids fijos (ver SUF arriba) el echo ya no pausaba la IA a la
+  // tercera corrida. Cada corrida estrena lead, número nuevo y wamids.
   const LEAD = `521462${SUF}1`;
   const LEAD_CANON = `52462${SUF}1`; // 521 → 52 al canonizar
   const ECHO_1 = `wamid.e2e.008.echo.${SUF}.1`;
@@ -1181,7 +1189,11 @@ async function agendaChecks() {
   );
 
   console.log("\n== 015: las dos garantías (US3) ==");
-  const LEAD_A = "5214627015001";
+  // Leads y wamids por corrida, como en 016: se buscan por teléfono y cargan
+  // citas propias; con wamids fijos el inbound se deduplica y no reabre la
+  // ventana de 24 h.
+  const SUF = String(Date.now()).slice(-6);
+  const LEAD_A = `521462${SUF}5`;
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
@@ -1189,10 +1201,10 @@ async function agendaChecks() {
       from: LEAD_A,
       name: "Lead agenda A",
       text: "quiero agendar",
-      waMessageId: "wamid.e2e.015.a.1",
+      waMessageId: `wamid.e2e.015.a.${SUF}.1`,
     }),
   });
-  const LEAD_B = "5214627015002";
+  const LEAD_B = `521462${SUF}6`;
   await api("/api/dev/wa-mock/inbound", {
     method: "POST",
     body: JSON.stringify({
@@ -1200,14 +1212,14 @@ async function agendaChecks() {
       from: LEAD_B,
       name: "Lead agenda B",
       text: "yo también quiero",
-      waMessageId: "wamid.e2e.015.b.1",
+      waMessageId: `wamid.e2e.015.b.${SUF}.1`,
     }),
   });
   await sleep(1500);
 
   const convsAgenda = (await api("/api/conversations")).json?.conversations ?? [];
-  const convA = convsAgenda.find((c) => c.contact.phone === "524627015001");
-  const convB = convsAgenda.find((c) => c.contact.phone === "524627015002");
+  const convA = convsAgenda.find((c) => c.contact.phone === `52462${SUF}5`);
+  const convB = convsAgenda.find((c) => c.contact.phone === `52462${SUF}6`);
   ok("dos conversaciones de prueba listas", Boolean(convA && convB));
   if (!convA || !convB) return;
 
