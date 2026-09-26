@@ -45,5 +45,6 @@ Thumbs.db
 # scratch/ es la de los self-tests de upstream (scripts/e2e-responsive.mjs).
 output/
 scratch/
+tmp-screens/
 .playwright-cli/
 tmp-screens/
