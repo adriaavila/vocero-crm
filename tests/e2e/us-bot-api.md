@@ -34,6 +34,12 @@ agente in-process de Vocero puede quedar apagado.
 9. `GET /api/bot/media/media-inexistente` cuando Graph responde 404 → **404**
    `media_meta_failed` (no 500).
 
+Si la ingesta ya guardó el adjunto, sale de la copia local de la organización
+y no de Graph (capa de agencia): un inbound `image/png` con `mediaId` nuevo
+vuelve con `content-type: image/png`, aunque wa-mock-Graph lo reportaría
+`image/jpeg`. `media123` no tiene copia local: los pasos 8 y 9 prueban el
+respaldo por Graph.
+
 ## Reinicio de la conversación de pruebas
 
 10. Con la conversación en handoff (`aiEnabled:false`), `POST /api/bot/reset

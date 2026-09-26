@@ -307,6 +307,30 @@ async function main() {
     medBad.res.status === 404 || medBad.res.status === 502,
     `status=${medBad.res.status}`
   );
+  // Capa de agencia: si la ingesta ya guardó el adjunto, sale de esa copia y
+  // no de otra vuelta a Graph. El webhook lo declara image/png y wa-mock-Graph
+  // diría image/jpeg: el content-type delata de dónde salió. Ids nuevos en
+  // cada corrida para que el guion siga siendo re-ejecutable.
+  const run = Date.now();
+  const pngMediaId = `media-e2e-png-${run}`;
+  await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      from: "5214621349768",
+      type: "image",
+      mediaId: pngMediaId,
+      mimeType: "image/png",
+      waMessageId: `wamid.e2e.bot.png.${run}`,
+    }),
+  });
+  await sleep(1600); // ingesta + descarga in-process del binario
+  const medLocal = await bot(`/api/bot/media/${pngMediaId}`);
+  ok(
+    "adjunto ya guardado por la ingesta → sale de la copia local, no de Graph",
+    medLocal.res.ok && medLocal.res.headers.get("content-type") === "image/png",
+    `status=${medLocal.res.status} content-type=${medLocal.res.headers.get("content-type")}`
+  );
 
   console.log("\n== us-bot-api: perfil del agente + knowledge base ==");
   const profNoKey = await api("/api/bot/profile");
