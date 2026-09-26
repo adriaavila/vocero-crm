@@ -9,12 +9,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * respuesta (`llm`/`handoff`) se aplica.
  */
 
-const { dispatchToNea, buildNeaTurnSnapshot, markAiCredentialInvalidIfUnchanged, canAutomate } = vi.hoisted(() => ({
-  dispatchToNea: vi.fn(),
-  buildNeaTurnSnapshot: vi.fn(),
-  markAiCredentialInvalidIfUnchanged: vi.fn(async () => {}),
-  canAutomate: vi.fn(async () => true),
-}));
+const { dispatchToNea, buildNeaTurnSnapshot, markAiCredentialInvalidIfUnchanged, canAutomate, inArraySpy } =
+  vi.hoisted(() => ({
+    dispatchToNea: vi.fn(),
+    buildNeaTurnSnapshot: vi.fn(),
+    markAiCredentialInvalidIfUnchanged: vi.fn(async () => {}),
+    canAutomate: vi.fn(async () => true),
+    // fix-27b item 1: `advanceCursor` embebe `inArray(id, pendingIds)` dentro
+    // de una subconsulta opaca — el objeto SQL compilado no expone los
+    // valores atados por JSON.stringify. Espiar la llamada real es la única
+    // forma de verificar CUÁLES ids se usaron para avanzar el cursor.
+    inArraySpy: vi.fn(),
+  }));
+vi.mock("drizzle-orm", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("drizzle-orm")>();
+  return {
+    ...actual,
+    inArray: (...args: Parameters<typeof actual.inArray>) => {
+      inArraySpy(...args);
+      return actual.inArray(...args);
+    },
+  };
+});
 vi.mock("@/server/ai/nea-dispatch", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai/nea-dispatch")>();
   return { ...actual, dispatchToNea };
@@ -138,6 +154,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     buildNeaTurnSnapshot.mockReset().mockResolvedValue(snapshotWith());
     markAiCredentialInvalidIfUnchanged.mockReset().mockResolvedValue(undefined);
     canAutomate.mockReset().mockResolvedValue(true);
+    inArraySpy.mockClear();
     vi.stubEnv("ALLOK_SAAS_MODE", "");
     vi.stubEnv("BOT_API_KEY", "clave-compartida-con-nea-larga");
     vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
@@ -218,6 +235,43 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(dispatchToNea).toHaveBeenCalledTimes(1); // NO hubo un segundo POST
     const cursorUpdate = updates.find((u) => "agentCursorAt" in u.values);
     expect(cursorUpdate).toBeDefined(); // el cursor SÍ avanzó
+  });
+
+  it("fix-27b item 1: un 2xx en un reintento que es ECO de la respuesta del intento anterior (colisión de dedupe) avanza el cursor SOLO hasta lo que ese intento anterior posteó, nunca hasta el pendiente fresco completo", async () => {
+    vi.useFakeTimers();
+    pushGates();
+    // intento 0: solo A pendiente — falla (retryable), pero Nea SÍ alcanzó a
+    // reservar/mandar la respuesta por su cuenta (created_at queda de ESTE
+    // instante, mucho antes del POST del intento 1).
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
+    dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "Nea devolvió 500" });
+    pushAttempt();
+
+    pushGateReread();
+    // intento 1: el snapshot FRESCO ya trae A y B — pero el reply todavía no
+    // tiene wamid en el chequeo de "¿ya contestó?" de arriba (replyLanded
+    // devuelve false): sigue de largo y despacha {A,B}.
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
+    // replyLanded (sin wamid todavía) + neaReplyCreatedAt (SÍ existe la fila,
+    // con un created_at bien viejo — de cuando el intento 0 la reservó).
+    pushAttempt([INBOUND_MESSAGE], [{ waMessageId: null, status: "pending" }]);
+    selectQueue.push([{ createdAt: new Date("2020-01-01T00:00:00.000Z") }]);
+    // Nea choca contra su propia reserva (ya completada para cuando procesa
+    // este intento) y solo confirma — 2xx, sin responder de verdad a B.
+    dispatchToNea.mockResolvedValueOnce({ kind: "ok", body: { ok: true, action: "replied" } });
+
+    const turn = runAgentTurn("cv_1", "aj_1");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await turn;
+
+    expect(dispatchToNea).toHaveBeenCalledTimes(2);
+    const cursorUpdate = updates.find((u) => "agentCursorAt" in u.values);
+    expect(cursorUpdate).toBeDefined();
+    // `advanceCursor` solo se llama UNA vez por turno — su `inArray` debe
+    // llevar exactamente lo que el intento 0 posteó, no el pendiente fresco
+    // completo del intento 1.
+    expect(inArraySpy).toHaveBeenCalledTimes(1);
+    expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]);
   });
 
   it("nada pendiente (buildNeaTurnSnapshot → null) → no despacha, sin importar el intento", async () => {

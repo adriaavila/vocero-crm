@@ -464,10 +464,33 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
       }
     }
 
+    // Se marca ANTES del POST — es el punto de referencia para distinguir,
+    // si este intento vuelve con 2xx, una respuesta de VERDAD fresca de un
+    // eco de una respuesta VIEJA que llegó justo en la carrera de abajo.
+    const postedAt = new Date();
     const result = await dispatchToNea(snapshot.payload);
-    lastPostedPendingIds = snapshot.pendingIds;
+    const thisAttemptPendingIds = snapshot.pendingIds;
     if (result.kind === "ok") {
-      await advanceCursor(organizationId, conversationId, snapshot.pendingIds);
+      let pendingIdsToAdvance = thisAttemptPendingIds;
+      if (attempt > 0) {
+        // Carrera entre el chequeo de "¿ya contestó?" de arriba y este POST:
+        // la respuesta del intento ANTERIOR pudo terminar de aterrizar justo
+        // en ese hueco. Nea, al recibir este intento con el mismo id
+        // determinista (seq 0), choca contra esa reserva ya completada
+        // (`sendTextIdempotent` → `duplicate:true`) y devuelve 2xx SIN haber
+        // armado una respuesta nueva que de verdad cubra TODO lo pendiente de
+        // ESTE intento — es un eco, no una respuesta fresca. Se distingue por
+        // `created_at` de la fila de la respuesta contra `postedAt`: si es
+        // ANTERIOR a este POST, no pudo haberla creado este intento.
+        const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
+        const repliedAt = await neaReplyCreatedAt(organizationId, conversationId, replyId);
+        if (repliedAt && repliedAt < postedAt) {
+          pendingIdsToAdvance = lastPostedPendingIds ?? [];
+        }
+      }
+      if (pendingIdsToAdvance.length > 0) {
+        await advanceCursor(organizationId, conversationId, pendingIdsToAdvance);
+      }
       await applyNeaResponse({
         organizationId,
         conversationId,
@@ -483,6 +506,7 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
       // + handoff en el debounce legado).
       throw new Error(result.message);
     }
+    lastPostedPendingIds = thisAttemptPendingIds; // se posteó de verdad; sirve de referencia al próximo intento.
     lastError = new Error(result.message); // retryable: 5xx o red — sigue el loop.
   }
   throw lastError;
@@ -562,6 +586,34 @@ async function neaReplyLanded(
   const row = rows[0];
   if (!row) return false;
   return isTest ? row.status === "sent" : row.waMessageId !== null;
+}
+
+/**
+ * `created_at` de la fila de la respuesta (seq 0), si existe — sin importar
+ * si ya "aterrizó" del todo (ver `neaReplyLanded`). La usa el fix-27b: un 2xx
+ * en un reintento (`attempt > 0`) puede ser un ECO de una respuesta que un
+ * intento ANTERIOR ya posteó de verdad (colisión de dedupe por el mismo id
+ * determinista), no una respuesta fresca para el pendiente COMPLETO de este
+ * intento — se distingue comparando este `created_at` contra el instante en
+ * que se mandó el POST de este intento.
+ */
+async function neaReplyCreatedAt(
+  organizationId: string,
+  conversationId: string,
+  replyId: string
+): Promise<Date | null> {
+  const rows = await getDb()
+    .select({ createdAt: schema.message.createdAt })
+    .from(schema.message)
+    .where(
+      and(
+        eq(schema.message.id, replyId),
+        eq(schema.message.organizationId, organizationId),
+        eq(schema.message.conversationId, conversationId)
+      )
+    )
+    .limit(1);
+  return rows[0]?.createdAt ?? null;
 }
 
 /**
