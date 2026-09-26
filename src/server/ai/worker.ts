@@ -146,13 +146,14 @@ export async function claimNextJob(workerId: string) {
         attempts = attempts + 1,
         updated_at = ${timestamp}::timestamp
     where id in (select id from next_job)
-    returning id, conversation_id as "conversationId", locked_at as "lockedAt"
+    returning id, conversation_id as "conversationId"
   `);
-  return (rows[0] as {
-    id: string;
-    conversationId: string;
-    lockedAt: Date | null;
-  } | undefined) ?? null;
+  const row = rows[0] as { id: string; conversationId: string } | undefined;
+  // `locked_at` volvería como TEXTO: el SQL crudo no pasa por el mapeo de
+  // drizzle. Ese texto terminaba en `gt(message.createdAt, claimedAt)`, que
+  // llama `.toISOString()` y reventaba DESPUÉS de cada turno. Se devuelve el
+  // mismo instante que se escribió, ya como Date.
+  return row ? { id: row.id, conversationId: row.conversationId, lockedAt: now } : null;
 }
 
 async function processJob(
@@ -162,6 +163,31 @@ async function processJob(
   const claimedAt = job.lockedAt ?? new Date();
   try {
     await runAgentTurn(job.conversationId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error desconocido";
+    await getDb()
+      .update(schema.agentJob)
+      .set({
+        status: "needs_review",
+        lockedAt: null,
+        lockedBy: null,
+        lastError: message,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(schema.agentJob.id, job.id), eq(schema.agentJob.lockedBy, workerId)));
+    const organizationId = await organizationForJob(job.id).catch(() => null);
+    if (organizationId) {
+      await applyHandoff(job.conversationId, organizationId, "error").catch(() => {});
+    }
+    console.error(`[agent-worker] trabajo ${job.id} requiere revisión:`, error);
+    return;
+  }
+
+  // Lo que sigue es contabilidad del worker, no el turno: si falla, se anota y
+  // se sigue, pero NUNCA le pausa la conversación al negocio. (Antes vivía en
+  // el mismo try que el turno, y un error aquí terminaba en handoff "error"
+  // aunque el agente hubiera contestado bien.)
+  try {
     await getDb()
       .update(schema.agentJob)
       .set({ status: "done", lockedAt: null, lockedBy: null, updatedAt: new Date() })
@@ -180,22 +206,7 @@ async function processJob(
       .limit(1);
     if (freshInbound[0]) await scheduleAgentTurn(job.conversationId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error desconocido";
-    await getDb()
-      .update(schema.agentJob)
-      .set({
-        status: "needs_review",
-        lockedAt: null,
-        lockedBy: null,
-        lastError: message,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(schema.agentJob.id, job.id), eq(schema.agentJob.lockedBy, workerId)));
-    const organizationId = await organizationForJob(job.id).catch(() => null);
-    if (organizationId) {
-      await applyHandoff(job.conversationId, organizationId, "error").catch(() => {});
-    }
-    console.error(`[agent-worker] trabajo ${job.id} requiere revisión:`, error);
+    console.error(`[agent-worker] cierre del trabajo ${job.id} falló (el turno sí corrió):`, error);
   }
 }
 
