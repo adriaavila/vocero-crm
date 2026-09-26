@@ -17,6 +17,13 @@ export type AiCredentialStatus = {
   model: string;
   last4: string | null;
   lastValidatedAt: string | null;
+  /**
+   * La razón exacta que Nea reportó con esta clave (dispatch v2, step
+   * 6/item 11) — sigue respondiendo con la de allok mientras el dueño no la
+   * reemplace. `invalid` es un valor legado, equivalente a `auth_failed`.
+   * `null` cuando la fuente no es `organization` (no aplica).
+   */
+  lastValidationStatus: "valid" | "invalid" | "auth_failed" | "no_credits" | null;
 };
 
 export type AiCredentialStatuses = Record<AiProvider, AiCredentialStatus>;
@@ -171,5 +178,94 @@ function statusFor(
     model: row?.model ?? platformModel,
     last4: row?.keyLast4 ?? null,
     lastValidatedAt: row?.lastValidatedAt?.toISOString() ?? null,
+    lastValidationStatus: row?.lastValidationStatus ?? null,
   };
+}
+
+/**
+ * La clave de IA PROPIA de la organización para Nea (dispatch v2, contrato
+ * `llm`). Nunca lee la clave de plataforma — Nea tiene la suya, y mandarle esa
+ * sería filtrar un secreto que no le corresponde a un servicio externo.
+ *
+ * Prefiere el proveedor de `agent_profile.ai_provider`; si la organización
+ * solo guardó clave para el OTRO proveedor, usa esa (mejor una respuesta con
+ * el proveedor no preferido que ninguna clave propia). `updatedAt` viaja para
+ * que quien marque la clave inválida (step 6) solo lo haga si nadie la
+ * resguardó entre el despacho y la respuesta de Nea.
+ */
+export async function getNeaLlmCredential(organizationId: string): Promise<{
+  provider: AiProvider;
+  model: string;
+  apiKey: string;
+  /** El IV (texto, cambia en CADA guardado) — lo que step 6 compara para
+   *  invalidar, en vez de `updatedAt` (ver el comentario en
+   *  `markAiCredentialInvalidIfUnchanged`). */
+  keyIv: string;
+} | null> {
+  const db = getDb();
+  const [profileRows, credRows] = await Promise.all([
+    db
+      .select({ aiProvider: schema.agentProfile.aiProvider })
+      .from(schema.agentProfile)
+      .where(scoped(schema.agentProfile.organizationId, organizationId))
+      .limit(1),
+    db
+      .select()
+      .from(schema.aiCredentials)
+      .where(scoped(schema.aiCredentials.organizationId, organizationId)),
+  ]);
+
+  // Una clave que NO está `valid` (Nea ya reportó auth_failed/no_credits con
+  // ella) NO se vuelve a mandar: eso solo repetiría el mismo rechazo turno
+  // tras turno antes de que Nea caiga a su propia clave de plataforma.
+  // Lista blanca, no negra: cualquier razón nueva que se agregue algún día
+  // queda excluida por default, no incluida por accidente.
+  // Guardar o probar una clave nueva siempre la revalida (`saveAiCredential`
+  // escribe `valid` en los dos caminos, insert y conflicto).
+  const validRows = credRows.filter((r) => r.lastValidationStatus === "valid");
+  if (validRows.length === 0) return null;
+
+  const preferred = profileRows[0]?.aiProvider;
+  const row = validRows.find((r) => r.provider === preferred) ?? validRows[0]!;
+  try {
+    const apiKey = decryptSecret({ cipher: row.keyCipher, iv: row.keyIv, tag: row.keyTag });
+    return { provider: row.provider, model: row.model, apiKey, keyIv: row.keyIv };
+  } catch {
+    // Clave de cifrado rota: ni Nea ni Rei pueden usar esta credencial.
+    console.error(`[ai] no se pudo descifrar la credencial de ${row.provider} (Nea)`);
+    return null;
+  }
+}
+
+/**
+ * Marca `last_validation_status='invalid'` SOLO si `key_iv` sigue siendo el
+ * mismo que cuando se armó el despacho — si el dueño re-guardó la clave
+ * mientras Nea procesaba ese turno, `encryptSecret` generó un IV nuevo
+ * (aleatorio en CADA guardado) y este UPDATE no afecta ninguna fila: un turno
+ * viejo no debe invalidar una clave nueva.
+ *
+ * Se compara `key_iv` (texto) y NO `updated_at`: la fila nace por INSERT con
+ * el `now()` del lado de Postgres (microsegundos) pero se lee de vuelta como
+ * `Date` de JS (milisegundos) — la comparación por igualdad perdía la parte
+ * fraccionaria y el UPDATE nunca encontraba la fila después del PRIMER
+ * guardado. `key_iv` es texto: la comparación es exacta siempre.
+ */
+export async function markAiCredentialInvalidIfUnchanged(
+  organizationId: string,
+  provider: AiProvider,
+  expectedKeyIv: string,
+  /** La razón EXACTA que reportó Nea (item 11: copia distinta en la UI). */
+  reason: "auth_failed" | "no_credits" = "auth_failed",
+): Promise<void> {
+  await getDb()
+    .update(schema.aiCredentials)
+    .set({ lastValidationStatus: reason })
+    .where(
+      scoped(
+        schema.aiCredentials.organizationId,
+        organizationId,
+        eq(schema.aiCredentials.provider, provider),
+        eq(schema.aiCredentials.keyIv, expectedKeyIv),
+      ),
+    );
 }

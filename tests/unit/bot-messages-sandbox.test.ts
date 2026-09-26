@@ -27,6 +27,8 @@ vi.mock("@/server/bot/auth", async (importOriginal) => {
 
 const selectQueue: unknown[][] = [];
 const inserts: { table: unknown; values: Record<string, unknown> }[] = [];
+/** Ids ya "insertados" — para simular `ON CONFLICT (id) DO NOTHING` de verdad. */
+const insertedIds = new Set<string>();
 
 function thenableChain(rows: unknown[]) {
   const chain: Record<string, unknown> = {};
@@ -46,10 +48,33 @@ vi.mock("@/lib/db", async (importOriginal) => {
       select: () => thenableChain(selectQueue.shift() ?? []),
       insert: (table: unknown) => ({
         values: (values: Record<string, unknown>) => {
-          inserts.push({ table, values });
+          const id = values.id as string;
+          const alreadyInserted = insertedIds.has(id);
+          const record = () => {
+            if (!alreadyInserted) {
+              insertedIds.add(id);
+              inserts.push({ table, values });
+            }
+          };
           const chain = {
-            returning: () => Promise.resolve([values]),
-            then: (resolve: (v: unknown) => void) => Promise.resolve([values]).then(resolve),
+            // Camino de siempre (sin id determinista): inserta directo, sin
+            // chequear conflicto — no lo usa `persistTestOutbound`, pero
+            // otros llamadores de este mock sí podrían.
+            returning: () => {
+              record();
+              return Promise.resolve([values]);
+            },
+            onConflictDoNothing: () => ({
+              returning: () => {
+                if (alreadyInserted) return Promise.resolve([]);
+                record();
+                return Promise.resolve([values]);
+              },
+            }),
+            then: (resolve: (v: unknown) => void) => {
+              record();
+              return Promise.resolve([values]).then(resolve);
+            },
           };
           return chain;
         },
@@ -85,6 +110,7 @@ describe("POST /api/bot/messages sobre una conversación de prueba", () => {
     resetRateLimit();
     selectQueue.length = 0;
     inserts.length = 0;
+    insertedIds.clear();
     sendText.mockReset();
   });
   afterEach(() => vi.unstubAllEnvs());
@@ -125,6 +151,33 @@ describe("POST /api/bot/messages sobre una conversación de prueba", () => {
     expect(body.error?.code).toBe("sandbox_violation");
     expect(sendText).toHaveBeenCalledTimes(1);
     expect(inserts.some((i) => i.values.direction === "out")).toBe(false);
+  });
+
+  it("Laboratorio con dispatchId: el MISMO dispatchId+seq dos veces → una sola fila (ON CONFLICT DO NOTHING), la segunda responde duplicate:true", async () => {
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
+    selectQueue.push([
+      { id: "cv_lab", organizationId: "org_1", isTest: true, aiEnabled: true, handoffAt: null },
+    ]);
+    const res1 = await POST(
+      req({ conversationId: "cv_lab", text: "hola desde Nea", dispatchId: "dsp_lab_1", seq: 0 })
+    );
+    expect(res1.status).toBe(200);
+    const body1 = (await res1.json()) as { messageId?: string; duplicate?: boolean };
+    expect(body1.duplicate).toBeUndefined();
+
+    selectQueue.push([
+      { id: "cv_lab", organizationId: "org_1", isTest: true, aiEnabled: true, handoffAt: null },
+    ]);
+    const res2 = await POST(
+      req({ conversationId: "cv_lab", text: "hola desde Nea", dispatchId: "dsp_lab_1", seq: 0 })
+    );
+    expect(res2.status).toBe(200);
+    const body2 = (await res2.json()) as { messageId?: string; duplicate?: boolean };
+
+    expect(body2.messageId).toBe(body1.messageId);
+    expect(body2.duplicate).toBe(true);
+    // Solo UNA fila realmente insertada, no dos.
+    expect(inserts.filter((i) => i.values.direction === "out")).toHaveLength(1);
   });
 
   it("conversación real sigue yendo por sendText como antes", async () => {

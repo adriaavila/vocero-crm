@@ -2,15 +2,24 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
+import { isNeaBrain } from "@/lib/env";
+import { neaMessageId } from "@/lib/db/ids";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
 import { moveLeadToStage } from "@/server/leads/stage-history";
 import { serializeFicha, upsertFicha } from "@/server/bot/ficha";
+import { SendError, sendText } from "@/server/inbox/send";
+import { persistTestOutbound } from "@/server/ai/pipeline";
+import { clearOffers } from "@/server/agenda/offers";
 
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   conversationId: z.string().min(1),
+  /** Aviso a mandar ANTES de fijar memory_reset_at (p. ej. "empezamos de nuevo"). */
+  notice: z.string().min(1).max(4096).optional(),
+  /** El MISMO id del despacho — hace idempotente el envío del aviso. */
+  dispatchId: z.string().min(1).optional(),
 });
 
 /**
@@ -18,6 +27,23 @@ const bodySchema = z.object({
  * reactivada (sale del handoff) y lead de vuelta a la primera etapa. El
  * historial del inbox NO se borra: es auditoría. Lo invoca el cerebro externo
  * cuando un número de su allowlist manda `/reset`.
+ *
+ * Dispatch v2, orden EXACTO (revisado tras un bug: mandar el aviso antes de
+ * salir del handoff hacía que `/reset` de una conversación pausada — el caso
+ * más común, es justo POR QUÉ alguien resetea — fallara con 409 y el reset
+ * entero no ocurriera):
+ *  1. Reactiva (sale del handoff, `aiEnabled=true`) — como el reset de
+ *     siempre, PRIMERO.
+ *  2. Con `notice`: se manda YA reactivada (nunca 409 `ai_paused` por un
+ *     handoff que este mismo reset acaba de limpiar). En una conversación de
+ *     prueba (Laboratorio) se persiste como saliente de prueba
+ *     (`persistTestOutbound`, igual que `/api/bot/messages`) en vez de
+ *     `sendText` — esas conversaciones jamás tocan la API real.
+ *  3. Fija `memory_reset_at = now()` — así el aviso mismo (con un `createdAt`
+ *     de ANTES de este paso) no vuelve a aparecer en `history` de despachos
+ *     futuros, y la memoria de Nea arranca de cero desde este instante.
+ *  4. Limpia las ofertas vigentes: un slot ofrecido antes del reset no debe
+ *     poder reservarse después de que la conversación "empezó de nuevo".
  */
 export async function POST(req: Request) {
   const denied = requireBotKey(req);
@@ -35,7 +61,9 @@ export async function POST(req: Request) {
   const rows = await db
     .select({
       id: schema.conversation.id,
+      organizationId: schema.conversation.organizationId,
       contactId: schema.conversation.contactId,
+      isTest: schema.conversation.isTest,
     })
     .from(schema.conversation)
     .where(
@@ -48,6 +76,8 @@ export async function POST(req: Request) {
   const conv = rows[0];
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
 
+  // 1. Reactiva PRIMERO: un notice contra una conversación en handoff no debe
+  // fallar con `ai_paused` solo porque este mismo reset todavía no la limpió.
   await db
     .update(schema.conversation)
     .set({
@@ -57,6 +87,51 @@ export async function POST(req: Request) {
       updatedAt: new Date(),
     })
     .where(eq(schema.conversation.id, conv.id));
+
+  // 2. El aviso, ya reactivada — MEJOR ESFUERZO (item 9): que no se pueda
+  // mandar (horario fuera de rango, ventana cerrada, un envío ya en curso…)
+  // no debe abortar el reset entero. El reset en sí (reactivar, memoria,
+  // ofertas, ficha, etapa) es lo que de verdad importa — el aviso es una
+  // cortesía. `noticeSent` en la respuesta le dice al llamador si de verdad
+  // salió, para que pueda avisar por su cuenta si quiere.
+  let noticeSent = false;
+  if (body.data.notice) {
+    try {
+      if (conv.isTest && isNeaBrain()) {
+        // Laboratorio: jamás toca la API real (FR-031) — se persiste igual
+        // que Nea contestando por `/api/bot/messages`.
+        const messageId = body.data.dispatchId
+          ? neaMessageId(organizationId, conv.id, body.data.dispatchId, 0)
+          : undefined;
+        await persistTestOutbound(conv, body.data.notice, { messageId });
+      } else {
+        await sendText({
+          conversationId: conv.id,
+          organizationId,
+          text: body.data.notice,
+          aiGenerated: true,
+          dispatchId: body.data.dispatchId,
+          seq: 0,
+        });
+      }
+      noticeSent = true;
+    } catch (err) {
+      const reason = err instanceof SendError ? err.code : err;
+      console.warn(`[bot/reset] no se pudo mandar el aviso: ${reason}`);
+    }
+  }
+
+  // 3. La memoria de Nea arranca de cero DESPUÉS del aviso: su propio
+  // `createdAt` queda antes del corte y no vuelve a aparecer en `history`.
+  await db
+    .update(schema.conversation)
+    .set({ memoryResetAt: new Date(), updatedAt: new Date() })
+    .where(eq(schema.conversation.id, conv.id));
+
+  // 4. Ofertas vigentes fuera: un slot de antes del reset no se reserva después.
+  await clearOffers(organizationId, conv.id).catch((err) => {
+    console.warn(`[bot/reset] no se pudieron limpiar las ofertas: ${err}`);
+  });
 
   // La ficha se vacía POR LA PUERTA (`upsertFicha`), no con un update suelto:
   // esa puerta es la que filtra por organización, y el guardarraíl de
@@ -119,5 +194,5 @@ export async function POST(req: Request) {
     type: "conversation.updated",
     data: { conversation: { id: conv.id } },
   });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, noticeSent });
 }

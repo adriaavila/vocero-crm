@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { AI_DEFAULT_MODELS, type AiProvider, type AiProviderSettings } from "@/lib/ai/config";
-import { getEnv, type Env } from "@/lib/env";
+import { getEnv, isNeaBrain, type Env } from "@/lib/env";
 
 /**
  * Adaptador LLM OpenAI-compatible — ÚNICA frontera con el proveedor de IA
@@ -92,7 +92,14 @@ export async function chatJson<T>(
   return lastResult!;
 }
 
-/** Valida una clave y un modelo con una llamada mínima antes de guardarlos. */
+/**
+ * Valida una clave y un modelo con una llamada mínima antes de guardarlos.
+ *
+ * Con Nea (`isNeaBrain()`) también exige tool calling: Nea razona con
+ * herramientas (dispatch v2), así que un modelo que no las soporta rompería
+ * todos sus turnos en silencio en cuanto Nea intente usar una. Rei no las usa,
+ * así que fuera de Nea el probe de texto de siempre sigue siendo suficiente.
+ */
 export async function probeAiProvider(
   name: AiProvider,
   settings: AiProviderSettings,
@@ -108,10 +115,67 @@ export async function probeAiProvider(
       [{ role: "user", content: "Responde únicamente: OK" }],
       timeoutMs,
     );
-    return { ok: true };
   } catch {
     // El error del proveedor puede incluir datos sensibles o payloads externos.
     return { ok: false };
+  }
+
+  if (isNeaBrain()) {
+    const supportsTools = await probeToolCalling(baseUrl, settings.token, settings.model, timeoutMs);
+    if (!supportsTools) return { ok: false };
+  }
+
+  return { ok: true };
+}
+
+/** true si el modelo de verdad devuelve un `tool_calls` cuando se le fuerza uno. */
+async function probeToolCalling(
+  baseUrl: string,
+  token: string,
+  model: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: "Llama a la herramienta `ok` ahora mismo. No respondas en texto.",
+          },
+        ],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "ok",
+              description: "Confirma que este modelo puede usar herramientas.",
+              parameters: { type: "object", properties: {}, additionalProperties: false },
+            },
+          },
+        ],
+        tool_choice: "required",
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return false;
+    const json = (await res.json()) as {
+      choices?: { message?: { tool_calls?: unknown[] } }[];
+    };
+    const toolCalls = json.choices?.[0]?.message?.tool_calls;
+    return Array.isArray(toolCalls) && toolCalls.length > 0;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

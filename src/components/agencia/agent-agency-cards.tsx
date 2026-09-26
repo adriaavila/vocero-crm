@@ -49,6 +49,8 @@ export type AiCredentialStatus = {
   model: string;
   last4: string | null;
   lastValidatedAt: string | null;
+  /** Dispatch v2, step 6: Nea marca `invalid` cuando esta clave falla. */
+  lastValidationStatus: "valid" | "invalid" | "auth_failed" | "no_credits" | null;
 };
 
 export type AgencyAiCredentials = {
@@ -146,10 +148,10 @@ function AiCredentialsSection({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Claves de IA</CardTitle>
+        <CardTitle>Tu token de OpenRouter (opcional)</CardTitle>
         <CardDescription>
-          Opcional: la instancia usa la clave de plataforma si no guardas un override.
-          La clave se prueba antes de cifrarse y guardarse.
+          Si pones tu token, el consumo de IA corre por tu cuenta. Si no,
+          respondemos con el de allok.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -167,13 +169,26 @@ function AiCredentialsSection({
         </div>
         <div className="rounded-md border bg-subtle px-3 py-2 text-xs text-muted-foreground">
           {status?.source === "organization"
-            ? `Override de esta organización: ••••${status.last4 ?? ""}`
+            ? `Token guardado: ••••${status.last4 ?? ""}`
             : status?.source === "platform"
               ? "Usando la clave de plataforma"
               : "Sin clave configurada"}
         </div>
+        {status?.source === "organization" &&
+          status.lastValidationStatus &&
+          status.lastValidationStatus !== "valid" && (
+            // Dispatch v2, step 6/item 11: Nea reportó por qué esta clave
+            // dejó de servir y siguió respondiendo con la de allok — copia
+            // distinta según la razón, en vez de un genérico "rechazado" que
+            // no le dice al dueño si tiene que cambiar la clave o recargar.
+            <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
+              {status.lastValidationStatus === "no_credits"
+                ? `Tu token de ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} se quedó sin créditos. Respondemos con el de allok mientras recargas.`
+                : `Tu token de ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} fue rechazado. Respondemos con el de allok mientras lo cambias.`}
+            </p>
+          )}
         <div className="space-y-1.5">
-          <Label htmlFor="agent-api-key">API key</Label>
+          <Label htmlFor="agent-api-key">Token</Label>
           <Input
             id="agent-api-key"
             type="password"
@@ -229,7 +244,7 @@ function AiProviderSection({
         <CardTitle>Proveedor de IA</CardTitle>
         <CardDescription>
           Cuál se intenta primero. Si falla o no está configurado, el agente cae
-          automáticamente al otro — el turno nunca se queda sin respuesta por
+          automáticamente al otro: el turno nunca se queda sin respuesta por
           esto.
         </CardDescription>
       </CardHeader>

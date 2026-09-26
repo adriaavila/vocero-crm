@@ -36,6 +36,15 @@ export class MetaApiError extends Error {
   }
 }
 
+/**
+ * Un `graphRequest` colgado (Meta nunca responde) no debe poder retener una
+ * reserva de envío (`sendTextIdempotent`) los ~300s que dura el timeout HTTP
+ * por default de Node — la reserva quedaría "en vuelo" mucho más tiempo del
+ * que la toma por stale (~2min) tolera. 30s es generoso frente a la latencia
+ * normal de la Graph API y corto frente a esos ~300s.
+ */
+const GRAPH_TIMEOUT_MS = 30_000;
+
 export async function graphRequest<T>(
   path: string,
   opts: {
@@ -46,6 +55,8 @@ export async function graphRequest<T>(
 ): Promise<T> {
   const env = getEnv();
   const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${path}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GRAPH_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(url, {
@@ -57,12 +68,16 @@ export async function graphRequest<T>(
           : {}),
       },
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: controller.signal,
     });
   } catch (cause) {
-    throw new MetaApiError("No se pudo contactar la API de Meta", {
-      status: 0,
-      details: cause,
-    });
+    const timedOut = cause instanceof Error && cause.name === "AbortError";
+    throw new MetaApiError(
+      timedOut ? `La API de Meta no respondió en ${GRAPH_TIMEOUT_MS / 1000}s` : "No se pudo contactar la API de Meta",
+      { status: 0, details: cause }
+    );
+  } finally {
+    clearTimeout(timer);
   }
 
   const text = await res.text();

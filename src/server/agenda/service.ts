@@ -81,6 +81,48 @@ export type BookingResult = {
 /** Cuántas alternativas se devuelven cuando el hueco se ocupó. */
 const FRESH_ALTERNATIVES = 3;
 
+/**
+ * Llave natural de una cita de sesión: (conversación, instante exacto) entre
+ * las agendadas. La usan tanto la idempotencia de ENTRADA (antes del insert)
+ * como la de la CARRERA (dentro del catch de la violación única, item 6) —
+ * dos reintentos concurrentes del mismo turno pueden cruzarse justo ahí: el
+ * que pierde la carrera del insert no debe ver `slot_taken` si el que ganó
+ * es, en los hechos, EL MISMO reintento.
+ */
+async function findExistingSessionBooking(
+  db: ReturnType<typeof getDb>,
+  organizationId: string,
+  conversationId: string | null | undefined,
+  startUtc: string
+): Promise<BookingRow | null> {
+  if (!conversationId) return null;
+  const rows = await db
+    .select()
+    .from(schema.booking)
+    .where(
+      scoped(
+        schema.booking.organizationId,
+        organizationId,
+        and(
+          eq(schema.booking.conversationId, conversationId),
+          eq(schema.booking.kind, "session"),
+          eq(schema.booking.status, "agendada")
+        )
+      )
+    )
+    .limit(20);
+  return rows.find((b) => b.scheduledAt.getTime() === Date.parse(startUtc)) ?? null;
+}
+
+function toBookingResult(booking: BookingRow, settings: CalendarSettings): BookingResult {
+  return {
+    booking,
+    meetingLink: booking.meetingLink,
+    linkPending: booking.linkPending,
+    label: labelInTz(booking.scheduledAt.toISOString(), settings.timezone),
+  };
+}
+
 export async function createSessionBooking(input: {
   organizationId: string;
   startUtc: string;
@@ -103,6 +145,16 @@ export async function createSessionBooking(input: {
 
   if (Number.isNaN(Date.parse(input.startUtc))) {
     throw new BookingError("invalid", "Instante inválido");
+  }
+
+  // Idempotencia por llave natural (dispatch v2, sin migración): un reintento
+  // del mismo turno (la respuesta del primero se perdió) no debe fallar con
+  // `slot_not_offered` solo porque la reserva ya existe y ya limpió la oferta
+  // — se devuelve la cita existente tal cual, como si acabara de crearse.
+  const byNaturalKey = () => findExistingSessionBooking(db, input.organizationId, input.conversationId, input.startUtc);
+  if (input.conversationId) {
+    const target = await byNaturalKey();
+    if (target) return toBookingResult(target, settings);
   }
 
   // Contexto de la conversación: contacto y si es del Laboratorio.
@@ -205,8 +257,15 @@ export async function createSessionBooking(input: {
   } catch (err) {
     // REGLA 2 (segunda mitad): la llave única cierra la carrera exacta. Dos
     // confirmaciones simultáneas del mismo instante — la perdedora sale por
-    // aquí, sin cita creada.
+    // aquí, sin cita creada. PERO (item 6): si la que ganó fue un reintento
+    // del MISMO turno (misma conversación, mismo instante — la respuesta del
+    // primer intento se perdió y Nea reintentó), no es una carrera de
+    // verdad: se devuelve esa cita como si la hubiera creado este intento,
+    // en vez de un `slot_taken` que llevaría a re-ofrecer un horario que la
+    // conversación cree que ya tiene agendado.
     if (isUniqueViolation(err)) {
+      const wonByRetry = await byNaturalKey();
+      if (wonByRetry) return toBookingResult(wonByRetry, settings);
       throw new BookingError(
         "slot_taken",
         "Ese horario acaba de ocuparse",
@@ -379,16 +438,11 @@ export async function rescheduleForConversation(input: {
   const conv = convRows[0];
   if (!conv) throw new BookingError("not_found", "Conversación no encontrada");
 
-  // Mismas reglas que al crear: el instante nuevo tiene que haberse ofrecido.
-  const offers = await getOffers(input.organizationId, input.conversationId);
-  if (!findOffered(offers, input.startUtc)) {
-    throw new BookingError(
-      "slot_not_offered",
-      "Ese horario no se ofreció en esta conversación",
-      offers
-    );
-  }
-
+  // Hasta 20 (mismo margen que la idempotencia de `createSessionBooking`),
+  // no solo la más próxima: la idempotencia de abajo necesita poder
+  // encontrar la cita YA MOVIDA aunque no sea la más temprana del contacto
+  // (item 7 — con dos citas activas, la más temprana puede ser una que este
+  // reintento nunca tocó).
   const rows = await db
     .select()
     .from(schema.booking)
@@ -409,9 +463,34 @@ export async function rescheduleForConversation(input: {
       )
     )
     .orderBy(asc(schema.booking.scheduledAt))
-    .limit(1);
+    .limit(20);
 
+  // Idempotencia (dispatch v2): un reintento del mismo turno no debe fallar
+  // con `slot_not_offered` solo porque mover la cita la primera vez ya limpió
+  // la oferta. La cita YA movida al instante pedido puede NO ser la más
+  // próxima del contacto (otra cita activa, sin relación con este movimiento,
+  // puede caer antes) — se busca por instante exacto entre TODAS las activas,
+  // nunca solo en `rows[0]`.
+  const already = rows.find((b) => b.scheduledAt.getTime() === Date.parse(input.startUtc));
+  if (already) {
+    return toBookingResult(already, await getSettings(input.organizationId));
+  }
+
+  // La que de verdad se va a mover: la próxima activa, por convención (esta
+  // función no recibe un bookingId — asume una única cita "siguiente" por
+  // conversación).
   const target = rows[0];
+
+  // Mismas reglas que al crear: el instante nuevo tiene que haberse ofrecido.
+  const offers = await getOffers(input.organizationId, input.conversationId);
+  if (!findOffered(offers, input.startUtc)) {
+    throw new BookingError(
+      "slot_not_offered",
+      "Ese horario no se ofreció en esta conversación",
+      offers
+    );
+  }
+
   if (!target) {
     throw new BookingError("not_found", "No hay una cita activa que mover");
   }

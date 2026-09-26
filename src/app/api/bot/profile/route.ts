@@ -1,10 +1,6 @@
-import { asc, eq } from "drizzle-orm";
-import { getDb, schema } from "@/lib/db";
 import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
-import { serializeBotProfile } from "@/server/bot/profile";
-// Capa de agencia: los frenos del piloto viajan con el perfil (server/agencia/).
-import { perfilDeAgencia } from "@/server/agencia/bot-perfil";
+import { buildBotProfile } from "@/server/bot/profile";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +9,10 @@ export const dynamic = "force-dynamic";
  * GET /api/bot/profile → {profile, kb, resources}. Sin caché: cada consulta
  * refleja lo que el dueño dejó en la UI al momento (el TTL vive del lado del
  * bot, que es quien sabe cada cuánto le conviene releer).
+ *
+ * El cuerpo lo arma `buildBotProfile` (`server/bot/profile.ts`) — el MISMO
+ * constructor que usa el payload de despacho a Nea (dispatch v2, campo
+ * `profile`), para que esta ruta y ese payload no puedan divergir.
  */
 export async function GET(req: Request) {
   const denied = requireBotKey(req);
@@ -23,28 +23,11 @@ export async function GET(req: Request) {
     return apiError(409, "no_org", "La instancia aún no tiene organización");
   }
 
-  const db = getDb();
-  const profiles = await db
-    .select()
-    .from(schema.agentProfile)
-    .where(eq(schema.agentProfile.organizationId, organizationId))
-    .limit(1);
-  const profile = profiles[0];
+  const profile = await buildBotProfile(organizationId);
   if (!profile) {
     // Condición esperada (instancia sin perfil): el bot cae a su brief local.
     return apiError(404, "no_profile", "La instancia no tiene perfil de agente");
   }
 
-  const kb = await db
-    .select()
-    .from(schema.kbEntry)
-    .where(eq(schema.kbEntry.organizationId, organizationId))
-    .orderBy(asc(schema.kbEntry.createdAt));
-
-  const base = serializeBotProfile(profile, kb);
-  const agencia = await perfilDeAgencia(organizationId);
-  return Response.json({
-    ...base,
-    profile: { ...base.profile, ...agencia },
-  });
+  return Response.json(profile);
 }

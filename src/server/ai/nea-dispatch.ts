@@ -1,4 +1,6 @@
 import { createHmac } from "node:crypto";
+import type { BotContext } from "@/server/bot/context";
+import type { BotProfile } from "@/server/bot/profile";
 
 /**
  * Despacho de un turno a Nea (cerebro externo por defecto).
@@ -6,15 +8,16 @@ import { createHmac } from "node:crypto";
  * Contrato fijo (construido en paralelo del lado de Nea):
  * `POST ${NEA_DISPATCH_URL}` firmado con `X-Signature: sha256=<hmac>` sobre
  * el body EXACTO enviado. SÍNCRONO: Nea responde 200 solo después de haber
- * POSTeado su respuesta a `/api/bot/messages`. Un fallo (no-2xx o timeout) se
- * propaga como excepción — quien llama decide qué hacer (needs_review +
- * handoff en el worker de SaaS, log + handoff en el debounce legado).
+ * POSTeado su respuesta a `/api/bot/messages`.
+ *
+ * Dispatch v2 (Nea sin estado): `dispatchToNea` hace UN solo intento HTTP y
+ * devuelve un resultado tipado en vez de reintentar internamente — el
+ * reintento (rebuilding el snapshot con datos frescos en cada vuelta) vive
+ * ahora en `runNeaAgentTurn` (`server/ai/pipeline.ts`), porque solo ahí hay
+ * acceso a la BD para recalcular qué sigue pendiente. Ver `NeaDispatchOutcome`.
  */
 
 const DISPATCH_TIMEOUT_MS = 90_000;
-/** Reintentos ante error de red o 5xx: ~2s y luego ~5s. Un 4xx NO reintenta
- * (el payload está mal formado o el body no cambiará al repetirlo). */
-const RETRY_DELAYS_MS = [2_000, 5_000];
 
 export type NeaMessage = {
   /** wa_message_id — null en mensajes del Laboratorio (nunca tocan Meta). */
@@ -26,6 +29,7 @@ export type NeaMessage = {
   timestamp: string;
 };
 
+/** Payload v1 — CONGELADO. El Nea hoy desplegado solo conoce esta forma. */
 export type NeaDispatchPayload = {
   organizationId: string;
   conversationId: string;
@@ -33,6 +37,82 @@ export type NeaDispatchPayload = {
   contact: { identity: string; name: string };
   messages: NeaMessage[];
 };
+
+export type NeaHistoryRole = "lead" | "agent" | "team" | "owner";
+
+export type NeaHistoryMedia = {
+  /** media id de Graph; null en location/contacts o si no hay adjunto. */
+  mediaId: string | null;
+  mime: string | null;
+  fileName: string | null;
+  caption: string | null;
+  /** ≤4000 caracteres — ver `POST /api/bot/messages/[id]/transcript`. */
+  transcript: string | null;
+  location: unknown | null;
+  /**
+   * El payload de Meta TAL CUAL, sin transformar (`message.contacts` del
+   * webhook de WhatsApp — `mediaAsset.payload` para un mensaje `kind:
+   * "contacts"`, ver `server/inbox/ingest.ts`): un arreglo de objetos con
+   * forma `{ name: { formatted_name, first_name } | string, phones?:
+   * [{ phone, type? }], emails?: [...], ... }` — cada implementación de
+   * cliente de WhatsApp manda un subconjunto distinto de campos, así que no
+   * se normaliza aquí. `null` salvo en un mensaje de tipo `contacts`.
+   */
+  contacts: unknown | null;
+} | null;
+
+export type NeaHistoryItem = {
+  id: string;
+  role: NeaHistoryRole;
+  type: string;
+  /** ≤2000 caracteres. */
+  text: string | null;
+  /** ISO. */
+  at: string;
+  /** true ⇒ está en el conjunto pendiente de este despacho. */
+  pending: boolean;
+  media: NeaHistoryMedia;
+};
+
+export type NeaOffer = { startUtc: string; label: string };
+
+export type NeaLlm = {
+  provider: "openrouter" | "openai";
+  model: string;
+  apiKey: string;
+} | null;
+
+/**
+ * Payload v2 — SUPERSET de v1: todo campo de v1 viaja idéntico, así que el
+ * Nea hoy desplegado (que solo lee v1) sigue funcionando sin cambios.
+ */
+export type NeaDispatchPayloadV2 = NeaDispatchPayload & {
+  version: 2;
+  /** SaaS: `agent_job.id` (estable entre reintentos). Debounce/Lab: `dsp_…`. */
+  dispatchId: string;
+  /** Número de intento del turno (0-based); solo para logs. */
+  attempt: number;
+  context: BotContext;
+  profile: BotProfile;
+  history: NeaHistoryItem[];
+  offers: NeaOffer[];
+  /** null salvo que la organización tenga SU PROPIA clave — nunca la de plataforma. */
+  llm: NeaLlm;
+};
+
+export type NeaResponseBody = {
+  ok: boolean;
+  action: "replied" | "silent" | "noop" | "reset";
+  llm?: { source: "platform" | "org"; status: string };
+  handoff?: { reason: string; applied: boolean };
+};
+
+export type NeaDispatchOutcome =
+  | { kind: "ok"; body: NeaResponseBody }
+  /** 4xx: el payload está mal — repetirlo no lo arregla. */
+  | { kind: "client_error"; status: number; message: string }
+  /** 5xx o red/timeout: vale la pena reintentar con un snapshot fresco. */
+  | { kind: "retryable"; status: number | null; message: string };
 
 /** Mensaje crudo tal como sale de la BD, en orden cronológico ascendente. */
 export type NeaSourceMessage = {
@@ -109,24 +189,20 @@ function sign(body: string): string {
   return `sha256=${createHmac("sha256", key).update(body).digest("hex")}`;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    timer.unref?.();
-  });
-}
-
 /**
- * POSTea el turno a Nea y espera su respuesta. Para conversaciones REALES
- * reintenta un error de red o un 5xx hasta 2 veces con backoff (~2s, ~5s) —
- * una salida corta de Nea no debe pausar toda conversación en curso
- * (`needs_review` + handoff `error` en cada tenant que tuviera un turno en
- * vuelo). Un 4xx NO reintenta: el problema es el payload, no la red, y
- * repetirlo no lo arregla. El Laboratorio (`isTest`) NUNCA reintenta — ver
- * el comentario sobre `attempts` más abajo. Lanza si `NEA_DISPATCH_URL` no
- * está configurada, o si se agotan los intentos.
+ * Un solo intento HTTP contra Nea — SIN reintentar. El reintento (dispatch v2)
+ * vive en `runNeaAgentTurn`, que es quien puede reconstruir el snapshot con
+ * datos frescos entre un intento y el siguiente; aquí no hay forma de saber
+ * si algo cambió mientras tanto.
+ *
+ * Lanza SOLO si `NEA_DISPATCH_URL` no está configurada (error de
+ * configuración, no de despacho). Cualquier otro desenlace — 2xx, 4xx, 5xx o
+ * fallo de red/timeout — vuelve como `NeaDispatchOutcome` para que quien llama
+ * decida sin necesitar un try/catch por caso.
  */
-export async function dispatchToNea(payload: NeaDispatchPayload): Promise<void> {
+export async function dispatchToNea(
+  payload: NeaDispatchPayload | NeaDispatchPayloadV2
+): Promise<NeaDispatchOutcome> {
   const url = process.env.NEA_DISPATCH_URL?.trim();
   if (!url) throw new Error("NEA_DISPATCH_URL no está configurada");
 
@@ -136,39 +212,46 @@ export async function dispatchToNea(payload: NeaDispatchPayload): Promise<void> 
     "X-Signature": sign(body),
   };
 
-  // El Laboratorio NUNCA reintenta: a diferencia de una conversación real (con
-  // ventana de WhatsApp y un cliente que no ve reintentos internos), aquí un
-  // reintento después de que Nea SÍ alcanzó a contestar (pero la respuesta se
-  // perdió en el camino de vuelta) duplicaría la respuesta persistida en la
-  // transcripción de la corrida.
-  const attempts = payload.isTest ? 1 : RETRY_DELAYS_MS.length + 1;
-
-  let lastError: Error = new Error("Nea no respondió");
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    if (attempt > 0) await sleep(RETRY_DELAYS_MS[attempt - 1]!);
-
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers,
-        body,
-        signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
-      });
-    } catch (err) {
-      lastError = new Error(
-        `Nea no respondió: ${err instanceof Error ? err.message : String(err)}`
-      );
-      continue; // red/timeout: reintenta
-    }
-
-    if (response.ok) return;
-    if (response.status >= 500) {
-      lastError = new Error(`Nea devolvió ${response.status}`);
-      continue; // 5xx: reintenta
-    }
-    // 4xx: el payload está mal, repetirlo no ayuda.
-    throw new Error(`Nea devolvió ${response.status}`);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(DISPATCH_TIMEOUT_MS),
+    });
+  } catch (err) {
+    return {
+      kind: "retryable",
+      status: null,
+      message: `Nea no respondió: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
-  throw lastError;
+
+  if (response.ok) {
+    return { kind: "ok", body: await safeResponseBody(response) };
+  }
+  if (response.status >= 500) {
+    return { kind: "retryable", status: response.status, message: `Nea devolvió ${response.status}` };
+  }
+  // 4xx: el payload está mal, repetirlo no ayuda.
+  return { kind: "client_error", status: response.status, message: `Nea devolvió ${response.status}` };
+}
+
+/**
+ * El Nea v1 hoy desplegado responde 200 sin body (o con uno que no sigue el
+ * contrato v2) — un JSON inválido o ausente nunca debe tumbar el turno: se
+ * interpreta como "sin novedad", que es exactamente lo que significa un 2xx
+ * de un Nea que todavía no sabe de `action`/`llm`/`handoff`.
+ */
+async function safeResponseBody(response: Response): Promise<NeaResponseBody> {
+  try {
+    const raw: unknown = await response.json();
+    if (raw && typeof raw === "object") {
+      return { ok: true, action: "noop", ...raw } as NeaResponseBody;
+    }
+  } catch {
+    // sin body o no es JSON — Nea v1.
+  }
+  return { ok: true, action: "noop" };
 }

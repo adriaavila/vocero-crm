@@ -65,7 +65,8 @@ describe("worker: fallo después del turno", () => {
     runAgentTurn.mockResolvedValue(undefined);
     selectState.throws = true;
     await claimUpToCapacity();
-    await vi.waitFor(() => expect(runAgentTurn).toHaveBeenCalledWith("conv_1"));
+    // Dispatch v2: `job.id` viaja como dispatchId (segundo argumento).
+    await vi.waitFor(() => expect(runAgentTurn).toHaveBeenCalledWith("conv_1", "job_1"));
     await new Promise((r) => setTimeout(r, 20));
     expect(applyHandoff).not.toHaveBeenCalled();
   });

@@ -53,6 +53,12 @@ vi.mock("@/server/ai/nea-dispatch", async (importOriginal) => {
   return { ...actual, dispatchToNea };
 });
 
+const { buildNeaTurnSnapshot } = vi.hoisted(() => ({ buildNeaTurnSnapshot: vi.fn() }));
+vi.mock("@/server/ai/nea-payload", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/ai/nea-payload")>();
+  return { ...actual, buildNeaTurnSnapshot };
+});
+
 const { hasConfiguredAiProvider } = vi.hoisted(() => ({ hasConfiguredAiProvider: vi.fn() }));
 vi.mock("@/server/ai/credentials", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai/credentials")>();
@@ -69,6 +75,8 @@ const CONVERSATION = {
   isTest: false,
   aiEnabled: true,
   handoffAt: null as Date | null,
+  agentCursorAt: null as Date | null,
+  memoryResetAt: null as Date | null,
 };
 const PROFILE = { enabled: true, activationEnabled: false };
 const CONTACT = { waIdentity: "5215512345678", name: "Ana" };
@@ -81,6 +89,27 @@ const INBOUND_MESSAGE = {
   waTimestamp: null,
   createdAt: new Date("2026-09-25T12:00:00.000Z"),
   mediaWaId: null,
+};
+
+/** Snapshot mínimo válido — solo interesa que `buildNeaTurnSnapshot` no devuelva null. */
+const SNAPSHOT = {
+  payload: {
+    organizationId: "org_1",
+    conversationId: "cv_1",
+    isTest: false,
+    contact: { identity: "5215512345678", name: "Ana" },
+    messages: [],
+    version: 2 as const,
+    dispatchId: "dsp_test",
+    attempt: 0,
+    context: {},
+    profile: {},
+    history: [],
+    offers: [],
+    llm: null,
+  },
+  maxPendingCreatedAt: new Date("2026-09-25T12:00:00.000Z"),
+  orgCredential: null,
 };
 
 async function waitForDebounce(): Promise<void> {
@@ -96,6 +125,7 @@ describe("executeTurn — trato del fallo según quién contesta (instancia dedi
     selectQueue.length = 0;
     updates.length = 0;
     dispatchToNea.mockReset();
+    buildNeaTurnSnapshot.mockReset().mockResolvedValue(SNAPSHOT);
     hasConfiguredAiProvider.mockReset();
     vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
     vi.stubEnv("DATABASE_URL", "postgresql://t:t@localhost:5432/t");
@@ -114,7 +144,11 @@ describe("executeTurn — trato del fallo según quién contesta (instancia dedi
   it("Nea configurada + el despacho falla → handoff('error') (como el worker de SaaS)", async () => {
     vi.stubEnv("BOT_API_KEY", "clave-compartida-con-nea-larga");
     vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
-    dispatchToNea.mockRejectedValue(new Error("Nea devolvió 500"));
+    // 4xx: no reintenta, así que este turno falla en el primer intento —
+    // rápido y determinista. El caso "se agotan los 3 intentos" (5xx/red,
+    // con los ~2s/~5s de espera entre vueltas) se cubre en
+    // nea-turn-retry.test.ts con fake timers.
+    dispatchToNea.mockResolvedValue({ kind: "client_error", status: 422, message: "Nea devolvió 422" });
     selectQueue.push(
       [CONVERSATION], // conversación (runNeaAgentTurn)
       [PROFILE], // perfil

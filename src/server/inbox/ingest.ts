@@ -535,6 +535,8 @@ export function serializeMessage(
     error: m.error,
     aiGenerated: m.aiGenerated,
     origin: m.origin,
+    /** Dispatch v2: transcripción de un entrante de audio/documento/imagen. */
+    transcript: m.transcript,
     media: media
       ? {
           assetId: media.id,

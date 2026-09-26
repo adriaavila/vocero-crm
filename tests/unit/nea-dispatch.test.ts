@@ -112,7 +112,7 @@ describe("buildNeaPayload", () => {
   });
 });
 
-describe("dispatchToNea", () => {
+describe("dispatchToNea (dispatch v2: UN solo intento, sin reintentar)", () => {
   const PAYLOAD = {
     organizationId: "org_1",
     conversationId: "conv_1",
@@ -134,7 +134,8 @@ describe("dispatchToNea", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await dispatchToNea(PAYLOAD);
+    const result = await dispatchToNea(PAYLOAD);
+    expect(result).toEqual({ kind: "ok", body: { ok: true, action: "noop" } });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -150,68 +151,50 @@ describe("dispatchToNea", () => {
     expect(init.headers["X-Signature"]).toBe(expectedSignature);
   });
 
-  it("4xx → lanza SIN reintentar (el payload está mal, no la red)", async () => {
+  it("2xx con body v2 → kind:'ok' con el body parseado", async () => {
+    const body = { ok: true, action: "replied", handoff: { reason: "cliente", applied: true } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 })));
+
+    const result = await dispatchToNea(PAYLOAD);
+    expect(result).toEqual({ kind: "ok", body });
+  });
+
+  it("2xx sin body (Nea v1 desplegado hoy) → kind:'ok' con noop, no revienta parseando", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 200 })));
+
+    const result = await dispatchToNea(PAYLOAD);
+    expect(result).toEqual({ kind: "ok", body: { ok: true, action: "noop" } });
+  });
+
+  it("4xx → kind:'client_error', UN solo intento (no reintenta)", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response("bad", { status: 422 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(dispatchToNea(PAYLOAD)).rejects.toThrow(/422/);
+    const result = await dispatchToNea(PAYLOAD);
+    expect(result).toEqual({ kind: "client_error", status: 422, message: "Nea devolvió 422" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("5xx persistente → reintenta con backoff (~2s, ~5s) y termina lanzando", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
-      vi.stubGlobal("fetch", fetchMock);
+  it("5xx → kind:'retryable', UN solo intento (el reintento es responsabilidad de quien llama)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
 
-      const result = dispatchToNea(PAYLOAD);
-      const assertion = expect(result).rejects.toThrow(/500/);
-      await vi.advanceTimersByTimeAsync(2_000);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-
-      expect(fetchMock).toHaveBeenCalledTimes(3); // intento + 2 reintentos
-    } finally {
-      vi.useRealTimers();
-    }
+    const result = await dispatchToNea(PAYLOAD);
+    expect(result).toEqual({ kind: "retryable", status: 500, message: "Nea devolvió 500" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("timeout / error de red persistente → reintenta y termina lanzando 'Nea no respondió' (no cuelga el turno)", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi
-        .fn()
-        .mockRejectedValue(new DOMException("The operation was aborted", "TimeoutError"));
-      vi.stubGlobal("fetch", fetchMock);
+  it("timeout / error de red → kind:'retryable' con status null, nunca lanza", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("The operation was aborted", "TimeoutError"))
+    );
 
-      const result = dispatchToNea(PAYLOAD);
-      const assertion = expect(result).rejects.toThrow(/Nea no respondió/);
-      await vi.advanceTimersByTimeAsync(2_000);
-      await vi.advanceTimersByTimeAsync(5_000);
-      await assertion;
-
-      expect(fetchMock).toHaveBeenCalledTimes(3);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("un 5xx que se recupera al reintentar → NO lanza (el reintento salvó el turno)", async () => {
-    vi.useFakeTimers();
-    try {
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(new Response("boom", { status: 502 }))
-        .mockResolvedValueOnce(new Response(null, { status: 200 }));
-      vi.stubGlobal("fetch", fetchMock);
-
-      const result = dispatchToNea(PAYLOAD);
-      await vi.advanceTimersByTimeAsync(2_000);
-      await expect(result).resolves.toBeUndefined();
-
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
+    const result = await dispatchToNea(PAYLOAD);
+    expect(result.kind).toBe("retryable");
+    if (result.kind === "retryable") {
+      expect(result.status).toBeNull();
+      expect(result.message).toMatch(/Nea no respondió/);
     }
   });
 
@@ -230,7 +213,7 @@ describe("dispatchToNea", () => {
     expect(init.headers["X-Signature"]).toBe(expectedSignature);
   });
 
-  it("sin NEA_DISPATCH_URL → lanza sin tocar la red", async () => {
+  it("sin NEA_DISPATCH_URL → lanza (error de configuración, no de despacho) sin tocar la red", async () => {
     vi.stubEnv("NEA_DISPATCH_URL", "");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

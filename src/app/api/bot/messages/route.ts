@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getDb, schema } from "@/lib/db";
 import { apiError, parseBody } from "@/lib/api";
 import { isNeaBrain } from "@/lib/env";
+import { neaMessageId } from "@/lib/db/ids";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
 import { persistTestOutbound } from "@/server/ai/pipeline";
@@ -12,6 +13,14 @@ export const dynamic = "force-dynamic";
 const bodySchema = z.object({
   conversationId: z.string().min(1),
   text: z.string().min(1).max(4096),
+  /**
+   * Dispatch v2: el MISMO id que este despacho recibió en su payload. Con él,
+   * el envío es idempotente por `(organización, conversación, dispatchId,
+   * seq)` — un reintento del mismo turno no duplica la respuesta.
+   */
+  dispatchId: z.string().min(1).optional(),
+  /** Varios mensajes de UN mismo despacho; default 0. */
+  seq: z.number().int().min(0).optional(),
 });
 
 /**
@@ -21,7 +30,8 @@ const bodySchema = z.object({
  * y hereda el guard de sandbox del Laboratorio.
  *
  * 409 tipados: ai_paused (un humano tomó la conversación) · window_closed ·
- * sandbox_violation.
+ * sandbox_violation · send_in_progress (dispatch v2: mismo dispatchId+seq
+ * todavía en vuelo).
  */
 export async function POST(req: Request) {
   const denied = requireBotKey(req);
@@ -70,8 +80,15 @@ export async function POST(req: Request) {
   // no son alcanzables desde fuera a propósito — así que aquí sigue el
   // guardarraíl duro de siempre: 409 `sandbox_violation` vía `sendText`.
   if (conv.isTest && isNeaBrain()) {
-    const { messageId } = await persistTestOutbound(conv, body.data.text);
-    return Response.json({ messageId });
+    const testMessageId = body.data.dispatchId
+      ? neaMessageId(organizationId, conv.id, body.data.dispatchId, body.data.seq ?? 0)
+      : undefined;
+    const result = await persistTestOutbound(conv, body.data.text, { messageId: testMessageId });
+    return Response.json(
+      result.duplicate
+        ? { messageId: result.messageId, duplicate: true }
+        : { messageId: result.messageId }
+    );
   }
 
   try {
@@ -80,8 +97,14 @@ export async function POST(req: Request) {
       organizationId,
       text: body.data.text,
       aiGenerated: true,
+      dispatchId: body.data.dispatchId,
+      seq: body.data.seq,
     });
-    return Response.json({ messageId: result.messageId });
+    return Response.json(
+      result.duplicate
+        ? { messageId: result.messageId, duplicate: true }
+        : { messageId: result.messageId }
+    );
   } catch (err) {
     if (err instanceof SendError) {
       // La IA se pausó ENTRE el gate de arriba y la entrega (segundos de un
@@ -102,6 +125,9 @@ export async function POST(req: Request) {
       }
       if (err.code === "outside_hours") {
         return apiError(409, "outside_hours", err.message);
+      }
+      if (err.code === "send_in_progress") {
+        return apiError(409, "send_in_progress", err.message);
       }
       return apiError(502, err.code, err.message);
     }

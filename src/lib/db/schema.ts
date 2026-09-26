@@ -426,6 +426,20 @@ export const conversation = pgTable(
     lastInboundAt: timestamp("last_inbound_at"),
     lastMessageAt: timestamp("last_message_at"),
     unreadCount: integer("unread_count").notNull().default(0),
+    /**
+     * Nea sin estado (dispatch v2): hasta dónde ya se le mandó a Nea. Avanza
+     * SOLO tras un 2xx, a `GREATEST(actual, max(createdAt) de lo pendiente
+     * despachado)` — nunca retrocede aunque un despacho tardío llegue con un
+     * pendiente más viejo. NULL = nunca se le despachó nada; el turno cae
+     * entonces al último saliente `ai` no fallido.
+     */
+    agentCursorAt: timestamp("agent_cursor_at"),
+    /**
+     * `POST /api/bot/reset` la fija a `now()`: la memoria de Nea (historial +
+     * pendientes) arranca de cero después de este instante, aunque el hilo
+     * del inbox conserve todo el historial como auditoría.
+     */
+    memoryResetAt: timestamp("memory_reset_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
@@ -474,6 +488,13 @@ export const message = pgTable(
     mediaAssetId: text("media_asset_id").references(() => mediaAsset.id, {
       onDelete: "set null",
     }),
+    /**
+     * Nea sin estado (dispatch v2): transcripción de un entrante de
+     * audio/documento/imagen, escrita por `POST
+     * /api/bot/messages/[id]/transcript`. Primera escritura gana (Nea no la
+     * reescribe); null hasta entonces.
+     */
+    transcript: text("transcript"),
     waTimestamp: timestamp("wa_timestamp"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -709,7 +730,18 @@ export const aiCredentials = pgTable(
     keyTag: text("key_tag").notNull(),
     keyLast4: text("key_last4").notNull(),
     lastValidatedAt: timestamp("last_validated_at").notNull().defaultNow(),
-    lastValidationStatus: text("last_validation_status", { enum: ["valid"] })
+    /**
+     * `auth_failed`/`no_credits`: la razón EXACTA que Nea reportó con esta
+     * clave (dispatch v2, step 6/item 11) — Nea sigue respondiendo con la de
+     * allok mientras el dueño no la reemplace, y la UI distingue "se quedó
+     * sin créditos" de "la rechazaron" en vez de un genérico "inválida".
+     * `invalid` queda como valor legado (de antes de item 11) — se trata
+     * igual que `auth_failed` donde se lee. Columna `text` sin CHECK: agregar
+     * un valor es aditivo y no pide migración.
+     */
+    lastValidationStatus: text("last_validation_status", {
+      enum: ["valid", "invalid", "auth_failed", "no_credits"],
+    })
       .notNull()
       .default("valid"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

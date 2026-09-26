@@ -75,6 +75,8 @@ export type MessageDto = {
   /** 008 — Origen del saliente (en entrantes viene 'operator' y se ignora). */
   origin: "ai" | "operator" | "manual" | "template";
   media: MessageMediaDto | null;
+  /** Dispatch v2: transcripción de un entrante de audio/documento/imagen. */
+  transcript: string | null;
   createdAt: string;
 };
 

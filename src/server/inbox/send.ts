@@ -1,6 +1,6 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { newId } from "@/lib/db/ids";
+import { neaMessageId, newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import {
@@ -51,7 +51,9 @@ export class SendError extends Error {
     | "outside_hours"
     | "meta_error"
     | "meta_unavailable"
-    | "upload_failed";
+    | "upload_failed"
+    /** Dispatch v2: mismo (dispatchId, seq) todavía en vuelo (reservado, sin wamid). */
+    | "send_in_progress";
   /** 008: presente cuando el fallo ocurrió TRAS persistir el mensaje (failed). */
   messageId?: string;
 
@@ -62,7 +64,7 @@ export class SendError extends Error {
   }
 }
 
-type SendResult = { messageId: string };
+type SendResult = { messageId: string; /** true ⇒ ya existía con wamid: no se llamó a Graph otra vez. */ duplicate?: boolean };
 
 type SendTarget = {
   conversation: typeof schema.conversation.$inferSelect;
@@ -331,7 +333,26 @@ export async function sendText(input: {
   organizationId: string;
   text: string;
   aiGenerated?: boolean;
+  /**
+   * Dispatch v2: presente SOLO cuando quien manda es Nea a través de
+   * `/api/bot/messages`. Activa el camino reserva-primero (idempotente por
+   * `(organización, conversación, dispatchId, seq)`) en vez del de siempre.
+   */
+  dispatchId?: string;
+  /** Distingue varios mensajes de UN mismo despacho; default 0. */
+  seq?: number;
 }): Promise<SendResult> {
+  if (input.dispatchId) {
+    // Siempre IA (Nea es el único llamador que manda dispatchId), sin
+    // importar lo que traiga `aiGenerated` — el gate de abajo también debe
+    // ser el de una respuesta automática, no el de un envío manual.
+    const target = await prepareSend(input.conversationId, input.organizationId, true);
+    return sendTextIdempotent(
+      { ...input, dispatchId: input.dispatchId, seq: input.seq ?? 0 },
+      target
+    );
+  }
+
   const target = await prepareSend(
     input.conversationId,
     input.organizationId,
@@ -367,6 +388,157 @@ export async function sendText(input: {
   });
 
   return { messageId };
+}
+
+/**
+ * Una reserva sin wamid más vieja que esto ya no puede ser un envío
+ * legítimamente "en vuelo": el propio Graph responde bastante antes (ver
+ * `GRAPH_TIMEOUT_MS` en `lib/meta/client.ts`, 30s). Más vieja que eso solo
+ * puede significar que el proceso murió entre el insert y el delete-en-catch
+ * — sin esta toma de reservas viejas, esa fila bloquearía CADA reintento del
+ * mismo dispatchId+seq para siempre con `send_in_progress`.
+ */
+const STALE_RESERVATION_MS = 2 * 60 * 1000;
+
+/**
+ * Dispatch v2 — reserva-primero: el id es DETERMINISTA
+ * (`neaMessageId(org, conv, dispatchId, seq)`), así que un reintento del
+ * mismo turno que ya alcanzó a mandar este texto no lo duplica.
+ *
+ *  1. Los gates de `prepareSend` ya corrieron (los exige el llamador).
+ *  2. Se reserva la fila (`pending`, sin wamid) con `ON CONFLICT DO NOTHING`.
+ *  3. Si ya existía: con wamid → 200 `{messageId, duplicate:true}` SIN tocar
+ *     Graph; sin wamid y RECIENTE (otro intento la está mandando ahora
+ *     mismo) → `send_in_progress`; sin wamid y VIEJA (`STALE_RESERVATION_MS`)
+ *     → se retoma con un UPDATE condicional atómico (ver más abajo).
+ *  4. Se llama a Graph y se completa la fila con el wamid real.
+ *  5. Si Graph falla, se BORRA la reserva — mantiene el invariante "cero
+ *     salientes de IA en `failed`" — y el error sale igual que siempre.
+ */
+async function sendTextIdempotent(
+  input: {
+    conversationId: string;
+    organizationId: string;
+    text: string;
+    dispatchId: string;
+    seq: number;
+  },
+  target: SendTarget
+): Promise<SendResult> {
+  const db = getDb();
+  const id = neaMessageId(input.organizationId, input.conversationId, input.dispatchId, input.seq);
+
+  const reserved = await db
+    .insert(schema.message)
+    .values({
+      id,
+      organizationId: input.organizationId,
+      conversationId: input.conversationId,
+      waMessageId: null,
+      direction: "out",
+      type: "text",
+      text: input.text,
+      status: "pending",
+      aiGenerated: true,
+      origin: "ai",
+    })
+    .onConflictDoNothing()
+    .returning();
+
+  if (reserved.length === 0) {
+    const existingRows = await db
+      .select({ waMessageId: schema.message.waMessageId, createdAt: schema.message.createdAt })
+      .from(schema.message)
+      .where(eq(schema.message.id, id))
+      .limit(1);
+    const existing = existingRows[0];
+    if (existing?.waMessageId) {
+      return { messageId: id, duplicate: true };
+    }
+    if (!existing) {
+      // Se borró entre el conflicto de arriba y esta lectura (otro intento
+      // acaba de fallarle a Graph justo ahora) — el llamador puede
+      // reintentar; no queda fila que retomar en este mismo intento.
+      throw new SendError(
+        "send_in_progress",
+        "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
+      );
+    }
+    const staleCutoff = new Date(Date.now() - STALE_RESERVATION_MS);
+    if (existing.createdAt > staleCutoff) {
+      throw new SendError(
+        "send_in_progress",
+        "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
+      );
+    }
+    // Reserva vieja, sin wamid: solo puede ser una fila muerta. Se retoma con
+    // un UPDATE condicional atómico — la condición (sin wamid Y sigue vieja)
+    // vuelve a evaluarse en el UPDATE, así que si otro proceso la retomó (o
+    // Graph la completó) en el instante entre la lectura de arriba y este
+    // UPDATE, `retaken` sale vacío y no se pisa ese trabajo. `createdAt` se
+    // adelanta a ahora — le da a ESTA toma su propio margen de
+    // `STALE_RESERVATION_MS` antes de que un cuarto intento pueda, a su vez,
+    // retomársela mientras Graph todavía no responde.
+    const retaken = await db
+      .update(schema.message)
+      .set({ text: input.text, createdAt: new Date() })
+      .where(
+        and(
+          eq(schema.message.id, id),
+          isNull(schema.message.waMessageId),
+          lt(schema.message.createdAt, staleCutoff)
+        )
+      )
+      .returning();
+    if (retaken.length === 0) {
+      throw new SendError(
+        "send_in_progress",
+        "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
+      );
+    }
+  }
+
+  const { credentials, recipient } = target;
+  let waMessageId: string;
+  try {
+    waMessageId = target.instagram
+      ? await callInstagramSend(target, input.text)
+      : target.messenger
+        ? await callMessengerSend(target, input.text)
+        : await callGraphSend(credentials!, {
+            messaging_product: "whatsapp",
+            to: recipient,
+            type: "text",
+            text: { body: input.text },
+          });
+  } catch (err) {
+    // La fila reservada NUNCA se persiste como `failed`: se borra. Un
+    // reintento del mismo dispatchId+seq vuelve a reservar y a intentar.
+    await db.delete(schema.message).where(eq(schema.message.id, id));
+    throw err;
+  }
+
+  const status = capabilitiesFor(target.conversation.channel).deliveryReceipts
+    ? "pending"
+    : "sent";
+  const updated = await db
+    .update(schema.message)
+    .set({ waMessageId, status })
+    .where(eq(schema.message.id, id))
+    .returning();
+  const message = updated[0]!;
+
+  await db
+    .update(schema.conversation)
+    .set({ lastMessageAt: new Date(), updatedAt: new Date() })
+    .where(eq(schema.conversation.id, input.conversationId));
+
+  publish(input.organizationId, {
+    type: "message.new",
+    data: { conversationId: input.conversationId, message: serializeMessage(message, null) },
+  });
+
+  return { messageId: id };
 }
 
 /**

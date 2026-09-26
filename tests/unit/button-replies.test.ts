@@ -388,6 +388,7 @@ describe("el hilo pinta las respuestas a botones como texto", () => {
     aiGenerated: false,
     origin: "operator",
     media: null,
+    transcript: null,
     createdAt: "2026-09-25T21:41:06.000Z",
   });
 

@@ -10,6 +10,8 @@ export type EventHandlers = {
     status: string;
     /** Motivo, presente solo cuando status = "failed". */
     error?: string | null;
+    /** Transcripción recién guardada (item 10) — status viaja sin cambiar. */
+    transcript?: string | null;
   }) => void;
   onConversationUpdated?: (data: { conversation: unknown }) => void;
   onLabRun?: (data: {
