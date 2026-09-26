@@ -20,7 +20,7 @@ La regla que hace posible seguir fusionando con upstream para siempre:
 |---|---|
 | Lógica de servidor propia | `src/server/agencia/` |
 | Componentes propios | `src/components/agencia/` |
-| Migraciones propias | `drizzle/9xxx_*.sql` — el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` las nombra `00xx`: renómbrala y ajusta su `tag` en `drizzle/meta/_journal.json`. |
+| Migraciones propias | `drizzle/9xxx_*.sql` y `drizzle/meta/9xxx_snapshot.json`: el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` ya las nombra 9xxx solo; no renombres nada a mano (ver "Migraciones y snapshots"). |
 | Pantallas propias | `/overview`, `/account`, `/api/readiness`, `/api/provision` |
 
 Antes de tocar un archivo de upstream, pregúntate si el cambio cabe en
@@ -50,9 +50,47 @@ git fetch upstream && git merge upstream/main
 ```
 
 Al resolver: gana upstream en el núcleo, gana el fork en la capa de agencia.
-Las migraciones de upstream se toman TAL CUAL (nunca se renumeran: su `when`
-las ordena solo). Después, el gate completo — y `pnpm test:e2e` de verdad, que
-es donde aparecen los fallos silenciosos que el typecheck no ve.
+Las migraciones de upstream conservan su `.sql` y su `tag`, pero no su
+snapshot ni su `when`: ver "Migraciones y snapshots". Después, el gate
+completo — y `pnpm test:e2e` de verdad, que es donde aparecen los fallos
+silenciosos que el typecheck no ve.
+
+### Migraciones y snapshots
+
+`drizzle-kit generate` no lee `_journal.json` para saber contra qué diffear:
+ordena como texto los archivos de `drizzle/meta/` y toma el último. Si ese no
+es el snapshot más nuevo, genera DDL ya aplicado y el contenedor no arranca
+("relation already exists"). Pasó con `0019`: más nueva que `9006`, pero
+antes al ordenar (hoy es `9007`). Las reglas:
+
+- **El fork escribe 9xxx, y solo.** El `idx` de la última entrada del journal
+  vive en el rango 9xxx y drizzle-kit numera lo nuevo con `idx + 1`: el `.sql`
+  y el snapshot nacen 9xxx y quedan últimos.
+- **`pnpm db:generate` se niega con la cadena rota**: antes de generar corre
+  `tests/unit/drizzle-snapshots.test.ts` (también va en `pnpm test`). No
+  edites un `prevId` a mano: la SQL ya salió contra la base equivocada.
+- **El `when` decide qué se aplica.** En las bases que ya existen, el migrador
+  salta EN SILENCIO toda entrada cuyo `when` no supere al último aplicado.
+  Cada entrada nueva va al final y con `when` mayor (la prueba lo exige). Si
+  dos ramas traen migración, la segunda en fusionar borra la suya (`.sql`,
+  snapshot y entrada) y la vuelve a generar sobre `main`; si esa migración ya
+  corrió en alguna base, devuélvele su `when` original para que no se repita.
+- **No uses `drizzle-kit drop`**: busca el snapshot por el prefijo del `tag`,
+  que aquí no siempre coincide. Para deshacer una migración sin aplicar, borra
+  a mano su `.sql`, su snapshot y su entrada.
+- **De upstream se toma la `.sql`, nunca el snapshot**: el suyo describe un
+  esquema sin la capa del fork y choca con esta cadena.
+  1. `git rm -f` de sus `drizzle/meta/00xx_snapshot.json` nuevos; en
+     `_journal.json` quedan solo las entradas del fork.
+  2. Con `package.json` ya resuelto (si no, ni vitest ni pnpm cargan),
+     `pnpm db:generate`: sale un `9xxx_*.sql` con el mismo DDL de upstream y
+     el `9xxx_snapshot.json` que lo absorbe.
+  3. Borra ese `.sql` y pon el `tag` de upstream en su entrada, conservando
+     su `idx` y su `when` (el de upstream suele ser más viejo que lo ya
+     aplicado: con él se saltaría). Si upstream trae varias, una entrada por
+     cada una, con `idx` y `when` creciendo.
+  4. Otro `pnpm db:generate` debe decir "No schema changes", y
+     `node scripts/verify-migraciones.mjs` debe pasar.
 
 ## Stack
 

@@ -20,7 +20,7 @@
     "test:e2e:saas": "ALLOK_SAAS_MODE=true node --env-file=.env scripts/saas-isolation-check.mjs",
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate",
+    "db:generate": "vitest run tests/unit/drizzle-snapshots.test.ts && drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "seed:demo": "esbuild scripts/seed/demo.ts --bundle --platform=node --format=esm --outfile=.tmp-seed-demo.mjs --alias:@=./src --packages=external && node .tmp-seed-demo.mjs"
   },
