@@ -62,6 +62,22 @@ const EVENT_LABEL: Record<string, string> = {
   Purchase: "Venta",
 };
 
+/**
+ * "25 sep, 16:05": fecha y hora juntas, en español y 24 horas — no el
+ * "9/25/2026" que deja toLocaleString() sin locale. No hay una zona horaria
+ * del negocio disponible aquí (esta pantalla no la pide), así que se muestra
+ * en la del navegador de quien mira, igual que el resto del panel.
+ */
+function formatActivityAt(iso: string): string {
+  return new Date(iso).toLocaleString("es-MX", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
 export function AdsClient() {
   const [capi, setCapi] = useState<Capi | null>(null);
   const [stages, setStages] = useState<Stage[]>([]);
@@ -249,7 +265,7 @@ export function AdsClient() {
           <CardTitle>Actividad reciente</CardTitle>
           <CardDescription>
             Lo último que se le reportó a Meta. Si algo no salió, aquí dice por
-            qué — es la forma de saber si esto funciona, sin salir del CRM.
+            qué.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -268,75 +284,92 @@ export function AdsClient() {
               por un anuncio avance de etapa.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="kicker text-left">
-                  <tr>
-                    <th className="py-2 pr-3 font-medium">Evento</th>
-                    <th className="hidden py-2 pr-3 font-medium sm:table-cell">
-                      Contacto
-                    </th>
-                    <th className="py-2 pr-3 font-medium">Estado</th>
-                    <th className="py-2 pr-3 font-medium">Cuándo</th>
-                    <th className="py-2 font-medium">Detalle</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {activity.map((row) => (
-                    <tr key={row.id} className="border-t align-top">
-                      <td className="py-2 pr-3">
+            <>
+              {/* Bajo sm no caben cinco columnas sin recortar el Detalle
+                  (la razón de un fallo u omisión, lo que más importa): cada
+                  fila se apila en vez de forzar scroll horizontal. */}
+              <div className="space-y-2 sm:hidden">
+                {activity.map((row) => (
+                  <div key={row.id} className="rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium">
                         {EVENT_LABEL[row.eventName] ?? row.eventName}
-                        {row.adHeadline ? (
-                          <span className="block text-xs text-muted-foreground">
-                            {row.adHeadline}
-                          </span>
-                        ) : null}
-                        {/* Contacto se repite aquí a 390px, donde la columna
-                            se oculta: no desaparece, solo cambia de sitio. */}
-                        <span className="block text-xs text-muted-foreground sm:hidden">
-                          {row.contactName ?? "—"}
-                        </span>
-                      </td>
-                      <td className="hidden py-2 pr-3 sm:table-cell">
-                        {row.contactName ?? "—"}
-                      </td>
-                      <td className="py-2 pr-3">
-                        <Badge variant={STATUS_VARIANT[row.status]}>
-                          {STATUS_LABEL[row.status]}
-                        </Badge>
-                      </td>
-                      <td className="py-2 pr-3 text-muted-foreground">
-                        {/* Fecha corta en 390px; la hora completa solo cabe
-                            sin envolver desde sm. */}
-                        <span className="sm:hidden">
-                          {new Date(row.at).toLocaleDateString()}
-                        </span>
-                        <span className="hidden whitespace-nowrap sm:inline">
-                          {new Date(row.at).toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="py-2 text-xs text-muted-foreground">
-                        {row.error ? (
-                          <span
-                            className={
-                              row.status === "failed"
-                                ? "text-danger-text"
-                                : undefined
-                            }
-                          >
-                            {row.error}
-                          </span>
-                        ) : row.fbTraceId ? (
-                          `Referencia: ${row.fbTraceId}`
-                        ) : (
-                          "—"
-                        )}
-                      </td>
+                      </span>
+                      <Badge variant={STATUS_VARIANT[row.status]}>
+                        {STATUS_LABEL[row.status]}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {formatActivityAt(row.at)}
+                    </p>
+                    <p
+                      className={`mt-2 text-xs ${
+                        row.status === "failed"
+                          ? "text-danger-text"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {row.error ??
+                        (row.fbTraceId ? `Referencia: ${row.fbTraceId}` : "—")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden overflow-x-auto sm:block">
+                <table className="w-full text-sm">
+                  <thead className="kicker text-left">
+                    <tr>
+                      <th className="py-2 pr-3 font-medium">Evento</th>
+                      <th className="py-2 pr-3 font-medium">Contacto</th>
+                      <th className="py-2 pr-3 font-medium">Estado</th>
+                      <th className="py-2 pr-3 font-medium">Cuándo</th>
+                      <th className="py-2 font-medium">Detalle</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {activity.map((row) => (
+                      <tr key={row.id} className="border-t align-top">
+                        <td className="py-2 pr-3">
+                          {EVENT_LABEL[row.eventName] ?? row.eventName}
+                          {row.adHeadline ? (
+                            <span className="block text-xs text-muted-foreground">
+                              {row.adHeadline}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="py-2 pr-3">{row.contactName ?? "—"}</td>
+                        <td className="py-2 pr-3">
+                          <Badge variant={STATUS_VARIANT[row.status]}>
+                            {STATUS_LABEL[row.status]}
+                          </Badge>
+                        </td>
+                        <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
+                          {formatActivityAt(row.at)}
+                        </td>
+                        <td className="py-2 text-xs text-muted-foreground">
+                          {row.error ? (
+                            <span
+                              className={
+                                row.status === "failed"
+                                  ? "text-danger-text"
+                                  : undefined
+                              }
+                            >
+                              {row.error}
+                            </span>
+                          ) : row.fbTraceId ? (
+                            `Referencia: ${row.fbTraceId}`
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
