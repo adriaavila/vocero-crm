@@ -2,7 +2,31 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import type { RateDto } from "@/lib/analytics";
+import { unitLabel, type RateDto, type UnitLabel } from "@/lib/analytics";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+
+/**
+ * Con la forma de lo que va a llegar (tarjetas + una franja de gráfica), no
+ * un texto centrado: eso es lo que más mueve el layout cuando el dato real
+ * aparece (CLS). Aproximado a propósito — sirve para las cuatro secciones,
+ * no hay una por cada una.
+ */
+function EsqueletoDeSeccion() {
+  return (
+    <div className="space-y-4" aria-hidden>
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="space-y-2 rounded-md border bg-subtle px-3 py-2.5">
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-5 w-12" />
+          </div>
+        ))}
+      </div>
+      <Skeleton className="h-32 w-full" />
+    </div>
+  );
+}
 
 /**
  * 019 — Contenedor de cada bloque de Resultados. Cada sección carga por su
@@ -24,6 +48,7 @@ export function Section({
   right,
   children,
   id,
+  onRetry,
 }: {
   title: string;
   hint?: string;
@@ -36,6 +61,8 @@ export function Section({
   right?: ReactNode;
   children: ReactNode;
   id?: string;
+  /** Sin esto, un error se queda sin salida más que recargar la página entera. */
+  onRetry?: () => void;
 }) {
   return (
     <section
@@ -57,9 +84,16 @@ export function Section({
         )}
       >
         {error ? (
-          <p className="py-6 text-center text-sm text-danger-text">{error}</p>
+          <div role="alert" className="flex flex-col items-center gap-2 py-6 text-center text-sm">
+            <p className="text-danger-text">{error}</p>
+            {onRetry && (
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                Reintentar
+              </Button>
+            )}
+          </div>
         ) : !hasData ? (
-          <p className="py-6 text-center text-sm text-text-3">Calculando…</p>
+          <EsqueletoDeSeccion />
         ) : empty ? (
           <p className="py-6 text-center text-sm text-text-3">
             {emptyText ?? "No hay datos en este periodo."}
@@ -82,7 +116,7 @@ export function Rate({
   className,
 }: {
   rate: RateDto;
-  unit?: string;
+  unit?: UnitLabel;
   className?: string;
 }) {
   if (rate.value === null) {
@@ -94,7 +128,7 @@ export function Rate({
         {rate.value}%
       </span>
       <span className="text-xs text-text-3">
-        de {rate.sample} {unit}
+        de {rate.sample} {unitLabel(unit, rate.sample)}
         {!rate.reliable && " · muestra chica"}
       </span>
     </span>

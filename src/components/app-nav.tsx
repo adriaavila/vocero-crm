@@ -61,8 +61,8 @@ const NAV: NavItem[] = [
   { href: "/lab", label: "Laboratorio", icon: FlaskConical, owner: true },
   // 019 (upstream) — Resultados reemplaza a Analítica: mide lo mismo que le
   // importaba a esa pantalla (y más — origen, ventas, agente) sin la capa de
-  // agencia. `src/server/agencia/analitica.ts` y su cliente NO se borran
-  // (puede volver), pero `/analytics` redirige aquí (ver esa page.tsx).
+  // agencia. La pantalla vieja se borró (ver src/app/(app)/analytics/page.tsx,
+  // que solo redirige aquí).
   { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
 ];
 
@@ -73,8 +73,18 @@ const ALLOK_NAV: NavItem[] = [
   // horario). Sin esta entrada, /agent solo se alcanzaba escribiendo la URL.
   { href: "/agent", label: "Tu agente", icon: Sparkles, owner: true },
   { href: "/lab", label: "Probar allok", icon: FlaskConical, owner: true },
-  { href: "/settings", label: "Configuración", icon: Settings, owner: true },
 ];
+
+// Decisión de Adrian: Configuración va AL FINAL de todo, después de lo Pro
+// (Ventas, Resultados, Agenda, Equipo) — es ajustes, no el destino de nadie.
+// Vive aparte de ALLOK_NAV para que un plan gratis (sin ALLOK_PRO_NAV) siga
+// viéndola última, y no en medio de la nada.
+const CONFIGURACION_ITEM: NavItem = {
+  href: "/settings",
+  label: "Configuración",
+  icon: Settings,
+  owner: true,
+};
 
 const ALLOK_PRO_NAV: NavItem[] = [
   { href: "/pipeline", label: "Ventas", icon: Kanban },
@@ -87,6 +97,20 @@ const ALLOK_PRO_NAV: NavItem[] = [
   { href: "/bookings", label: "Agenda", icon: CalendarDays },
   { href: "/settings/team", label: "Equipo", icon: Users, owner: true },
 ];
+
+/**
+ * El nav allok completo, en el orden que decidió Adrian: Configuración
+ * SIEMPRE al final, incluso sin Pro (donde no hay nada de `ALLOK_PRO_NAV`
+ * que la empuje). Exportada y pura para poder probar el orden sin renderizar
+ * el componente — ver tests/unit/app-nav-order.test.ts.
+ */
+export function buildAllokNav(pro: boolean, agenda: boolean): NavItem[] {
+  return [
+    ...ALLOK_NAV,
+    ...(pro ? ALLOK_PRO_NAV.filter((item) => item.href !== "/bookings" || agenda) : []),
+    CONFIGURACION_ITEM,
+  ];
+}
 
 /** 015 — "Citas" solo existe si esta instancia encendió la agenda. */
 const AGENDA_ITEM: NavItem = {
@@ -171,14 +195,7 @@ export function AppNav({
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const esPropietario = role === "owner";
-  const sourceNav = saasMode
-    ? [
-        ...ALLOK_NAV,
-        ...(saasPlan === "pro"
-          ? ALLOK_PRO_NAV.filter((item) => item.href !== "/bookings" || agenda)
-          : []),
-      ]
-    : NAV;
+  const sourceNav = saasMode ? buildAllokNav(saasPlan === "pro", agenda) : NAV;
   const items = (agenda && !saasMode
     ? [...sourceNav.slice(0, 2), AGENDA_ITEM, ...sourceNav.slice(2)]
     : sourceNav

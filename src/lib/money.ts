@@ -46,24 +46,35 @@ export function sumable(
   return (amount.currency ?? businessCurrency) === businessCurrency;
 }
 
-/** Dinero para mostrar. Recibe centavos porque es como viaja y como se guarda. */
+/**
+ * Dinero para mostrar. Recibe centavos porque es como viaja y como se guarda.
+ *
+ * `compact`: sin los centavos arriba de $10,000 (en la moneda que sea) — en
+ * una tarjeta angosta "$1,234,567.89" se trunca o desborda, y esos centavos
+ * no cambian ninguna decisión a esa escala. Los montos exactos (el diálogo de
+ * carga, por ejemplo) no lo usan.
+ */
 export function formatMoneyCents(
   cents: number | null | undefined,
   currency: string,
-  locale = "es-MX"
+  locale = "es-MX",
+  opts?: { compact?: boolean }
 ): string | null {
   if (cents === null || cents === undefined) return null;
+  const compacto = opts?.compact && Math.abs(cents) >= 1_000_000;
   try {
     return new Intl.NumberFormat(locale, {
       style: "currency",
       currency,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: compacto ? 0 : 2,
+      maximumFractionDigits: compacto ? 0 : 2,
     }).format(cents / 100);
   } catch {
     // Moneda o locale que el runtime no conoce: mejor un número correcto sin
     // símbolo que una pantalla rota.
-    return `${(cents / 100).toFixed(2)} ${currency}`;
+    return compacto
+      ? `${Math.round(cents / 100)} ${currency}`
+      : `${(cents / 100).toFixed(2)} ${currency}`;
   }
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { FunnelStepDto } from "@/lib/analytics";
+import { plural, type FunnelStepDto } from "@/lib/analytics";
 import { Rate } from "./section";
 
 /**
@@ -49,7 +49,7 @@ export function Funnel({ steps }: { steps: FunnelStepDto[] }) {
             {siguiente && step.advanceRate && step.reached > 0 && (
               <p className="mt-1 text-[11px] text-text-3">
                 pasan a {siguiente.name}:{" "}
-                <Rate rate={step.advanceRate} unit="prospectos" className="text-[11px]" />
+                <Rate rate={step.advanceRate} unit={(n) => plural(n, "prospecto", "prospectos")} className="text-[11px]" />
               </p>
             )}
           </li>

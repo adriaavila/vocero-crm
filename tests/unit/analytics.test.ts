@@ -47,12 +47,14 @@ describe("rate", () => {
 describe("delta", () => {
   it("sin base previa es null, no un aumento infinito", () => {
     // De 0 a 8 no es "+800 %": es que antes no había con qué comparar.
-    expect(delta(comparable(8, 0))).toBeNull();
+    const d = delta(comparable(8, 0));
+    expect(d.value).toBeNull();
+    expect(d.reliable).toBe(false);
   });
 
   it("calcula la variación en ambos sentidos", () => {
-    expect(delta(comparable(12, 10))).toBe(20);
-    expect(delta(comparable(8, 10))).toBe(-20);
+    expect(delta(comparable(12, 10))).toMatchObject({ kind: "percent", value: 20, reliable: true });
+    expect(delta(comparable(8, 10))).toMatchObject({ kind: "percent", value: -20, reliable: true });
   });
 });
 

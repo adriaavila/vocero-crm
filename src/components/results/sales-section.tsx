@@ -1,6 +1,6 @@
 "use client";
 
-import type { SalesBlockDto } from "@/lib/analytics";
+import { plural as palabraPlural, type SalesBlockDto } from "@/lib/analytics";
 import { formatMoneyCents } from "@/lib/money";
 import { Funnel } from "./funnel";
 import { Section, Subhead } from "./section";
@@ -8,6 +8,8 @@ import { RateCard, StatCard } from "./stat-card";
 import { TimeBars } from "./time-bars";
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+/** "0 días" no dice nada (¿ya cerró o no hay dato?); "menos de 1 día" sí. */
+const dias = (n: number | null) => (n === null ? "sin datos" : n === 0 ? "menos de 1 día" : plural(n, "día", "días"));
 
 /** 019 — Ventas: los indicadores, la serie, el embudo y las pérdidas. */
 export function SalesSection({
@@ -15,11 +17,13 @@ export function SalesSection({
   loading,
   error,
   currency,
+  onRetry,
 }: {
   data: SalesBlockDto | null;
   loading: boolean;
   error: string | null;
   currency: string;
+  onRetry?: () => void;
 }) {
   const money = (c: number | null) =>
     formatMoneyCents(c, currency, undefined, { compact: true }) ?? "Sin datos";
@@ -30,6 +34,7 @@ export function SalesSection({
       hint="Lo que entró, lo que se cerró y dónde se atoran los tratos."
       loading={loading}
       error={error}
+      onRetry={onRetry}
       hasData={!!data}
       empty={!!data?.empty}
       emptyText="No hay prospectos ni cierres en este periodo. Prueba con un rango más amplio."
@@ -61,7 +66,7 @@ export function SalesSection({
             <RateCard
               label="Tasa de cierre"
               rate={data.kpis.winRate}
-              unit="tratos cerrados"
+              unit={(n) => palabraPlural(n, "trato cerrado", "tratos cerrados")}
             />
             <StatCard
               label="Ticket promedio"
@@ -121,10 +126,10 @@ export function SalesSection({
                         <tr key={t.stageId ?? t.name} className="border-b last:border-0">
                           <td className="py-1.5 pr-2">{t.name}</td>
                           <td className="py-1.5 text-right tabular-nums">
-                            {t.avgDays ?? "—"} días
+                            {dias(t.avgDays)}
                           </td>
                           <td className="w-24 py-1.5 text-right text-xs text-text-3 tabular-nums">
-                            {t.sample} mov.
+                            {palabraPlural(t.sample, "movimiento", "movimientos")}
                           </td>
                         </tr>
                       ))}
@@ -135,7 +140,7 @@ export function SalesSection({
                   <p className="mt-2 text-xs text-text-3">
                     Del primer contacto al cierre:{" "}
                     <strong className="font-semibold text-foreground">
-                      {data.timeToWinDays} días
+                      {dias(data.timeToWinDays)}
                     </strong>{" "}
                     en promedio.
                   </p>

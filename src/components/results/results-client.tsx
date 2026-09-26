@@ -127,7 +127,7 @@ export function ResultsClient({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-6 sm:py-4">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3 sm:px-6 sm:py-4">
         <div className="min-w-0">
           <h2 className="text-[17px] font-bold tracking-tight">Resultados</h2>
           <p className="text-xs text-text-3">
@@ -138,10 +138,10 @@ export function ResultsClient({
       </header>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-6">
-        <SalesSection {...sales} currency={currency} />
-        <AdsSection {...ads} />
-        <BotSection {...bot} agenda={agenda} />
-        <HygieneSection {...hygiene} currency={currency} />
+        <SalesSection {...sales} currency={currency} onRetry={reintentarSales} />
+        <AdsSection {...ads} onRetry={reintentarAds} />
+        <BotSection {...bot} agenda={agenda} onRetry={reintentarBot} />
+        <HygieneSection {...hygiene} currency={currency} onRetry={reintentarHygiene} />
       </div>
     </div>
   );

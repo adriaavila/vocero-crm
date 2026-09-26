@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { AdRowDto, AdsBlockDto, RateDto } from "@/lib/analytics";
+import { plural, type AdRowDto, type AdsBlockDto, type RateDto } from "@/lib/analytics";
 import { etiquetaDeOrigen, titularDeOrigen } from "@/lib/anuncios";
 import { cn } from "@/lib/utils";
 import { MiniaturaDeAnuncio } from "@/components/anuncio-origen";
@@ -25,10 +25,12 @@ export function AdsSection({
   data,
   loading,
   error,
+  onRetry,
 }: {
   data: AdsBlockDto | null;
   loading: boolean;
   error: string | null;
+  onRetry?: () => void;
 }) {
   return (
     <Section
@@ -37,6 +39,7 @@ export function AdsSection({
       hint="Por dónde llegan las conversaciones y qué anuncio trae gente que compra."
       loading={loading}
       error={error}
+      onRetry={onRetry}
       hasData={!!data}
       empty={!!data?.empty}
       emptyText="No empezó ninguna conversación en este periodo."
@@ -52,7 +55,7 @@ export function AdsSection({
             <RateCard
               label="Llegaron por un anuncio"
               rate={data.adShare}
-              unit="conversaciones"
+              unit={(n) => plural(n, "conversación", "conversaciones")}
             />
           </div>
 

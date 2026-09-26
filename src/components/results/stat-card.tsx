@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDownRight, ArrowRight, ArrowUpRight } from "lucide-react";
-import { delta, type Comparable, type RateDto } from "@/lib/analytics";
+import { delta, unitLabel, type Comparable, type RateDto, type UnitLabel } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 /** El marco común de las tarjetas de indicador. */
@@ -35,12 +35,20 @@ export function StatCard({
   inverted?: boolean;
 }) {
   const d = compare ? delta(compare) : null;
-  const mejor = d === null || d === 0 ? null : inverted ? d < 0 : d > 0;
-  const Icon = d === null || d === 0 ? ArrowRight : d > 0 ? ArrowUpRight : ArrowDownRight;
+  // Sin muestra confiable no hay "mejor" ni "peor" que afirmar — ni color, ni
+  // flecha con dirección: sube igual, pero no dice nada por sí sola.
+  const mejor =
+    d === null || d.value === null || d.value === 0 || !d.reliable
+      ? null
+      : inverted
+        ? d.value < 0
+        : d.value > 0;
+  const Icon =
+    d === null || d.value === null || d.value === 0 ? ArrowRight : d.value > 0 ? ArrowUpRight : ArrowDownRight;
 
   return (
     <Tile label={label}>
-      <p className="mt-0.5 truncate text-xl font-semibold">{value}</p>
+      <p className="mt-0.5 break-words text-xl font-semibold tabular-nums">{value}</p>
       {compare && (
         <p
           className={cn(
@@ -49,12 +57,17 @@ export function StatCard({
           )}
         >
           <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-          {d === null ? (
-            <span>sin base previa ({compare.previous})</span>
+          {d === null || d.value === null ? (
+            <span>nada que comparar: el periodo anterior fue 0</span>
+          ) : d.kind === "percent" ? (
+            <span>
+              {d.value > 0 ? "+" : ""}
+              {d.value}% vs. {compare.previous} antes
+            </span>
           ) : (
             <span>
-              {d > 0 ? "+" : ""}
-              {d}% vs. {compare.previous} antes
+              {d.value > 0 ? "+" : ""}
+              {d.value} vs. {compare.previous} antes · muestra chica
             </span>
           )}
         </p>
@@ -72,19 +85,19 @@ export function RateCard({
 }: {
   label: string;
   rate: RateDto;
-  unit: string;
+  unit: UnitLabel;
 }) {
   return (
     <Tile label={label}>
-      <p className="mt-0.5 text-xl font-semibold">
-        {rate.value === null ? "—" : `${rate.value}%`}
+      <p className="mt-0.5 text-xl font-semibold tabular-nums">
+        {rate.value === null ? "Sin datos" : `${rate.value}%`}
       </p>
       <p className="mt-1 text-xs">
         {rate.value === null ? (
           <span className="text-text-3">sin casos en el periodo</span>
         ) : (
           <span className="text-text-3">
-            de {rate.sample} {unit}
+            de {rate.sample} {unitLabel(unit, rate.sample)}
             {!rate.reliable && " · muestra chica"}
           </span>
         )}

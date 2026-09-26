@@ -1,9 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { addDaysISO } from "@/lib/time/slots";
 import { cn } from "@/lib/utils";
 
 export type Range = { from: string; to: string };
+
+const MAX_DAYS = 366;
+
+/** Días de calendario entre dos fechas ISO, inclusivo. */
+function diasEntre(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000
+  ) + 1;
+}
+
+/** "America/Mexico_City" → "Mexico City": el ciudad, sin la ruta IANA completa. */
+function nombreAmigable(tz: string): string {
+  return tz.split("/").pop()?.replace(/_/g, " ") || tz;
+}
 
 /**
  * 019 — Selector de rango. Los atajos cubren casi todas las consultas reales;
@@ -25,6 +40,27 @@ export function RangePicker({
   const atajos = shortcuts(today);
   const activo = atajos.find(
     (a) => a.range.from === value.from && a.range.to === value.to
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  /** Fuera de aquí no hay onChange: mantiene el rango anterior y explica por qué. */
+  function intentar(next: Range) {
+    if (next.to < next.from) {
+      setError("Hasta no puede ser antes de Desde.");
+      return;
+    }
+    if (diasEntre(next.from, next.to) > MAX_DAYS) {
+      setError(`El rango máximo es de ${MAX_DAYS} días.`);
+      return;
+    }
+    setError(null);
+    onChange(next);
+  }
+
+  const inputClase = cn(
+    "h-11 rounded-md border border-input bg-background px-2 text-xs text-foreground sm:h-8",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    error && "border-danger-soft"
   );
 
   return (
@@ -48,26 +84,35 @@ export function RangePicker({
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 text-xs text-text-3">
-        <input
-          type="date"
-          value={value.from}
-          max={value.to}
-          onChange={(e) => e.target.value && onChange({ ...value, from: e.target.value })}
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-          aria-label="Desde"
-        />
-        <span aria-hidden>a</span>
-        <input
-          type="date"
-          value={value.to}
-          min={value.from}
-          onChange={(e) => e.target.value && onChange({ ...value, to: e.target.value })}
-          className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-          aria-label="Hasta"
-        />
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-1.5 text-xs text-text-3">
+          <input
+            type="date"
+            value={value.from}
+            onChange={(e) => e.target.value && intentar({ ...value, from: e.target.value })}
+            className={inputClase}
+            aria-label="Desde"
+            aria-invalid={!!error}
+            aria-describedby={error ? "rango-error" : undefined}
+          />
+          <span aria-hidden>a</span>
+          <input
+            type="date"
+            value={value.to}
+            onChange={(e) => e.target.value && intentar({ ...value, to: e.target.value })}
+            className={inputClase}
+            aria-label="Hasta"
+            aria-invalid={!!error}
+            aria-describedby={error ? "rango-error" : undefined}
+          />
+        </div>
+        {error && (
+          <p id="rango-error" role="alert" className="text-[11px] text-danger-text">
+            {error}
+          </p>
+        )}
       </div>
-      <span className="text-[11px] text-text-3">Días de {timezone}</span>
+      <span className="text-[11px] text-text-3">Días de {nombreAmigable(timezone)}</span>
     </div>
   );
 }

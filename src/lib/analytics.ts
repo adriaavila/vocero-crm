@@ -18,6 +18,21 @@ export type StageKind = StageDto["kind"];
 export const MIN_SAMPLE = 10;
 
 /**
+ * La unidad de "de N `unit`": una palabra fija ("conversaciones") sale mal en
+ * singular ("de 1 conversaciones"). Una función `(n) => …` deja elegir la
+ * forma correcta; una palabra sola sigue sirviendo para las que no cambian
+ * ("con desenlace").
+ */
+export type UnitLabel = string | ((n: number) => string);
+export function unitLabel(unit: UnitLabel, n: number): string {
+  return typeof unit === "function" ? unit(n) : unit;
+}
+/** Atajo para el caso común: singular si n === 1. */
+export function plural(n: number, singular: string, plural: string): string {
+  return n === 1 ? singular : plural;
+}
+
+/**
  * Toda tasa de la pantalla pasa por aquí.
  *
  * Hay más de diez repartidas en cuatro bloques, y cada una es una oportunidad
@@ -51,10 +66,31 @@ export function comparable(current: number, previous: number): Comparable {
   return { current, previous };
 }
 
-/** Variación porcentual; `null` cuando no hay base con la cual comparar. */
-export function delta(c: Comparable): number | null {
-  if (c.previous === 0) return null;
-  return Math.round(((c.current - c.previous) / c.previous) * 100);
+/**
+ * El cambio contra el periodo anterior, tal como se puede CONTAR con él.
+ *
+ * Un "antes" chico (1, 2, 3…) convierte cualquier variación en un porcentaje
+ * absurdo — "+2600%" de 1 a 27 — y lo pinta de verde como si fuera una
+ * tendencia. Debajo de `MIN_SAMPLE`, el cambio se dice en NÚMEROS ("+26"), no
+ * en porcentaje, y sin color: no hay base para llamarlo mejor o peor.
+ */
+export type ComparisonDto = {
+  kind: "percent" | "absolute";
+  /** Puntos de porcentaje, o el cambio absoluto según `kind`. `null` sin base previa. */
+  value: number | null;
+  reliable: boolean;
+};
+
+export function delta(c: Comparable): ComparisonDto {
+  if (c.previous === 0) return { kind: "absolute", value: null, reliable: false };
+  if (c.previous < MIN_SAMPLE) {
+    return { kind: "absolute", value: c.current - c.previous, reliable: false };
+  }
+  return {
+    kind: "percent",
+    value: Math.round(((c.current - c.previous) / c.previous) * 100),
+    reliable: true,
+  };
 }
 
 export type PeriodDto = {

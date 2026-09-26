@@ -1,6 +1,6 @@
 "use client";
 
-import type { BotBlockDto } from "@/lib/analytics";
+import { MIN_SAMPLE, plural, type BotBlockDto } from "@/lib/analytics";
 import { BarChart } from "./bar-chart";
 import { Rate, Section, Subhead } from "./section";
 import { RateCard, StatCard } from "./stat-card";
@@ -15,12 +15,14 @@ export function BotSection({
   loading,
   error,
   agenda,
+  onRetry,
 }: {
   data: BotBlockDto | null;
   loading: boolean;
   error: string | null;
   /** 015 — Sin la bandera AGENDA no se habla de citas en ningún lado. */
   agenda: boolean;
+  onRetry?: () => void;
 }) {
   return (
     <Section
@@ -33,6 +35,7 @@ export function BotSection({
       }
       loading={loading}
       error={error}
+      onRetry={onRetry}
       hasData={!!data}
       empty={!!data?.empty}
       emptyText="Todavía no hay conversaciones en este periodo."
@@ -50,19 +53,19 @@ export function BotSection({
               label="Primera respuesta"
               value={
                 data.firstResponseSeconds === null
-                  ? "—"
+                  ? "Sin datos"
                   : formatSegundos(data.firstResponseSeconds)
               }
               hint={
                 data.firstResponseSample === 0
                   ? "el agente aún no ha contestado a nadie"
-                  : `mediana de ${data.firstResponseSample} conversaciones`
+                  : `mediana de ${data.firstResponseSample} ${plural(data.firstResponseSample, "conversación", "conversaciones")}${data.firstResponseSample < MIN_SAMPLE ? " · muestra chica" : ""}`
               }
             />
             <RateCard
               label="Pasaron a un humano"
               rate={data.handoffRate}
-              unit="conversaciones"
+              unit={(n) => plural(n, "conversación", "conversaciones")}
             />
           </div>
 
@@ -114,7 +117,7 @@ export function BotSection({
               ) : (
                 <>
                   <p className="text-sm">
-                    <Rate rate={data.fichaCoverage} unit="contactos nuevos" />
+                    <Rate rate={data.fichaCoverage} unit={(n) => plural(n, "contacto nuevo", "contactos nuevos")} />
                   </p>
                   <p className="mt-1 text-xs text-text-3">
                     De los contactos que llegaron en este periodo, a cuántos les sacó datos.
