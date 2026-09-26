@@ -219,7 +219,24 @@ try {
     await page.getByRole("button", { name: /^Todas/ }).click();
     await fila(page, ORGANICO).click();
     await page.waitForResponse((res) => res.url().includes("/api/contacts/") && res.ok());
-    await sleep(500);
+    // La respuesta ya llegó, pero React todavía tiene que desmontar la
+    // tarjeta del anuncio anterior (CON_VIDEO) y pintar el panel de Pedro sin
+    // ninguna — un `sleep` fijo es exactamente el que a veces pierde esa
+    // carrera (flaky en CI: "una conversación orgánica no enseña tarjeta"
+    // solo en el pase claro, nunca en el oscuro). Se espera primero a que ya
+    // no quede "con video" en pantalla (la tarjeta vieja se fue de verdad),
+    // y luego a que la tarjeta como elemento quede desmontada, antes de
+    // afirmar que no hay ninguna.
+    await page.waitForFunction(
+      () => !document.body.textContent?.includes("con video"),
+      undefined,
+      { timeout: 10000 }
+    );
+    await page
+      .locator("[data-anuncio-origen]")
+      .first()
+      .waitFor({ state: "detached", timeout: 5000 })
+      .catch(() => {});
     ok("una conversación orgánica no enseña tarjeta", (await page.locator("[data-anuncio-origen]").count()) === 0);
 
     paso = `cajón ${tema} 1440`;
