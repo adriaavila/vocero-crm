@@ -67,11 +67,14 @@ vi.mock("@/server/events/bus", async (importOriginal) => ({
 }));
 vi.mock("@/server/ai/trigger", () => ({ maybeRunAgentTurn }));
 
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { schema } from "@/lib/db";
+import type { MessageDto } from "@/lib/types";
 import { inboundText, processMessagesValue } from "@/server/inbox/ingest";
 import type { WebhookMessage, WebhookValue } from "@/server/inbox/webhook";
 import { isWindowOpen } from "@/server/inbox/window";
-import { isTextType } from "@/components/inbox/helpers";
+import { MessageThread } from "@/components/inbox/message-thread";
 
 const QUICK_REPLY_WEBHOOK = {
   object: "whatsapp_business_account",
@@ -231,6 +234,49 @@ const PRODUCT_WEBHOOK = {
   ],
 };
 
+/**
+ * Respuesta de un WhatsApp Flow (`nfm_reply`): la estructura de la guía de
+ * webhooks de Flows de Meta, con valores concretos en lugar de placeholders.
+ */
+const FLOW_REPLY_WEBHOOK = {
+  object: "whatsapp_business_account",
+  entry: [
+    {
+      id: "102290129340398",
+      changes: [
+        {
+          value: {
+            messaging_product: "whatsapp",
+            metadata: {
+              display_phone_number: "15550783881",
+              phone_number_id: "106540352242922",
+            },
+            contacts: [{ profile: { name: "Sheena Nelson" }, wa_id: "16505551234" }],
+            messages: [
+              {
+                context: { from: "16315558151", id: "gBGGEiRVVgBPAgm7FUgc73noXjo" },
+                from: "16505551234",
+                id: "wamid.flow.response.1",
+                type: "interactive",
+                interactive: {
+                  type: "nfm_reply",
+                  nfm_reply: {
+                    name: "flow",
+                    body: "Sent",
+                    response_json: '{"flow_token": "tok_1", "optional_param1": "a"}',
+                  },
+                },
+                timestamp: "1750025136",
+              },
+            ],
+          },
+          field: "messages",
+        },
+      ],
+    },
+  ],
+};
+
 type Webhook = { entry: { changes: { value: WebhookValue }[] }[] };
 const valueOf = (webhook: Webhook): WebhookValue => webhook.entry[0]!.changes[0]!.value;
 const messageOf = (webhook: Webhook): WebhookMessage => valueOf(webhook).messages![0]!;
@@ -260,8 +306,9 @@ describe("inboundText: texto legible de una respuesta a botón", () => {
     ).toBe("Mañana");
   });
 
-  it("interactive sin respuesta legible (producto) → null", () => {
+  it("interactive sin respuesta legible (producto, Flow) → null", () => {
     expect(inboundText(messageOf(PRODUCT_WEBHOOK))).toBeNull();
+    expect(inboundText(messageOf(FLOW_REPLY_WEBHOOK))).toBeNull();
   });
 
   it("texto y adjuntos siguen igual", () => {
@@ -300,8 +347,9 @@ describe("processMessagesValue: una respuesta a botón es un entrante real", () 
       // Ventana de 24 h: cuenta desde el tap, igual que un texto.
       const sentAt = new Date(Number(incoming.timestamp) * 1000);
       const conversation = rowsOf(schema.conversation)[0]!;
-      expect(conversation.lastInboundAt).toEqual(sentAt);
-      expect(isWindowOpen(sentAt, new Date(sentAt.getTime() + 60_000))).toBe(true);
+      const lastInboundAt = conversation.lastInboundAt as Date;
+      expect(lastInboundAt).toEqual(sentAt);
+      expect(isWindowOpen(lastInboundAt, new Date(sentAt.getTime() + 60_000))).toBe(true);
 
       // Aparece en el inbox en vivo y dispara al agente (Nea o Rei).
       expect(publish).toHaveBeenCalledWith(
@@ -317,8 +365,11 @@ describe("processMessagesValue: una respuesta a botón es un entrante real", () 
     }
   );
 
-  it("un interactive sin respuesta legible (producto) se sigue ignorando", async () => {
-    await processMessagesValue(valueOf(PRODUCT_WEBHOOK));
+  it.each([
+    ["producto", PRODUCT_WEBHOOK],
+    ["Flow", FLOW_REPLY_WEBHOOK],
+  ] as const)("un interactive sin respuesta legible (%s) se sigue ignorando", async (_, webhook) => {
+    await processMessagesValue(valueOf(webhook));
 
     expect(rowsOf(schema.message)).toEqual([]);
     expect(maybeRunAgentTurn).not.toHaveBeenCalled();
@@ -326,10 +377,33 @@ describe("processMessagesValue: una respuesta a botón es un entrante real", () 
 });
 
 describe("el hilo pinta las respuestas a botones como texto", () => {
-  it("button e interactive se leen como texto; los adjuntos no", () => {
-    expect(isTextType("button")).toBe(true);
-    expect(isTextType("interactive")).toBe(true);
-    expect(isTextType("text")).toBe(true);
-    expect(isTextType("image")).toBe(false);
+  const entrante = (type: string, text: string): MessageDto => ({
+    id: `msg_${type}`,
+    conversationId: "cv_1",
+    direction: "in",
+    type,
+    text,
+    status: "delivered",
+    error: null,
+    aiGenerated: false,
+    origin: "operator",
+    media: null,
+    createdAt: "2026-09-25T21:41:06.000Z",
+  });
+
+  it("button e interactive salen como burbuja de texto, no como adjunto", () => {
+    const html = renderToStaticMarkup(
+      createElement(MessageThread, {
+        messages: [
+          entrante("button", "Sí, me interesa"),
+          entrante("interactive", "Martes 10:00\nValoración gratuita · 45 min"),
+        ],
+      })
+    );
+
+    expect(html).toContain("Sí, me interesa");
+    expect(html).toContain("Martes 10:00\nValoración gratuita · 45 min");
+    // El camino de adjuntos pinta la etiqueta "Contenido" con un clip.
+    expect(html).not.toContain("Contenido");
   });
 });

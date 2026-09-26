@@ -1091,6 +1091,49 @@ async function main() {
     JSON.stringify(echoImg?.media)
   );
 
+  // Tocar un botón es un mensaje real del cliente: entra como texto y abre la
+  // ventana. wamid único por corrida: con uno fijo, una re-corrida días
+  // después encontraría la ventana ya cerrada.
+  console.log("\n== respuestas a botones (plantilla y lista) ==");
+  const btnRun = Date.now();
+  const tapBtn = (body) =>
+    api("/api/dev/wa-mock/inbound", {
+      method: "POST",
+      body: JSON.stringify({ phoneNumberId: PN, from: "5215577001100", name: "Lead Botones", ...body }),
+    });
+  await tapBtn({ type: "button", text: "Sí, me interesa", waMessageId: `wamid.e2e.btn.quick.${btnRun}` });
+  await sleep(800);
+  const convBtn = ((await api("/api/conversations")).json?.conversations ?? []).find(
+    (c) => c.contact.name === "Lead Botones"
+  );
+  ok("el tap en una respuesta rápida abre la ventana de 24 h", convBtn?.windowOpen === true, JSON.stringify(convBtn));
+  ok("la bandeja muestra la etiqueta del botón", convBtn?.preview === "Sí, me interesa", convBtn?.preview);
+
+  await tapBtn({
+    type: "interactive",
+    text: "Martes 10:00",
+    description: "Valoración gratuita · 45 min",
+    waMessageId: `wamid.e2e.btn.list.${btnRun}`,
+  });
+  await sleep(800);
+  const msgsBtn = (await api(`/api/conversations/${convBtn?.id}/messages`)).json?.messages ?? [];
+  const tapsBtn = JSON.stringify(msgsBtn.map((m) => [m.direction, m.type, m.text]));
+  ok(
+    "el tap entra como mensaje del cliente con su etiqueta",
+    msgsBtn.some((m) => m.direction === "in" && m.type === "button" && m.text === "Sí, me interesa"),
+    tapsBtn
+  );
+  ok(
+    "la fila de lista entra con título y descripción",
+    msgsBtn.some(
+      (m) =>
+        m.direction === "in" &&
+        m.type === "interactive" &&
+        m.text === "Martes 10:00\nValoración gratuita · 45 min"
+    ),
+    tapsBtn
+  );
+
   await agendaChecks();
   await atribucionChecks();
   await anuncioDeOrigenChecks();

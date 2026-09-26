@@ -76,3 +76,17 @@ no se abría.
 16. **Reconexión**: (cubierto por diseño: EventSource reconecta y el cliente
     refetch-ea con el evento `open`; verificación funcional en el checkpoint
     de compose).
+
+## Respuestas a botones
+
+Automatizado en `scripts/e2e-selftest.mjs`. Tocar un botón es un mensaje real
+del cliente: antes la ingesta lo descartaba y el lead quedaba sin respuesta.
+
+17. **Respuesta rápida de plantilla**: `POST /api/dev/wa-mock/inbound`
+    `{ phoneNumberId, from, name: "Lead Botones", type: "button", text: "Sí, me interesa" }`.
+    ✅ La conversación aparece con la etiqueta como vista previa y la ventana
+    de 24 h abierta.
+    ✅ En el hilo se ve como burbuja de texto, no como adjunto.
+18. **Fila de lista**: mismo lead, `type: "interactive"`, `text: "Martes 10:00"`,
+    `description: "Valoración gratuita · 45 min"`.
+    ✅ Entra con título y descripción, en dos renglones.

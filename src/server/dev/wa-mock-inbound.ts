@@ -41,10 +41,24 @@ const MOCK_BINARY_TYPES = new Set(["image", "video", "audio", "document", "stick
 function applyMockContent(
   message: Record<string, unknown>,
   type: string,
-  input: { text?: string } & MockMediaInput
+  input: { text?: string; description?: string } & MockMediaInput
 ): void {
   if (type === "text") {
     message.text = { body: input.text ?? "hola" };
+  } else if (type === "button") {
+    // Tap en una respuesta rápida de plantilla; como en el ejemplo de Meta,
+    // el payload repite la etiqueta.
+    const label = input.text ?? "Sí, me interesa";
+    message.button = { payload: label, text: label };
+  } else if (type === "interactive") {
+    // Con descripción, fila de lista; sin ella, botón de respuesta.
+    const title = input.text ?? "Sí";
+    message.interactive = input.description
+      ? {
+          type: "list_reply",
+          list_reply: { id: `row_${nextN()}`, title, description: input.description },
+        }
+      : { type: "button_reply", button_reply: { id: `btn_${nextN()}`, title } };
   } else if (type === "location") {
     message.location = input.location ?? {
       latitude: 21.019,
@@ -87,7 +101,10 @@ export function buildInboundPayload(input: {
   fromUserId?: string;
   name?: string;
   type?: string;
+  /** En `button`/`interactive`, la etiqueta que el cliente tocó. */
   text?: string;
+  /** Solo `interactive`: descripción de la fila de lista (sin ella, botón). */
+  description?: string;
   waMessageId?: string;
   timestamp?: number;
 } & MockMediaInput &
