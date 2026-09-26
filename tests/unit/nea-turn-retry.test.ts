@@ -376,6 +376,26 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(sqlText.toLowerCase()).toContain("coalesce");
   });
 
+  it("chat pausado y Nea calla (action silent) → NO avanza el cursor: lo pendiente se contesta al encender la IA", async () => {
+    pushGates({ ...CONVERSATION, aiEnabled: false });
+    pushAttempt();
+    dispatchToNea.mockResolvedValue({ kind: "ok", body: { ok: true, action: "silent" } });
+
+    await runAgentTurn("cv_1");
+
+    expect(updates.find((u) => "agentCursorAt" in u.values)).toBeUndefined();
+  });
+
+  it("chat activo y Nea calla (action silent) → SÍ avanza el cursor", async () => {
+    pushGates();
+    pushAttempt();
+    dispatchToNea.mockResolvedValue({ kind: "ok", body: { ok: true, action: "silent" } });
+
+    await runAgentTurn("cv_1");
+
+    expect(updates.find((u) => "agentCursorAt" in u.values)).toBeDefined();
+  });
+
   it("fix-27b item 2: el pendiente se cortó en el límite (10) → leftover:true, aunque el intento haya sido 2xx en el primero", async () => {
     buildNeaTurnSnapshot.mockResolvedValueOnce({
       ...snapshotWith(),
