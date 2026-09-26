@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import postgres from "postgres";
 // Crea sus negocios por el registro público: en modo SaaS eso sólo pasa con
 // WA_MOCK_ENABLED=true en `next dev` (el autoservicio está apagado).
 
@@ -21,6 +22,24 @@ function check(label, condition) {
 async function json(response) {
   return response.json().catch(() => null);
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Igual que en los demás guiones: espera a que algo ocurra en vez de dormir a ciegas. */
+async function hasta(cond, ms = 20000, paso = 500) {
+  const fin = Date.now() + ms;
+  for (;;) {
+    if (await cond()) return true;
+    if (Date.now() > fin) return false;
+    await sleep(paso);
+  }
+}
+
+/**
+ * Solo para lo que un webhook no puede fabricar: conceder un plan (aquí, no
+ * hay Stripe de mentiras que lo confirme). Mismo trato que
+ * scripts/e2e-resultados.mjs para lo suyo.
+ */
+const sql = postgres(process.env.DATABASE_URL, { max: 1, onnotice: () => {} });
 
 const browser = await chromium.launch();
 try {
@@ -104,6 +123,97 @@ try {
   });
   check("recuperar la conexión tampoco esquiva el plan", rescate.status() === 402);
 
+  // 018/028 — El `source_id` de Meta no es del CRM: dos negocios sin ninguna
+  // relación pueden compartir el mismo (o inventarlo igual en una prueba). La
+  // fila y la imagen del creativo son de quien la capturó — nunca de la otra
+  // organización, aunque las dos pidan la misma. Aquí sí hace falta un plan
+  // activo (para conectar WhatsApp), así que se concede a mano — ningún
+  // webhook de Stripe de mentiras lo va a confirmar.
+  await sql`
+    update organization
+    set metadata = (coalesce(metadata::jsonb, '{}'::jsonb) || '{"allok":{"billing":{"status":"active"}}}'::jsonb)::text
+    where name in ('Negocio Alfa', 'Negocio Beta')
+  `;
+  for (const [context, tenantHost, pn, wabaId] of [
+    [alpha, alphaHost, "PN-ISO-ALFA", "WABA-ISO-ALFA"],
+    [beta, betaHost, "PN-ISO-BETA", "WABA-ISO-BETA"],
+  ]) {
+    const conn = await context.request.put(`${base}/api/settings/whatsapp`, {
+      headers: { ...headers(tenantHost), "content-type": "application/json" },
+      data: { wabaId, phoneNumberId: pn, token: `token-${pn}` },
+    });
+    check(`${wabaId} conecta su WhatsApp para la prueba de aislamiento`, conn.ok());
+  }
+
+  const metaMockOrigin = process.env.META_GRAPH_BASE_URL
+    ? new URL(process.env.META_GRAPH_BASE_URL).origin
+    : base;
+  const isoSourceId = "iso-shared-source-1";
+  const isoReferral = {
+    source_id: isoSourceId,
+    source_type: "ad",
+    headline: "Mismo anuncio, dos negocios",
+    media_type: "image",
+    // A PROPÓSITO la misma ruta de creativo para las dos: si `imagenExistente`
+    // no filtrara por organización, la segunda encontraría (y reusaría) el
+    // adjunto de la primera en vez de bajar el suyo.
+    image_url: `${metaMockOrigin}/api/dev/wa-mock/media-file/iso-creativo-compartido`,
+  };
+  for (const [pn, from] of [
+    ["PN-ISO-ALFA", "50000000001"],
+    ["PN-ISO-BETA", "50000000002"],
+  ]) {
+    const inbound = await alpha.request.post(`${base}/api/dev/wa-mock/inbound`, {
+      data: {
+        phoneNumberId: pn,
+        from,
+        name: "Prospecto aislamiento",
+        text: "Hola, vi su anuncio",
+        waMessageId: `wamid.iso.${pn}`,
+        referral: isoReferral,
+      },
+    });
+    check(`el webhook acepta el inbound compartido (${pn})`, inbound.ok());
+  }
+
+  async function anuncioDe(context, tenantHost, phone) {
+    let detalle = null;
+    await hasta(async () => {
+      const convs = await json(
+        await context.request.get(`${base}/api/conversations`, { headers: headers(tenantHost) })
+      );
+      const conv = convs?.conversations?.find((c) => c.contact.phone === phone);
+      if (!conv) return false;
+      detalle = await json(
+        await context.request.get(`${base}/api/contacts/${conv.contact.id}`, {
+          headers: headers(tenantHost),
+        })
+      );
+      return !!detalle?.anuncio?.imageAssetId;
+    });
+    return detalle?.anuncio ?? null;
+  }
+  const alphaAnuncio = await anuncioDe(alpha, alphaHost, "50000000001");
+  const betaAnuncio = await anuncioDe(beta, betaHost, "50000000002");
+  check(
+    "las dos organizaciones capturan el mismo source_id",
+    alphaAnuncio?.sourceId === isoSourceId && betaAnuncio?.sourceId === isoSourceId
+  );
+  check(
+    "cada una bajó y guardó SU PROPIA imagen, no la de la otra",
+    !!alphaAnuncio?.imageAssetId &&
+      !!betaAnuncio?.imageAssetId &&
+      alphaAnuncio.imageAssetId !== betaAnuncio.imageAssetId
+  );
+  const crossAssetFetch = await beta.request.get(`${base}/api/media/${alphaAnuncio?.imageAssetId}`, {
+    headers: headers(betaHost),
+    maxRedirects: 0,
+  });
+  check(
+    "y Beta no puede pedir el adjunto de Alfa aunque sepa su id",
+    crossAssetFetch.status() === 401 || crossAssetFetch.status() === 404
+  );
+
   const crossTenant = await alpha.request.get(`${base}/api/overview`, {
     headers: headers(betaHost),
     maxRedirects: 0,
@@ -168,6 +278,7 @@ try {
   check("el host legacy sigue accesible", legacy.status() === 200);
 } finally {
   await browser.close();
+  await sql.end();
 }
 
 const failed = checks.filter((value) => !value).length;
