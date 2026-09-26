@@ -46,3 +46,4 @@ Thumbs.db
 output/
 scratch/
 .playwright-cli/
+tmp-screens/
