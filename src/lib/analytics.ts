@@ -303,6 +303,120 @@ export type HygieneBlockDto = {
   clean: boolean;
 };
 
+/* ── Gasto de anuncios (fork — Cloud lo tiene, upstream no) ─────── */
+
+/**
+ * Centavos por unidad de un conteo (prospecto, cliente…), con su muestra —
+ * mismo principio que `RateDto`: **la UI no divide**, y nunca enseña un
+ * número de dinero sin decir sobre cuántos casos sale.
+ */
+export type MoneyPerUnitDto = {
+  /** `null` sin denominador (cero prospectos o clientes en la fuente). */
+  cents: number | null;
+  sample: number;
+  reliable: boolean;
+};
+
+export function moneyPerUnit(totalCents: number, count: number): MoneyPerUnitDto {
+  if (count <= 0) return { cents: null, sample: 0, reliable: false };
+  return {
+    cents: Math.round(totalCents / count),
+    sample: count,
+    reliable: count >= MIN_SAMPLE,
+  };
+}
+
+/**
+ * Cuánto volvió por lo gastado, como múltiplo (2.5 = "2.5x"): la convención
+ * de Meta Ads para ROAS, no un porcentaje que se confunda con una tasa de
+ * cierre. La muestra es cuántos tratos ganados hay detrás del dinero, no los
+ * centavos gastados — eso es lo que decide si el número es firme o anécdota.
+ */
+export type AdReturnDto = {
+  /** `null` sin gasto (nada que dividir). */
+  multiple: number | null;
+  sample: number;
+  reliable: boolean;
+};
+
+export function adReturn(
+  wonCents: number,
+  spendCents: number,
+  wonCount: number
+): AdReturnDto {
+  if (spendCents <= 0) return { multiple: null, sample: 0, reliable: false };
+  const crudo = wonCents / spendCents;
+  // Bajo 1x (todavía no se recupera el gasto) un decimal solo distingue
+  // "0.3x" de "0.4x" — con dos, 0.35x dice si falta poco o falta mucho.
+  const factor = crudo < 1 ? 100 : 10;
+  return {
+    multiple: Math.round(crudo * factor) / factor,
+    sample: wonCount,
+    reliable: wonCount >= MIN_SAMPLE,
+  };
+}
+
+export type AdSpendEntryDto = {
+  id: string;
+  source: SourceValue;
+  periodStart: string;
+  periodEnd: string;
+  amountCents: number;
+  currency: string;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export type AdSpendSourceSummaryDto = {
+  source: SourceValue;
+  label: string;
+  spendCents: number;
+  prospects: number;
+  costPerProspect: MoneyPerUnitDto;
+  customers: number;
+  costPerCustomer: MoneyPerUnitDto;
+  wonCents: number;
+  return: AdReturnDto;
+};
+
+export type AdSpendSummaryDto = {
+  period: PeriodDto;
+  totalSpendCents: number;
+  costPerProspect: MoneyPerUnitDto;
+  costPerCustomer: MoneyPerUnitDto;
+  return: AdReturnDto;
+  bySource: AdSpendSourceSummaryDto[];
+  /** true = ninguna carga de gasto toca este periodo, por ninguna fuente. */
+  empty: boolean;
+  /**
+   * true = al menos un trato que cuenta como "cliente" en el denominador
+   * ganó sin monto capturado. Ese cliente SÍ divide el costo (bajándolo) pero
+   * NO suma al retorno (que solo cuenta dinero real) — el retorno queda
+   * entendido de menos, no de más, así que no se esconde, se explica.
+   */
+  hasWonWithoutAmount: boolean;
+  /**
+   * true = hay cargas de gasto en este periodo en una moneda distinta a la
+   * del negocio, que este resumen no puede sumar (no hay tipo de cambio) y
+   * por eso quedan fuera de todo lo de arriba.
+   */
+  hasOtherCurrencySpend: boolean;
+  /**
+   * true = al menos un trato ganado (de una fuente con gasto) tiene un monto
+   * capturado en OTRA moneda. Sin tipo de cambio no se puede sumar al
+   * retorno, así que queda fuera de todo lo de arriba — el retorno queda
+   * entendido de menos, no de más.
+   */
+  hasWonOtherCurrency: boolean;
+};
+
+/** Respuesta de `/api/analytics/spend`: todas las cargas + el resumen del periodo. */
+export type AdSpendListDto = {
+  entries: AdSpendEntryDto[];
+  summary: AdSpendSummaryDto;
+};
+
 /* ── Etiquetas ──────────────────────────────────────────────────── */
 
 /** Mismas palabras que la ficha del contacto y el panel de la bandeja. */

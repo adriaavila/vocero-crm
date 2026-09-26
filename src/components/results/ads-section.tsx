@@ -1,21 +1,41 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { plural, type AdRowDto, type AdsBlockDto, type RateDto } from "@/lib/analytics";
+import {
+  plural,
+  type AdRowDto,
+  type AdSpendEntryDto,
+  type AdSpendListDto,
+  type AdSpendSummaryDto,
+  type AdsBlockDto,
+  type RateDto,
+} from "@/lib/analytics";
 import { etiquetaDeOrigen, titularDeOrigen } from "@/lib/anuncios";
+import { formatMoneyCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { MiniaturaDeAnuncio } from "@/components/anuncio-origen";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast-provider";
 import { Section, Subhead } from "./section";
 import { RateCard, StatCard } from "./stat-card";
+import { AdSpendDialog, FUENTES } from "./ad-spend-dialog";
+
+/** Ventana para deshacer un borrado antes de que sea de verdad al servidor. */
+const UNDO_MS = 5000;
 
 type Conteos = { conversations: number; leads: number; won: number; winRate: RateDto };
 
 /**
- * 019 — De dónde llegan: por origen y por anuncio, en conteos.
+ * 019 (upstream) — De dónde llegan: por origen y por anuncio, en conteos.
+ * Sin gasto, costo ni retorno AHÍ (decisión de Kevin, spec 019 D1-D2): lo que
+ * se sabe de cada anuncio es lo que Meta manda en el `referral`, y contar no
+ * depende de ningún tercero.
  *
- * Sin gasto, costo ni retorno (decisión del dueño): lo que se sabe de cada
- * anuncio es lo que Meta manda en el `referral` del webhook, que 018 ya
- * guarda. Contar no depende de ningún tercero.
+ * Fork — el gasto SÍ existe aquí (Cloud lo tiene, el raíz open source no):
+ * "Cargar gasto" + 4 tarjetas, siempre visibles aunque el periodo no tenga
+ * ninguna conversación todavía (por eso viven fuera del `empty` de abajo).
+ * Por FUENTE y periodo, nunca por anuncio: ver la nota al pie de la sección.
  *
  * En el teléfono cada fila es una tarjeta con sus cuatro números a la vista:
  * una tabla de cinco columnas ahí esconde justo los números detrás de un
@@ -26,58 +46,182 @@ export function AdsSection({
   loading,
   error,
   onRetry,
+  spend,
+  currency,
+  today,
+  onSpendChanged,
 }: {
   data: AdsBlockDto | null;
   loading: boolean;
   error: string | null;
   onRetry?: () => void;
+  spend: { data: AdSpendListDto | null; loading: boolean; error: string | null };
+  currency: string;
+  /** Hoy en la zona del negocio (`YYYY-MM-DD`) — el diálogo de gasto lo usa
+   * para su rango por defecto. */
+  today: string;
+  onSpendChanged: () => void;
 }) {
+  const [dialogoAbierto, setDialogoAbierto] = useState(false);
+  const notify = useToast();
+
+  // El ciclo de "borrado pendiente" vive AQUÍ, no en el diálogo: el diálogo
+  // se desmonta al cerrarse (`{dialogoAbierto && <AdSpendDialog .../>}`), y
+  // si eso pasara dentro de la ventana de "Deshacer" el estado de qué está
+  // pendiente se perdería con él. `AdsSection` no se desmonta con el rango,
+  // así que sobrevive a que el diálogo se cierre y reabra.
+  const [pendientesDeBorrar, setPendientesDeBorrar] = useState<Set<string>>(new Set());
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Si la pestaña se cierra o navega antes de que el timer dispare, el
+  // borrado real nunca se manda — `keepalive` deja que el navegador complete
+  // la petición aunque la página ya se esté yendo, en vez de perder cargas
+  // que el dueño creyó borradas.
+  useEffect(() => {
+    const flush = () => {
+      for (const [id] of timers.current) {
+        void fetch(`/api/analytics/spend?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+
+  /**
+   * Borrado optimista: desaparece de la lista AHORA (se siente instantáneo),
+   * pero el DELETE de verdad espera `UNDO_MS` — tiempo para arrepentirse
+   * antes de que sea definitivo. "Deshacer" solo cancela ese timer local; no
+   * hay que deshacer nada en el servidor porque nunca se le pidió el borrado.
+   */
+  function borrar(entrada: AdSpendEntryDto) {
+    setPendientesDeBorrar((prev) => new Set(prev).add(entrada.id));
+    const timer = setTimeout(async () => {
+      timers.current.delete(entrada.id);
+      const res = await fetch(`/api/analytics/spend?id=${encodeURIComponent(entrada.id)}`, {
+        method: "DELETE",
+      }).catch(() => null);
+      // 404 cuenta como éxito: si ya no existe (otra pestaña la borró, o un
+      // reintento tras un `keepalive` que sí llegó), el resultado que el
+      // dueño quería ya es un hecho — no hay nada que reportar como error.
+      if (!res?.ok && res?.status !== 404) {
+        setPendientesDeBorrar((prev) => {
+          const next = new Set(prev);
+          next.delete(entrada.id);
+          return next;
+        });
+        notify("No se pudo borrar esa carga.", "error");
+        return;
+      }
+      onSpendChanged();
+    }, UNDO_MS);
+    timers.current.set(entrada.id, timer);
+
+    const etiqueta = FUENTES.find((f) => f.value === entrada.source)?.label ?? entrada.source;
+    notify(`Carga de ${etiqueta} borrada.`, "success", {
+      label: "Deshacer",
+      onClick: () => {
+        const t = timers.current.get(entrada.id);
+        if (t) {
+          clearTimeout(t);
+          timers.current.delete(entrada.id);
+        }
+        setPendientesDeBorrar((prev) => {
+          const next = new Set(prev);
+          next.delete(entrada.id);
+          return next;
+        });
+      },
+    });
+  }
+
+  const entradasVisibles = (spend.data?.entries ?? []).filter(
+    (e) => !pendientesDeBorrar.has(e.id)
+  );
+
   return (
-    <Section
+    <>
+      <Section
       id="origen"
       title="Origen y anuncios"
       hint="Por dónde llegan las conversaciones y qué anuncio trae gente que compra."
+      right={
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-11 sm:h-8"
+          onClick={() => setDialogoAbierto(true)}
+        >
+          Cargar gasto
+        </Button>
+      }
       loading={loading}
       error={error}
       onRetry={onRetry}
       hasData={!!data}
-      empty={!!data?.empty}
-      emptyText="No empezó ninguna conversación en este periodo."
+      // Siempre pinta `children`: el gasto no depende de que haya
+      // conversaciones en el periodo. El aviso de "sin conversaciones" se
+      // enseña DENTRO, y el bloque de gasto sigue abajo.
+      empty={false}
     >
       {data && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-xl">
-            <StatCard
-              label="Conversaciones nuevas"
-              value={String(data.conversations.current)}
-              compare={data.conversations}
-            />
-            <RateCard
-              label="Llegaron por un anuncio"
-              rate={data.adShare}
-              unit={(n) => plural(n, "conversación", "conversaciones")}
-            />
-          </div>
-
           <div>
-            <Subhead>Por origen</Subhead>
-            <Filas
-              primera="Origen"
-              filas={data.sources.map((s) => ({
-                key: s.value,
-                titulo: <span className="font-medium">{s.label}</span>,
-                conteos: s,
-              }))}
-            />
-          </div>
-
-          <div>
-            <Subhead>Por anuncio</Subhead>
-            {data.ads.length === 0 ? (
-              <p className="text-sm text-text-3">
-                Ninguna conversación de este periodo llegó por un anuncio de Click a WhatsApp.
-              </p>
+            <Subhead>Gasto y retorno</Subhead>
+            {spend.error ? (
+              <p className="text-sm text-danger-text">{spend.error}</p>
+            ) : !spend.data ? (
+              <p className="text-sm text-text-3">Calculando…</p>
             ) : (
+              <GastoCards resumen={spend.data.summary} currency={currency} />
+            )}
+            <p className="mt-2 text-[11px] text-text-3">
+              El costo y el retorno son del total, no por anuncio: el gasto se carga por
+              fuente y periodo, y repartirlo entre creativos sería inventar.
+            </p>
+          </div>
+
+          {data.empty ? (
+            <p className="border-t pt-4 text-sm text-text-3">
+              No empezó ninguna conversación en este periodo.
+            </p>
+          ) : (
+            <div className="space-y-6 border-t pt-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:max-w-xl">
+                <StatCard
+                  label="Conversaciones nuevas"
+                  value={String(data.conversations.current)}
+                  compare={data.conversations}
+                />
+                <RateCard
+                  label="Llegaron por un anuncio"
+                  rate={data.adShare}
+                  unit={(n) => plural(n, "conversación", "conversaciones")}
+                />
+              </div>
+
+              <div>
+                <Subhead>Por origen</Subhead>
+                <Filas
+                  primera="Origen"
+                  filas={data.sources.map((s) => ({
+                    key: s.value,
+                    titulo: <span className="font-medium">{s.label}</span>,
+                    conteos: s,
+                  }))}
+                />
+              </div>
+
+              <div>
+                <Subhead>Por anuncio</Subhead>
+                {data.ads.length === 0 ? (
+                  <p className="text-sm text-text-3">
+                    Ninguna conversación de este periodo llegó por un anuncio de Click a
+                    WhatsApp.
+                  </p>
+                ) : (
               <Filas
                 primera="Anuncio"
                 filas={data.ads.map((a) => ({
@@ -90,20 +234,117 @@ export function AdsSection({
             )}
           </div>
 
-          <div className="space-y-1 text-[11px] text-text-3">
-            <p>
-              «Ventas» son los prospectos del periodo que hoy están en Ganado; «Cierre» es
-              ventas entre prospectos, atenuado con menos de 10 (muestra chica).
-            </p>
-            <p>
-              El origen es el que capturaste en el contacto; si no hay, se deduce «Anuncio»
-              cuando Meta dijo de qué anuncio llegó. Aquí solo se cuenta: el costo por
-              prospecto y el retorno necesitarían el gasto de cada anuncio.
-            </p>
-          </div>
+              <div className="space-y-1 text-[11px] text-text-3">
+                <p>
+                  «Ventas» son los prospectos del periodo que hoy están en Ganado; «Cierre»
+                  es ventas entre prospectos, atenuado con menos de 10 (muestra chica).
+                </p>
+                <p>
+                  El origen es el que capturaste en el contacto; si no hay, se deduce
+                  «Anuncio» cuando Meta dijo de qué anuncio llegó.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Section>
+      {dialogoAbierto && (
+        <AdSpendDialog
+          entries={entradasVisibles}
+          currency={currency}
+          today={today}
+          onClose={() => setDialogoAbierto(false)}
+          onChanged={onSpendChanged}
+          onDelete={borrar}
+        />
+      )}
+    </>
+  );
+}
+
+/** Copia exacta de Cloud, la misma en las 4 tarjetas: no una por número. */
+const SIN_GASTO = "nadie ha cargado gasto para estas fechas";
+
+/** Las 4 tarjetas de gasto y retorno del periodo (fork, spec Cloud). */
+function GastoCards({
+  resumen,
+  currency,
+}: {
+  resumen: AdSpendSummaryDto;
+  currency: string;
+}) {
+  const { costPerProspect: cpp, costPerCustomer: cpc, return: retorno } = resumen;
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+        <StatCard
+          label="Gasto del periodo"
+          value={
+            resumen.empty
+              ? "Sin datos"
+              : formatMoneyCents(resumen.totalSpendCents, currency, undefined, { compact: true }) ?? "Sin datos"
+          }
+          hint={resumen.empty ? SIN_GASTO : undefined}
+        />
+        <StatCard
+          label="Costo por prospecto"
+          value={
+            cpp.cents === null
+              ? "Sin datos"
+              : formatMoneyCents(cpp.cents, currency, undefined, { compact: true }) ?? "Sin datos"
+          }
+          hint={
+            resumen.empty
+              ? SIN_GASTO
+              : cpp.cents === null
+                ? "sin prospectos de esas fuentes"
+                : `de ${cpp.sample} prospectos${!cpp.reliable ? " · muestra chica" : ""}`
+          }
+        />
+        <StatCard
+          label="Costo por cliente"
+          value={
+            cpc.cents === null
+              ? "Sin datos"
+              : formatMoneyCents(cpc.cents, currency, undefined, { compact: true }) ?? "Sin datos"
+          }
+          hint={
+            resumen.empty
+              ? SIN_GASTO
+              : cpc.cents === null
+                ? "sin clientes de esas fuentes"
+                : `de ${cpc.sample} clientes${!cpc.reliable ? " · muestra chica" : ""}`
+          }
+        />
+        <StatCard
+          label="Retorno"
+          value={retorno.multiple === null ? "Sin datos" : `${retorno.multiple}x`}
+          hint={
+            resumen.empty
+              ? SIN_GASTO
+              : retorno.multiple === null
+                ? "sin gasto en el periodo"
+                : `de ${retorno.sample} clientes${!retorno.reliable ? " · muestra chica" : ""}`
+          }
+        />
+      </div>
+      {(resumen.hasWonWithoutAmount ||
+        resumen.hasOtherCurrencySpend ||
+        resumen.hasWonOtherCurrency) && (
+        <div className="space-y-0.5 text-[11px] text-text-3">
+          {resumen.hasWonWithoutAmount && (
+            <p>Hay tratos ganados sin monto: cuentan como cliente, no suman al retorno.</p>
+          )}
+          {resumen.hasWonOtherCurrency && (
+            <p>Hay tratos ganados en otra moneda que no suman al retorno.</p>
+          )}
+          {resumen.hasOtherCurrencySpend && (
+            <p>Hay cargas en otra moneda que no se cuentan aquí.</p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -155,6 +155,13 @@
       "when": 1790423560960,
       "tag": "9009_nea_sin_estado",
       "breakpoints": true
+    },
+    {
+      "idx": 9010,
+      "version": "7",
+      "when": 1790427283555,
+      "tag": "9010_gasto_anuncios",
+      "breakpoints": true
     }
   ]
 }

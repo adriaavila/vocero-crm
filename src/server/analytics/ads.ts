@@ -68,7 +68,8 @@ export async function adsBlock(
 }
 
 type Conteo = { key: string | null; n: number };
-type ConteoLeads = { key: string | null; leads: number; won: number };
+/** Exportado — el gasto de anuncios (fork) reusa esta forma tal cual. */
+export type ConteoLeads = { key: string | null; leads: number; won: number };
 
 /** Conversaciones reales que empezaron en el rango, por el origen del contacto. */
 async function conversacionesPorFuente(
@@ -125,8 +126,14 @@ async function contarConversaciones(
   return rows[0]?.n ?? 0;
 }
 
-/** Prospectos creados en el rango y cuántos de ellos están hoy en Ganado. */
-async function prospectosPorFuente(
+/**
+ * Prospectos creados en el rango y cuántos de ellos están hoy en Ganado.
+ *
+ * Exportada — el gasto de anuncios (fork, `ad-spend.ts`) la reusa para no
+ * duplicar esta consulta: mismo criterio de fuente, mismo periodo, mismos
+ * conteos que ya se ven en «Por origen».
+ */
+export async function prospectosPorFuente(
   organizationId: string,
   start: Date,
   end: Date
