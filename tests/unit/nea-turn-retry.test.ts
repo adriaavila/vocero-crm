@@ -297,7 +297,24 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
 
     await runAgentTurn("cv_1");
 
-    expect(markAiCredentialInvalidIfUnchanged).toHaveBeenCalledWith("org_1", "openrouter", keyIv);
+    expect(markAiCredentialInvalidIfUnchanged).toHaveBeenCalledWith("org_1", "openrouter", keyIv, "auth_failed");
+  });
+
+  it("item 11: llm.status no_credits con source:org → marca la razón EXACTA (no_credits, no auth_failed) — la UI distingue la copia", async () => {
+    const keyIv = "iv-actual-base64";
+    buildNeaTurnSnapshot.mockResolvedValue(
+      snapshotWith2({ llm: { provider: "openrouter", model: "m", apiKey: "sk-org" } }, { provider: "openrouter", keyIv })
+    );
+    dispatchToNea.mockResolvedValue({
+      kind: "ok",
+      body: { ok: true, action: "replied", llm: { source: "org", status: "no_credits" } },
+    });
+    pushGates();
+    pushAttempt();
+
+    await runAgentTurn("cv_1");
+
+    expect(markAiCredentialInvalidIfUnchanged).toHaveBeenCalledWith("org_1", "openrouter", keyIv, "no_credits");
   });
 
   it("llm.status ok con source:org → NO marca nada inválido", async () => {

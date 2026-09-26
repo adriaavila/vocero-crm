@@ -18,11 +18,12 @@ export type AiCredentialStatus = {
   last4: string | null;
   lastValidatedAt: string | null;
   /**
-   * `invalid`: Nea reportó `auth_failed`/`no_credits` con esta clave (dispatch
-   * v2, step 6) — sigue respondiendo con la de allok mientras el dueño no la
-   * reemplace. `null` cuando la fuente no es `organization` (no aplica).
+   * La razón exacta que Nea reportó con esta clave (dispatch v2, step
+   * 6/item 11) — sigue respondiendo con la de allok mientras el dueño no la
+   * reemplace. `invalid` es un valor legado, equivalente a `auth_failed`.
+   * `null` cuando la fuente no es `organization` (no aplica).
    */
-  lastValidationStatus: "valid" | "invalid" | null;
+  lastValidationStatus: "valid" | "invalid" | "auth_failed" | "no_credits" | null;
 };
 
 export type AiCredentialStatuses = Record<AiProvider, AiCredentialStatus>;
@@ -214,12 +215,14 @@ export async function getNeaLlmCredential(organizationId: string): Promise<{
       .where(scoped(schema.aiCredentials.organizationId, organizationId)),
   ]);
 
-  // Una clave marcada `invalid` (Nea ya reportó auth_failed/no_credits con
+  // Una clave que NO está `valid` (Nea ya reportó auth_failed/no_credits con
   // ella) NO se vuelve a mandar: eso solo repetiría el mismo rechazo turno
   // tras turno antes de que Nea caiga a su propia clave de plataforma.
+  // Lista blanca, no negra: cualquier razón nueva que se agregue algún día
+  // queda excluida por default, no incluida por accidente.
   // Guardar o probar una clave nueva siempre la revalida (`saveAiCredential`
   // escribe `valid` en los dos caminos, insert y conflicto).
-  const validRows = credRows.filter((r) => r.lastValidationStatus !== "invalid");
+  const validRows = credRows.filter((r) => r.lastValidationStatus === "valid");
   if (validRows.length === 0) return null;
 
   const preferred = profileRows[0]?.aiProvider;
@@ -251,10 +254,12 @@ export async function markAiCredentialInvalidIfUnchanged(
   organizationId: string,
   provider: AiProvider,
   expectedKeyIv: string,
+  /** La razón EXACTA que reportó Nea (item 11: copia distinta en la UI). */
+  reason: "auth_failed" | "no_credits" = "auth_failed",
 ): Promise<void> {
   await getDb()
     .update(schema.aiCredentials)
-    .set({ lastValidationStatus: "invalid" })
+    .set({ lastValidationStatus: reason })
     .where(
       scoped(
         schema.aiCredentials.organizationId,

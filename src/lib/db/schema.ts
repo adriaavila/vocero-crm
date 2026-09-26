@@ -731,12 +731,17 @@ export const aiCredentials = pgTable(
     keyLast4: text("key_last4").notNull(),
     lastValidatedAt: timestamp("last_validated_at").notNull().defaultNow(),
     /**
-     * `invalid`: Nea reportó `auth_failed`/`no_credits` con esta clave
-     * (dispatch v2, step 6) — Nea sigue respondiendo con la de allok mientras
-     * el dueño no la reemplace. Columna `text` sin CHECK: agregar el valor es
-     * aditivo y no pide migración.
+     * `auth_failed`/`no_credits`: la razón EXACTA que Nea reportó con esta
+     * clave (dispatch v2, step 6/item 11) — Nea sigue respondiendo con la de
+     * allok mientras el dueño no la reemplace, y la UI distingue "se quedó
+     * sin créditos" de "la rechazaron" en vez de un genérico "inválida".
+     * `invalid` queda como valor legado (de antes de item 11) — se trata
+     * igual que `auth_failed` donde se lee. Columna `text` sin CHECK: agregar
+     * un valor es aditivo y no pide migración.
      */
-    lastValidationStatus: text("last_validation_status", { enum: ["valid", "invalid"] })
+    lastValidationStatus: text("last_validation_status", {
+      enum: ["valid", "invalid", "auth_failed", "no_credits"],
+    })
       .notNull()
       .default("valid"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

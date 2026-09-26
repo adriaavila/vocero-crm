@@ -629,7 +629,8 @@ async function applyNeaResponse(input: {
     await markAiCredentialInvalidIfUnchanged(
       input.organizationId,
       input.orgCredential.provider,
-      input.orgCredential.keyIv
+      input.orgCredential.keyIv,
+      llmStatus
     );
   }
 
