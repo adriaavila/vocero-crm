@@ -109,18 +109,27 @@ export function ResultsClient({
     pedir(adsCtl, `/api/analytics/ads?${q}`, setAds);
     pedir(botCtl, `/api/analytics/bot?${q}`, setBot);
     pedir(spendCtl, `/api/analytics/spend?${q}`, setSpend);
+    // Se quiere el controlador VIGENTE al desmontar (el que "Reintentar" pudo
+    // reemplazar después de este render), no una copia congelada de este
+    // momento — por eso se lee `.current` en la limpieza en vez de cerrar
+    // sobre una variable capturada aquí arriba.
     return () => {
+      /* eslint-disable react-hooks/exhaustive-deps */
       salesCtl.current?.abort();
       adsCtl.current?.abort();
       botCtl.current?.abort();
       spendCtl.current?.abort();
+      /* eslint-enable react-hooks/exhaustive-deps */
     };
   }, [range]);
 
   // La higiene describe el AHORA: no depende del rango elegido.
   useEffect(() => {
     pedir(hygieneCtl, "/api/analytics/hygiene", setHygiene);
-    return () => hygieneCtl.current?.abort();
+    return () => {
+      /* eslint-disable-next-line react-hooks/exhaustive-deps */
+      hygieneCtl.current?.abort();
+    };
   }, []);
 
   // "Reintentar"/"recargar" repite exactamente la misma petición que ya

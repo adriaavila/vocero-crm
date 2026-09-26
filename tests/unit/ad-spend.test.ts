@@ -60,6 +60,13 @@ describe("proratedCents", () => {
     const entry = { periodStart: "2026-01-10", periodEnd: "2026-01-12", amountCents: 300 };
     expect(proratedCents(entry, "2026-01-01", "2026-12-31")).toBe(300);
   });
+
+  it("un monto grande (más de lo que un integer de Postgres aguanta) no se rompe", () => {
+    // $100,000,000.00 en centavos: pasa 2^31-1, cabe en el bigint del schema.
+    const entry = { periodStart: "2026-01-01", periodEnd: "2026-12-31", amountCents: 100_000_000_00 };
+    expect(proratedCents(entry, "2026-01-01", "2026-12-31")).toBe(100_000_000_00);
+    expect(proratedCents(entry, "2026-01-01", "2026-01-01")).toBeCloseTo(27_397_260, -2);
+  });
 });
 
 describe("moneyPerUnit", () => {

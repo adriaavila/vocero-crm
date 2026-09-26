@@ -1,4 +1,5 @@
 import {
+  bigint,
   boolean,
   check,
   date,
@@ -1226,7 +1227,12 @@ export const adSpend = pgTable(
     periodStart: date("period_start", { mode: "string" }).notNull(),
     /** INCLUSIVO, como `from`/`to` en el resto de Resultados. */
     periodEnd: date("period_end", { mode: "string" }).notNull(),
-    amountCents: integer("amount_cents").notNull(),
+    // bigint, no integer: un gasto real (una campaña anual grande, varias
+    // monedas fuertes) pasa los $21,474,836.48 que un integer de Postgres
+    // permite en centavos. `mode: "number"` porque nunca se acerca a
+    // Number.MAX_SAFE_INTEGER (unos 90 billones de centavos) y así el resto
+    // del código sigue viendo un `number`, no un `bigint` de JS.
+    amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     /** La del negocio (`getBranding().currency`): un solo gasto, una sola moneda. */
     currency: text("currency").notNull(),
     note: text("note"),

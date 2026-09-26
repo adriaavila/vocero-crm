@@ -12,13 +12,38 @@ import { getBranding } from "@/server/branding";
 export const dynamic = "force-dynamic";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** Un gasto anual grande en la moneda fuerte más cara: tope amplio, no
+ * arbitrario — evita que un dedo de más en la captura mande un monto que ni
+ * el propio dueño reconocería, sin acercarse a lo que `bigint` sí soporta. */
+const MAX_AMOUNT_CENTS = 100_000_000_00; // $100,000,000.00
+
+/** `Date` acepta "2026-02-31" y la corrige en silencio al 3 de marzo; una
+ * fecha de calendario real no rueda. */
+function esFechaDeCalendarioReal(iso: string): boolean {
+  const partes = iso.split("-").map(Number);
+  const [y, m, d] = partes;
+  if (y === undefined || m === undefined || d === undefined) return false;
+  const fecha = new Date(Date.UTC(y, m - 1, d));
+  return (
+    fecha.getUTCFullYear() === y && fecha.getUTCMonth() === m - 1 && fecha.getUTCDate() === d
+  );
+}
+
+const fechaSchema = z
+  .string()
+  .regex(ISO_DATE, "Fecha inválida (AAAA-MM-DD)")
+  .refine(esFechaDeCalendarioReal, "Esa fecha no existe");
 
 const createSchema = z
   .object({
     source: z.enum(["anuncio", "organico", "referido", "conocido", "otro"]),
-    periodStart: z.string().regex(ISO_DATE, "Fecha inválida (AAAA-MM-DD)"),
-    periodEnd: z.string().regex(ISO_DATE, "Fecha inválida (AAAA-MM-DD)"),
-    amountCents: z.number().int().min(0, "El monto no puede ser negativo"),
+    periodStart: fechaSchema,
+    periodEnd: fechaSchema,
+    amountCents: z
+      .number()
+      .int()
+      .min(0, "El monto no puede ser negativo")
+      .max(MAX_AMOUNT_CENTS, "Ese monto es demasiado grande"),
     note: z.string().trim().max(500).optional(),
   })
   .refine((v) => v.periodEnd >= v.periodStart, {

@@ -1,4 +1,4 @@
-import { desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
@@ -131,6 +131,41 @@ export function proratedCents(
   return Math.round((entry.amountCents * dentro) / totalDias);
 }
 
+/**
+ * ¿Algún trato ganado del periodo no tiene monto capturado? Ese trato SÍ
+ * cuenta como cliente (divide el costo por cliente) pero no puede sumar al
+ * retorno — nadie anotó cuánto pagó. Un solo booleano para todo el resumen:
+ * alcanza para mostrar la nota, no hace falta saber cuál fuente.
+ */
+async function hayGanadosSinMonto(
+  organizationId: string,
+  start: Date,
+  end: Date
+): Promise<boolean> {
+  const [row] = await getDb()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.lead)
+    .innerJoin(
+      schema.pipelineStage,
+      and(
+        eq(schema.pipelineStage.id, schema.lead.stageId),
+        eq(schema.pipelineStage.organizationId, schema.lead.organizationId)
+      )
+    )
+    .where(
+      scoped(
+        schema.lead.organizationId,
+        organizationId,
+        gte(schema.lead.createdAt, start),
+        lt(schema.lead.createdAt, end),
+        eq(schema.pipelineStage.kind, "won"),
+        sql`${schema.lead.amountCents} is null`,
+        notLabContact(schema.lead.contactId, schema.lead.organizationId)
+      )
+    );
+  return (row?.n ?? 0) > 0;
+}
+
 /** Dinero de tratos ganados por fuente, en la cohorte y moneda del negocio. */
 async function wonCentsPorFuente(
   organizationId: string,
@@ -152,14 +187,26 @@ async function wonCentsPorFuente(
       ), 0)::bigint`,
     })
     .from(schema.lead)
-    .innerJoin(schema.contact, eq(schema.contact.id, schema.lead.contactId))
-    .innerJoin(schema.pipelineStage, eq(schema.pipelineStage.id, schema.lead.stageId))
+    .innerJoin(
+      schema.contact,
+      and(
+        eq(schema.contact.id, schema.lead.contactId),
+        eq(schema.contact.organizationId, schema.lead.organizationId)
+      )
+    )
+    .innerJoin(
+      schema.pipelineStage,
+      and(
+        eq(schema.pipelineStage.id, schema.lead.stageId),
+        eq(schema.pipelineStage.organizationId, schema.lead.organizationId)
+      )
+    )
     .where(
       scoped(
         schema.lead.organizationId,
         organizationId,
         gte(schema.lead.createdAt, start),
-        lte(schema.lead.createdAt, end),
+        lt(schema.lead.createdAt, end),
         notLabContact(schema.lead.contactId, schema.lead.organizationId)
       )
     )
@@ -196,8 +243,13 @@ export async function adSpendSummary(
   ]);
 
   const spendPorFuente = new Map<string, number>();
+  let hasOtherCurrencySpend = false;
   for (const entrada of entradas) {
-    if (entrada.currency !== currency) continue; // ver sumable(): no se mezclan monedas.
+    if (entrada.currency !== currency) {
+      // ver sumable(): no se mezclan monedas, pero no desaparece en silencio.
+      hasOtherCurrencySpend = true;
+      continue;
+    }
     const prorrateado = proratedCents(entrada, period.dto.from, period.dto.to);
     spendPorFuente.set(
       entrada.source,
@@ -218,15 +270,15 @@ export async function adSpendSummary(
       return: adReturn(0, 0, 0),
       bySource: [],
       empty: true,
+      hasWonWithoutAmount: false,
+      hasOtherCurrencySpend,
     };
   }
 
-  const wonCentsPorF = await wonCentsPorFuente(
-    organizationId,
-    period.start,
-    period.end,
-    currency
-  );
+  const [wonCentsPorF, hasWonWithoutAmount] = await Promise.all([
+    wonCentsPorFuente(organizationId, period.start, period.end, currency),
+    hayGanadosSinMonto(organizationId, period.start, period.end),
+  ]);
   const conteoPorFuente = new Map(conteos.map((c) => [c.key ?? "desconocida", c]));
 
   const bySource: AdSpendSourceSummaryDto[] = fuentesConGasto.map((fuente) => {
@@ -261,5 +313,7 @@ export async function adSpendSummary(
     return: adReturn(totalWonCents, totalSpendCents, totalCustomers),
     bySource: bySource.sort((a, b) => b.spendCents - a.spendCents),
     empty: false,
+    hasWonWithoutAmount,
+    hasOtherCurrencySpend,
   };
 }

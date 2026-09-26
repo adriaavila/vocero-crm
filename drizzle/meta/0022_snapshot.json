@@ -4487,7 +4487,7 @@
         },
         "amount_cents": {
           "name": "amount_cents",
-          "type": "integer",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": true
         },

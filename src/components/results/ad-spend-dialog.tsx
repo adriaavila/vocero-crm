@@ -20,6 +20,7 @@ const FUENTES: { value: SourceValue; label: string }[] = [
 type Estado =
   | { tipo: "idle" }
   | { tipo: "guardando" }
+  | { tipo: "guardado" }
   | { tipo: "borrando"; id: string }
   | { tipo: "error"; mensaje: string };
 
@@ -101,8 +102,9 @@ export function AdSpendDialog({
     }
     setMonto("");
     setNote("");
-    setEstado({ tipo: "idle" });
+    setEstado({ tipo: "guardado" });
     onChanged();
+    setTimeout(() => setEstado((e) => (e.tipo === "guardado" ? { tipo: "idle" } : e)), 2000);
   }
 
   async function borrar(id: string) {
@@ -200,10 +202,12 @@ export function AdSpendDialog({
             </div>
           </div>
           {rangoInvalido && (
-            <p className="text-xs text-danger-text">La fecha final va antes que la inicial.</p>
+            <p role="alert" className="text-xs text-danger-text">
+              La fecha final va antes que la inicial.
+            </p>
           )}
           {montoInvalido && (
-            <p className="text-xs text-danger-text">
+            <p role="alert" className="text-xs text-danger-text">
               No reconozco ese monto. Escríbelo como 5000 o 5,000.00.
             </p>
           )}
@@ -223,7 +227,14 @@ export function AdSpendDialog({
         </div>
 
         {estado.tipo === "error" && (
-          <p className="mt-3 text-xs text-danger-text">{estado.mensaje}</p>
+          <p role="alert" aria-live="assertive" className="mt-3 text-xs text-danger-text">
+            {estado.mensaje}
+          </p>
+        )}
+        {estado.tipo === "guardado" && (
+          <p role="status" aria-live="polite" className="mt-3 text-xs text-success-text">
+            Carga guardada.
+          </p>
         )}
 
         <div className="mt-4 flex justify-end gap-2">
@@ -259,7 +270,7 @@ export function AdSpendDialog({
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Borrar carga de ${e.source}`}
+                    aria-label={`Borrar carga de ${FUENTES.find((f) => f.value === e.source)?.label ?? e.source}, ${e.periodStart} a ${e.periodEnd}`}
                     className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
                     disabled={estado.tipo === "borrando" && estado.id === e.id}
                     onClick={() => void borrar(e.id)}

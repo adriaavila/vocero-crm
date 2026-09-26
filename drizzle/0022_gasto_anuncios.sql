@@ -4,7 +4,7 @@ CREATE TABLE "ad_spend" (
 	"source" text NOT NULL,
 	"period_start" date NOT NULL,
 	"period_end" date NOT NULL,
-	"amount_cents" integer NOT NULL,
+	"amount_cents" bigint NOT NULL,
 	"currency" text NOT NULL,
 	"note" text,
 	"created_by" text,

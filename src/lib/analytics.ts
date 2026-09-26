@@ -385,6 +385,19 @@ export type AdSpendSummaryDto = {
   bySource: AdSpendSourceSummaryDto[];
   /** true = ninguna carga de gasto toca este periodo, por ninguna fuente. */
   empty: boolean;
+  /**
+   * true = al menos un trato que cuenta como "cliente" en el denominador
+   * ganó sin monto capturado. Ese cliente SÍ divide el costo (bajándolo) pero
+   * NO suma al retorno (que solo cuenta dinero real) — el retorno queda
+   * entendido de menos, no de más, así que no se esconde, se explica.
+   */
+  hasWonWithoutAmount: boolean;
+  /**
+   * true = hay cargas de gasto en este periodo en una moneda distinta a la
+   * del negocio, que este resumen no puede sumar (no hay tipo de cambio) y
+   * por eso quedan fuera de todo lo de arriba.
+   */
+  hasOtherCurrencySpend: boolean;
 };
 
 /** Respuesta de `/api/analytics/spend`: todas las cargas + el resumen del periodo. */

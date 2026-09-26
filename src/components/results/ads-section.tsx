@@ -174,6 +174,9 @@ export function AdsSection({
   );
 }
 
+/** Copia exacta de Cloud, la misma en las 4 tarjetas: no una por número. */
+const SIN_GASTO = "nadie ha cargado gasto para estas fechas";
+
 /** Las 4 tarjetas de gasto y retorno del periodo (fork, spec Cloud). */
 function GastoCards({
   resumen,
@@ -184,51 +187,69 @@ function GastoCards({
 }) {
   const { costPerProspect: cpp, costPerCustomer: cpc, return: retorno } = resumen;
   return (
-    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
-      <StatCard
-        label="Gasto del periodo"
-        value={
-          resumen.empty
-            ? "Sin datos"
-            : formatMoneyCents(resumen.totalSpendCents, currency, undefined, { compact: true }) ?? "Sin datos"
-        }
-        hint={resumen.empty ? "nadie ha cargado gasto para estas fechas" : undefined}
-      />
-      <StatCard
-        label="Costo por prospecto"
-        value={
-          cpp.cents === null
-            ? "Sin datos"
-            : formatMoneyCents(cpp.cents, currency, undefined, { compact: true }) ?? "Sin datos"
-        }
-        hint={
-          cpp.cents === null
-            ? "sin prospectos de esas fuentes"
-            : `de ${cpp.sample} prospectos${!cpp.reliable ? " · muestra chica" : ""}`
-        }
-      />
-      <StatCard
-        label="Costo por cliente"
-        value={
-          cpc.cents === null
-            ? "Sin datos"
-            : formatMoneyCents(cpc.cents, currency, undefined, { compact: true }) ?? "Sin datos"
-        }
-        hint={
-          cpc.cents === null
-            ? "sin clientes de esas fuentes"
-            : `de ${cpc.sample} clientes${!cpc.reliable ? " · muestra chica" : ""}`
-        }
-      />
-      <StatCard
-        label="Retorno"
-        value={retorno.multiple === null ? "Sin datos" : `${retorno.multiple}x`}
-        hint={
-          retorno.multiple === null
-            ? "sin gasto en el periodo"
-            : `de ${retorno.sample} clientes${!retorno.reliable ? " · muestra chica" : ""}`
-        }
-      />
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3">
+        <StatCard
+          label="Gasto del periodo"
+          value={
+            resumen.empty
+              ? "Sin datos"
+              : formatMoneyCents(resumen.totalSpendCents, currency, undefined, { compact: true }) ?? "Sin datos"
+          }
+          hint={resumen.empty ? SIN_GASTO : undefined}
+        />
+        <StatCard
+          label="Costo por prospecto"
+          value={
+            cpp.cents === null
+              ? "Sin datos"
+              : formatMoneyCents(cpp.cents, currency, undefined, { compact: true }) ?? "Sin datos"
+          }
+          hint={
+            resumen.empty
+              ? SIN_GASTO
+              : cpp.cents === null
+                ? "sin prospectos de esas fuentes"
+                : `de ${cpp.sample} prospectos${!cpp.reliable ? " · muestra chica" : ""}`
+          }
+        />
+        <StatCard
+          label="Costo por cliente"
+          value={
+            cpc.cents === null
+              ? "Sin datos"
+              : formatMoneyCents(cpc.cents, currency, undefined, { compact: true }) ?? "Sin datos"
+          }
+          hint={
+            resumen.empty
+              ? SIN_GASTO
+              : cpc.cents === null
+                ? "sin clientes de esas fuentes"
+                : `de ${cpc.sample} clientes${!cpc.reliable ? " · muestra chica" : ""}`
+          }
+        />
+        <StatCard
+          label="Retorno"
+          value={retorno.multiple === null ? "Sin datos" : `${retorno.multiple}x`}
+          hint={
+            resumen.empty
+              ? SIN_GASTO
+              : retorno.multiple === null
+                ? "sin gasto en el periodo"
+                : `de ${retorno.sample} clientes${!retorno.reliable ? " · muestra chica" : ""}`
+          }
+        />
+      </div>
+      {(resumen.hasWonWithoutAmount || resumen.hasOtherCurrencySpend) && (
+        <div className="space-y-0.5 text-[11px] text-text-3">
+          {resumen.hasWonWithoutAmount && (
+            <p>Hay tratos ganados sin monto: cuentan como cliente, no suman al retorno.</p>
+          )}
+          {resumen.hasOtherCurrencySpend && (
+            <p>Hay cargas en otra moneda que no se cuentan aquí.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
