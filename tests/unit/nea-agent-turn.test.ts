@@ -124,7 +124,7 @@ function snapshot(overrides: Partial<Parameters<typeof dispatchToNea>[0]> = {}) 
       llm: null,
       ...overrides,
     },
-    maxPendingCreatedAt: new Date("2026-09-25T12:00:00.000Z"),
+    pendingIds: ["msg_pending_1"],
     orgCredential: null,
   };
 }

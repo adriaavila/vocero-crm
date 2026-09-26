@@ -196,7 +196,10 @@ export async function getNeaLlmCredential(organizationId: string): Promise<{
   provider: AiProvider;
   model: string;
   apiKey: string;
-  updatedAt: Date;
+  /** El IV (texto, cambia en CADA guardado) — lo que step 6 compara para
+   *  invalidar, en vez de `updatedAt` (ver el comentario en
+   *  `markAiCredentialInvalidIfUnchanged`). */
+  keyIv: string;
 } | null> {
   const db = getDb();
   const [profileRows, credRows] = await Promise.all([
@@ -210,13 +213,20 @@ export async function getNeaLlmCredential(organizationId: string): Promise<{
       .from(schema.aiCredentials)
       .where(scoped(schema.aiCredentials.organizationId, organizationId)),
   ]);
-  if (credRows.length === 0) return null;
+
+  // Una clave marcada `invalid` (Nea ya reportó auth_failed/no_credits con
+  // ella) NO se vuelve a mandar: eso solo repetiría el mismo rechazo turno
+  // tras turno antes de que Nea caiga a su propia clave de plataforma.
+  // Guardar o probar una clave nueva siempre la revalida (`saveAiCredential`
+  // escribe `valid` en los dos caminos, insert y conflicto).
+  const validRows = credRows.filter((r) => r.lastValidationStatus !== "invalid");
+  if (validRows.length === 0) return null;
 
   const preferred = profileRows[0]?.aiProvider;
-  const row = credRows.find((r) => r.provider === preferred) ?? credRows[0]!;
+  const row = validRows.find((r) => r.provider === preferred) ?? validRows[0]!;
   try {
     const apiKey = decryptSecret({ cipher: row.keyCipher, iv: row.keyIv, tag: row.keyTag });
-    return { provider: row.provider, model: row.model, apiKey, updatedAt: row.updatedAt };
+    return { provider: row.provider, model: row.model, apiKey, keyIv: row.keyIv };
   } catch {
     // Clave de cifrado rota: ni Nea ni Rei pueden usar esta credencial.
     console.error(`[ai] no se pudo descifrar la credencial de ${row.provider} (Nea)`);
@@ -225,15 +235,22 @@ export async function getNeaLlmCredential(organizationId: string): Promise<{
 }
 
 /**
- * Marca `last_validation_status='invalid'` SOLO si `updated_at` sigue siendo
- * el mismo que cuando se armó el despacho — si el dueño re-guardó la clave
- * mientras Nea procesaba ese turno, `updated_at` ya cambió y este UPDATE no
- * afecta ninguna fila: un turno viejo no debe invalidar una clave nueva.
+ * Marca `last_validation_status='invalid'` SOLO si `key_iv` sigue siendo el
+ * mismo que cuando se armó el despacho — si el dueño re-guardó la clave
+ * mientras Nea procesaba ese turno, `encryptSecret` generó un IV nuevo
+ * (aleatorio en CADA guardado) y este UPDATE no afecta ninguna fila: un turno
+ * viejo no debe invalidar una clave nueva.
+ *
+ * Se compara `key_iv` (texto) y NO `updated_at`: la fila nace por INSERT con
+ * el `now()` del lado de Postgres (microsegundos) pero se lee de vuelta como
+ * `Date` de JS (milisegundos) — la comparación por igualdad perdía la parte
+ * fraccionaria y el UPDATE nunca encontraba la fila después del PRIMER
+ * guardado. `key_iv` es texto: la comparación es exacta siempre.
  */
 export async function markAiCredentialInvalidIfUnchanged(
   organizationId: string,
   provider: AiProvider,
-  expectedUpdatedAt: Date,
+  expectedKeyIv: string,
 ): Promise<void> {
   await getDb()
     .update(schema.aiCredentials)
@@ -243,7 +260,7 @@ export async function markAiCredentialInvalidIfUnchanged(
         schema.aiCredentials.organizationId,
         organizationId,
         eq(schema.aiCredentials.provider, provider),
-        eq(schema.aiCredentials.updatedAt, expectedUpdatedAt),
+        eq(schema.aiCredentials.keyIv, expectedKeyIv),
       ),
     );
 }

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -389,41 +389,14 @@ export async function runAgentTurn(conversationId: string, dispatchId?: string):
  * `buildNeaTurnSnapshot`).
  */
 async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Promise<void> {
-  const db = getDb();
-  const convRows = await db
-    .select()
-    .from(schema.conversation)
-    .where(eq(schema.conversation.id, conversationId))
-    .limit(1);
-  const conversation = convRows[0];
-  if (!conversation) return;
-  const organizationId = conversation.organizationId;
+  const initial = await loadNeaGateState(conversationId);
+  if (!initial) return;
+  const { organizationId } = initial;
 
-  const profileRows = await db
-    .select()
-    .from(schema.agentProfile)
-    .where(eq(schema.agentProfile.organizationId, organizationId))
-    .limit(1);
-  const profile = profileRows[0];
-  if (!profile) return;
-
-  if (!conversation.isTest && !profile.enabled) return;
-  // Mismo freno de facturación que `sendText` aplica al entregar la respuesta
-  // de Rei: sin esto, una organización con la automatización pausada seguía
-  // recibiendo turnos despachados a Nea (que sí sabe cómo responder, así que
-  // el guard tiene que estar ANTES del despacho, no después).
-  if (!conversation.isTest && !(await canAutomate(organizationId))) return;
-  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
-    return;
-  }
-  if ((conversation.handoffAt || !conversation.aiEnabled) && !profile.activationEnabled) {
-    return;
-  }
-
-  const contactRows = await db
+  const contactRows = await getDb()
     .select({ waIdentity: schema.contact.waIdentity, name: schema.contact.name })
     .from(schema.contact)
-    .where(eq(schema.contact.id, conversation.contactId))
+    .where(eq(schema.contact.id, initial.conversation.contactId))
     .limit(1);
   const contact = contactRows[0];
   if (!contact) return;
@@ -433,17 +406,38 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
   // intentos de este turno — así el id determinista de la respuesta
   // (`neaMessageId`) es el mismo si hay que reintentar.
   const effectiveDispatchId = dispatchId ?? newId("dispatch");
-  const attempts = conversation.isTest ? LAB_TURN_ATTEMPTS : REAL_TURN_ATTEMPTS;
+  const attempts = initial.conversation.isTest ? LAB_TURN_ATTEMPTS : REAL_TURN_ATTEMPTS;
 
+  let state = initial;
   let lastError: Error = new Error("Nea no respondió");
+  // Los ids pendientes del ÚLTIMO intento que de verdad se posteó — es lo que
+  // se usa para avanzar el cursor si un intento posterior descubre que esa
+  // respuesta ya había llegado (bloque `attempt > 0` de abajo). El snapshot
+  // FRESCO de un intento que se salta por eso nunca sirve para esto: puede
+  // traer mensajes que llegaron después de que Nea ya contestó, y que
+  // todavía nadie le mandó — avanzar el cursor hasta ahí los perdería para
+  // siempre.
+  let lastPostedPendingIds: string[] | null = null;
+
   for (let attempt = 0; attempt < attempts; attempt++) {
-    if (attempt > 0) await sleep(TURN_RETRY_DELAYS_MS[attempt - 1]!);
+    if (attempt > 0) {
+      await sleep(TURN_RETRY_DELAYS_MS[attempt - 1]!);
+      // Releído ENTERO en cada intento — no solo el snapshot del despacho:
+      // el cursor, `memory_reset_at` y los mismos gates (handoff, perfil,
+      // facturación, horario) pudieron cambiar mientras se esperaba. Un
+      // turno con 3 intentos puede tardar varios segundos; tiempo de sobra
+      // para que el dueño tome la conversación a mitad del reintento.
+      const fresh = await loadNeaGateState(conversationId);
+      if (!fresh) return;
+      state = fresh;
+    }
+    const { conversation } = state;
 
     // Reconstruido FRESCO en cada intento — nunca se reusa el de la vuelta
     // anterior: lo pendiente pudo cambiar mientras Nea no contestaba.
     const sourceMessages = conversation.isTest
-      ? await neaMessagesSinceLastOutbound(db, conversationId)
-      : await neaRecentInboundMessages(db, conversationId);
+      ? await neaMessagesSinceLastOutbound(getDb(), conversationId)
+      : await neaRecentInboundMessages(getDb(), conversationId);
     const snapshot = await buildNeaTurnSnapshot({
       organizationId,
       conversationId,
@@ -451,8 +445,6 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
       dispatchId: effectiveDispatchId,
       attempt,
       contact: { identity: contact.waIdentity, name: contact.name },
-      memoryResetAt: conversation.memoryResetAt,
-      agentCursorAt: conversation.agentCursorAt,
       v1Messages: sourceMessages,
     });
     if (!snapshot) return; // nada pendiente: no se despacha.
@@ -460,22 +452,22 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
     if (attempt > 0) {
       // Un reintento puede caer DESPUÉS de que Nea ya contestó — solo se
       // perdió la confirmación HTTP de vuelta. El id determinista de la
-      // respuesta lo delata: si ya existe, no hay que volver a POSTear.
+      // respuesta lo delata — pero solo cuenta si de verdad se ENTREGÓ (tiene
+      // wamid, o en el Laboratorio quedó `sent`): una reserva todavía en
+      // vuelo o muerta (sin wamid) no es una respuesta completada.
       const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
-      const existing = await db
-        .select({ id: schema.message.id })
-        .from(schema.message)
-        .where(eq(schema.message.id, replyId))
-        .limit(1);
-      if (existing[0]) {
-        await advanceCursor(organizationId, conversationId, snapshot.maxPendingCreatedAt);
+      if (await neaReplyLanded(organizationId, conversationId, replyId, conversation.isTest)) {
+        if (lastPostedPendingIds) {
+          await advanceCursor(organizationId, conversationId, lastPostedPendingIds);
+        }
         return;
       }
     }
 
     const result = await dispatchToNea(snapshot.payload);
+    lastPostedPendingIds = snapshot.pendingIds;
     if (result.kind === "ok") {
-      await advanceCursor(organizationId, conversationId, snapshot.maxPendingCreatedAt);
+      await advanceCursor(organizationId, conversationId, snapshot.pendingIds);
       await applyNeaResponse({
         organizationId,
         conversationId,
@@ -496,20 +488,111 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
   throw lastError;
 }
 
+type NeaGateState = {
+  conversation: typeof schema.conversation.$inferSelect;
+  profile: typeof schema.agentProfile.$inferSelect;
+  organizationId: string;
+};
+
 /**
- * `agent_cursor_at = GREATEST(actual, lo pendiente que se acaba de despachar
- * con éxito)` — nunca retrocede, incluso si un despacho tardío trae un
- * pendiente más viejo que el cursor ya avanzado por otro más reciente.
+ * Conversación + perfil + los gates que quedan del lado del CRM (ver el
+ * comentario sobre `runNeaAgentTurn` más arriba) — releído en CADA intento
+ * del loop de reintentos, no solo al principio del turno.
+ */
+async function loadNeaGateState(conversationId: string): Promise<NeaGateState | null> {
+  const db = getDb();
+  const convRows = await db
+    .select()
+    .from(schema.conversation)
+    .where(eq(schema.conversation.id, conversationId))
+    .limit(1);
+  const conversation = convRows[0];
+  if (!conversation) return null;
+  const organizationId = conversation.organizationId;
+
+  const profileRows = await db
+    .select()
+    .from(schema.agentProfile)
+    .where(eq(schema.agentProfile.organizationId, organizationId))
+    .limit(1);
+  const profile = profileRows[0];
+  if (!profile) return null;
+
+  if (!conversation.isTest && !profile.enabled) return null;
+  // Mismo freno de facturación que `sendText` aplica al entregar la respuesta
+  // de Rei: sin esto, una organización con la automatización pausada seguía
+  // recibiendo turnos despachados a Nea (que sí sabe cómo responder, así que
+  // el guard tiene que estar ANTES del despacho, no después).
+  if (!conversation.isTest && !(await canAutomate(organizationId))) return null;
+  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
+    return null;
+  }
+  if ((conversation.handoffAt || !conversation.aiEnabled) && !profile.activationEnabled) {
+    return null;
+  }
+
+  return { conversation, profile, organizationId };
+}
+
+/**
+ * true si la respuesta con este id determinista de verdad se ENTREGÓ. No
+ * basta con que la fila exista: una reserva sin `wa_message_id` puede seguir
+ * en vuelo (Graph todavía no respondió) o estar muerta (el proceso se cayó
+ * antes de borrarla tras un fallo) — ninguna de las dos es una respuesta que
+ * Nea haya completado. El Laboratorio nunca tiene wamid (jamás toca Graph):
+ * ahí `status='sent'` ES la confirmación.
+ */
+async function neaReplyLanded(
+  organizationId: string,
+  conversationId: string,
+  replyId: string,
+  isTest: boolean
+): Promise<boolean> {
+  const rows = await getDb()
+    .select({ waMessageId: schema.message.waMessageId, status: schema.message.status })
+    .from(schema.message)
+    .where(
+      and(
+        eq(schema.message.id, replyId),
+        eq(schema.message.organizationId, organizationId),
+        eq(schema.message.conversationId, conversationId)
+      )
+    )
+    .limit(1);
+  const row = rows[0];
+  if (!row) return false;
+  return isTest ? row.status === "sent" : row.waMessageId !== null;
+}
+
+/**
+ * `agent_cursor_at = GREATEST(actual, MAX(created_at) de estos ids)` — nunca
+ * retrocede. El MAX se calcula EN SQL a partir de los ids, JAMÁS de un `Date`
+ * de JS: `message.created_at` guarda microsegundos y un `Date` de JS solo
+ * tiene milisegundos — comparar con uno truncado hacía que el propio mensaje
+ * recién contestado siguiera pareciendo "posterior al cursor" en el turno
+ * siguiente, y Nea sin estado lo volvía a contestar cada vez.
  */
 async function advanceCursor(
   organizationId: string,
   conversationId: string,
-  maxPendingCreatedAt: Date
+  pendingIds: string[]
 ): Promise<void> {
-  await getDb()
+  if (pendingIds.length === 0) return;
+  const db = getDb();
+  const maxPending = db
+    .select({ m: sql<Date>`max(${schema.message.createdAt})`.as("m") })
+    .from(schema.message)
+    .where(
+      and(
+        eq(schema.message.organizationId, organizationId),
+        eq(schema.message.conversationId, conversationId),
+        inArray(schema.message.id, pendingIds)
+      )
+    );
+  await db
     .update(schema.conversation)
     .set({
-      agentCursorAt: sql`greatest(coalesce(${schema.conversation.agentCursorAt}, '-infinity'::timestamp), ${maxPendingCreatedAt.toISOString()}::timestamp)`,
+      agentCursorAt: sql`greatest(coalesce(${schema.conversation.agentCursorAt}, '-infinity'::timestamp), (${maxPending}))`,
       updatedAt: new Date(),
     })
     .where(
@@ -524,7 +607,8 @@ async function advanceCursor(
  * Aplica el eco de la respuesta de Nea (step 6 y el handoff pendiente):
  *  - `llm.status` `auth_failed`/`no_credits` con `source:"org"` → la clave que
  *    se mandó era de la organización (nunca la de plataforma): se marca
- *    inválida SOLO si nadie la resguardó desde que se armó el despacho.
+ *    inválida SOLO si nadie la resguardó desde que se armó el despacho
+ *    (mismo `key_iv` — ver `markAiCredentialInvalidIfUnchanged`).
  *  - `handoff.applied === false` → Nea le pide al CRM que aplique el handoff
  *    (con `applied:true` ya lo hizo por su cuenta, no hay nada que hacer).
  */
@@ -533,7 +617,7 @@ async function applyNeaResponse(input: {
   conversationId: string;
   body: NeaResponseBody;
   sentLlmProvider: "openai" | "openrouter" | null;
-  orgCredential: { provider: "openai" | "openrouter"; updatedAt: Date } | null;
+  orgCredential: { provider: "openai" | "openrouter"; keyIv: string } | null;
 }): Promise<void> {
   const llmStatus = input.body.llm?.status;
   if (
@@ -545,7 +629,7 @@ async function applyNeaResponse(input: {
     await markAiCredentialInvalidIfUnchanged(
       input.organizationId,
       input.orgCredential.provider,
-      input.orgCredential.updatedAt
+      input.orgCredential.keyIv
     );
   }
 

@@ -108,7 +108,7 @@ function snapshotWith(overrides: Record<string, unknown> = {}) {
       llm: null,
       ...overrides,
     },
-    maxPendingCreatedAt: new Date("2026-09-25T12:00:00.000Z"),
+    pendingIds: ["msg_pending_1"],
     orgCredential: null,
   };
 }
@@ -117,10 +117,17 @@ function snapshotWith(overrides: Record<string, unknown> = {}) {
 function pushGates(conv: Record<string, unknown> = CONVERSATION) {
   selectQueue.push([conv], [PROFILE], [CONTACT]);
 }
-/** Empuja lo que consume UN intento del loop: el v1Messages y, si aplica, el dedupe. */
-function pushAttempt(v1Rows: unknown[] = [INBOUND_MESSAGE], dedupeRows?: unknown[]) {
+/**
+ * Empuja las 2 filas que `loadNeaGateState` relee en CADA intento posterior
+ * al primero (conversación, perfil) — antes de `pushAttempt` de ese intento.
+ */
+function pushGateReread(conv: Record<string, unknown> = CONVERSATION) {
+  selectQueue.push([conv], [PROFILE]);
+}
+/** Empuja lo que consume UN intento del loop: el v1Messages y, si aplica, el replyLanded. */
+function pushAttempt(v1Rows: unknown[] = [INBOUND_MESSAGE], replyLandedRows?: unknown[]) {
   selectQueue.push(v1Rows);
-  if (dedupeRows !== undefined) selectQueue.push(dedupeRows);
+  if (replyLandedRows !== undefined) selectQueue.push(replyLandedRows);
 }
 
 describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
@@ -156,8 +163,10 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     vi.useFakeTimers();
     pushGates();
     pushAttempt(); // intento 0
-    pushAttempt([], []); // intento 1: v1Messages + dedupe (sin id existente)
-    pushAttempt([], []); // intento 2: v1Messages + dedupe
+    pushGateReread();
+    pushAttempt([], []); // intento 1: v1Messages + replyLanded (sin id existente)
+    pushGateReread();
+    pushAttempt([], []); // intento 2: v1Messages + replyLanded
     dispatchToNea.mockResolvedValue({ kind: "retryable", status: 500, message: "Nea devolvió 500" });
 
     const turn = runAgentTurn("cv_1").catch(() => {});
@@ -176,6 +185,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     vi.useFakeTimers();
     pushGates();
     pushAttempt([{ ...INBOUND_MESSAGE, id: "msg_intento_0" }]);
+    pushGateReread();
     pushAttempt([{ ...INBOUND_MESSAGE, id: "msg_intento_1" }], []);
     dispatchToNea
       .mockResolvedValueOnce({ kind: "retryable", status: 500, message: "Nea devolvió 500" })
@@ -196,7 +206,9 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     vi.useFakeTimers();
     pushGates();
     pushAttempt(); // intento 0: falla (retryable)
-    pushAttempt([INBOUND_MESSAGE], [{ id: "msg_ya_existe" }]); // intento 1: dedupe ENCUENTRA la fila
+    pushGateReread();
+    // intento 1: replyLanded ENCUENTRA la fila, YA con wamid (entregada de verdad).
+    pushAttempt([INBOUND_MESSAGE], [{ waMessageId: "wamid.ya_existe", status: "sent" }]);
     dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "Nea devolvió 500" });
 
     const turn = runAgentTurn("cv_1", "aj_1");
@@ -247,7 +259,9 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     vi.useFakeTimers();
     pushGates();
     pushAttempt();
+    pushGateReread();
     pushAttempt([], []);
+    pushGateReread();
     pushAttempt([], []);
     dispatchToNea.mockResolvedValue({ kind: "retryable", status: 500, message: "Nea devolvió 500" });
 
@@ -269,10 +283,10 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(dispatchToNea).toHaveBeenCalledTimes(1);
   });
 
-  it("llm.status auth_failed con source:org → marca la clave inválida SOLO si updated_at no cambió", async () => {
-    const updatedAt = new Date("2026-09-20T00:00:00.000Z");
+  it("llm.status auth_failed con source:org → marca la clave inválida SOLO si key_iv no cambió", async () => {
+    const keyIv = "iv-actual-base64";
     buildNeaTurnSnapshot.mockResolvedValue(
-      snapshotWith2({ llm: { provider: "openrouter", model: "m", apiKey: "sk-org" } }, { provider: "openrouter", updatedAt })
+      snapshotWith2({ llm: { provider: "openrouter", model: "m", apiKey: "sk-org" } }, { provider: "openrouter", keyIv })
     );
     dispatchToNea.mockResolvedValue({
       kind: "ok",
@@ -283,13 +297,13 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
 
     await runAgentTurn("cv_1");
 
-    expect(markAiCredentialInvalidIfUnchanged).toHaveBeenCalledWith("org_1", "openrouter", updatedAt);
+    expect(markAiCredentialInvalidIfUnchanged).toHaveBeenCalledWith("org_1", "openrouter", keyIv);
   });
 
   it("llm.status ok con source:org → NO marca nada inválido", async () => {
-    const updatedAt = new Date("2026-09-20T00:00:00.000Z");
+    const keyIv = "iv-actual-base64";
     buildNeaTurnSnapshot.mockResolvedValue(
-      snapshotWith2({ llm: { provider: "openrouter", model: "m", apiKey: "sk-org" } }, { provider: "openrouter", updatedAt })
+      snapshotWith2({ llm: { provider: "openrouter", model: "m", apiKey: "sk-org" } }, { provider: "openrouter", keyIv })
     );
     dispatchToNea.mockResolvedValue({
       kind: "ok",
@@ -363,7 +377,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     buildNeaTurnSnapshot.mockResolvedValue(
       snapshotWith2(
         { llm: { provider: "openrouter", model: "m", apiKey: "sk-super-secreta-no-debe-salir" } },
-        { provider: "openrouter", updatedAt: new Date() }
+        { provider: "openrouter", keyIv: "iv-cualquiera" }
       )
     );
     pushGates();
@@ -382,7 +396,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
 /** Variante de `snapshotWith` que también permite fijar `orgCredential`. */
 function snapshotWith2(
   payloadOverrides: Record<string, unknown>,
-  orgCredential: { provider: "openai" | "openrouter"; updatedAt: Date } | null
+  orgCredential: { provider: "openai" | "openrouter"; keyIv: string } | null
 ) {
   const s = snapshotWith(payloadOverrides);
   return { ...s, orgCredential };

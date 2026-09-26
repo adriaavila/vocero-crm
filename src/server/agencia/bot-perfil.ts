@@ -118,6 +118,9 @@ export type ProximaCita = {
   /** Cómo se dice esa hora en la zona del negocio, ya redactado. */
   label: string;
   meetingLink: string | null;
+  /** true ⇒ la cita existe pero el proveedor aún no entregó el enlace —
+   *  Nea lo usa para no prometer un link que todavía no hay en un reintento. */
+  linkPending: boolean;
 };
 
 /**
@@ -152,6 +155,7 @@ export async function proximaCita(
       id: schema.booking.id,
       scheduledAt: schema.booking.scheduledAt,
       meetingLink: schema.booking.meetingLink,
+      linkPending: schema.booking.linkPending,
     })
     .from(schema.booking)
     .where(
@@ -180,6 +184,7 @@ export async function proximaCita(
     scheduledAtUtc,
     label: `${parts.weekday} ${parts.date} a las ${parts.time}`,
     meetingLink: row.meetingLink,
+    linkPending: row.linkPending,
   };
 }
 

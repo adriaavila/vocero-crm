@@ -1,4 +1,4 @@
-import { and, eq, gt, ne } from "drizzle-orm";
+import { and, eq, gt, isNull, ne, not } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { serializeFicha } from "@/server/bot/ficha";
 // Capa de agencia: allowlist del piloto y la cita que el lead ya tiene.
@@ -151,6 +151,11 @@ export async function buildBotContext(
 /**
  * true si existe un saliente `origin=ai` no fallido posterior a
  * `memoryResetAt` (o a cualquier momento, si nunca hubo reset).
+ *
+ * Excluye una reserva viva (`sendTextIdempotent` inserta `pending` sin
+ * `wa_message_id` ANTES de llamar a Graph): mientras no se confirma, no es
+ * un hecho que el agente "ya habló" — un envío que todavía puede fallar y
+ * borrarse no debe contar.
  */
 async function hasAgentSpoken(
   organizationId: string,
@@ -168,6 +173,7 @@ async function hasAgentSpoken(
         eq(schema.message.direction, "out"),
         eq(schema.message.origin, "ai"),
         ne(schema.message.status, "failed"),
+        not(and(isNull(schema.message.waMessageId), eq(schema.message.status, "pending"))!),
         gt(schema.message.createdAt, since)
       )
     )
