@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { neaMessageId, newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -391,6 +391,16 @@ export async function sendText(input: {
 }
 
 /**
+ * Una reserva sin wamid más vieja que esto ya no puede ser un envío
+ * legítimamente "en vuelo": el propio Graph responde bastante antes (ver
+ * `GRAPH_TIMEOUT_MS` en `lib/meta/client.ts`, 30s). Más vieja que eso solo
+ * puede significar que el proceso murió entre el insert y el delete-en-catch
+ * — sin esta toma de reservas viejas, esa fila bloquearía CADA reintento del
+ * mismo dispatchId+seq para siempre con `send_in_progress`.
+ */
+const STALE_RESERVATION_MS = 2 * 60 * 1000;
+
+/**
  * Dispatch v2 — reserva-primero: el id es DETERMINISTA
  * (`neaMessageId(org, conv, dispatchId, seq)`), así que un reintento del
  * mismo turno que ya alcanzó a mandar este texto no lo duplica.
@@ -398,8 +408,9 @@ export async function sendText(input: {
  *  1. Los gates de `prepareSend` ya corrieron (los exige el llamador).
  *  2. Se reserva la fila (`pending`, sin wamid) con `ON CONFLICT DO NOTHING`.
  *  3. Si ya existía: con wamid → 200 `{messageId, duplicate:true}` SIN tocar
- *     Graph; sin wamid (otro intento la está mandando ahora mismo) →
- *     `send_in_progress`.
+ *     Graph; sin wamid y RECIENTE (otro intento la está mandando ahora
+ *     mismo) → `send_in_progress`; sin wamid y VIEJA (`STALE_RESERVATION_MS`)
+ *     → se retoma con un UPDATE condicional atómico (ver más abajo).
  *  4. Se llama a Graph y se completa la fila con el wamid real.
  *  5. Si Graph falla, se BORRA la reserva — mantiene el invariante "cero
  *     salientes de IA en `failed`" — y el error sale igual que siempre.
@@ -436,17 +447,55 @@ async function sendTextIdempotent(
 
   if (reserved.length === 0) {
     const existingRows = await db
-      .select({ waMessageId: schema.message.waMessageId })
+      .select({ waMessageId: schema.message.waMessageId, createdAt: schema.message.createdAt })
       .from(schema.message)
       .where(eq(schema.message.id, id))
       .limit(1);
-    if (existingRows[0]?.waMessageId) {
+    const existing = existingRows[0];
+    if (existing?.waMessageId) {
       return { messageId: id, duplicate: true };
     }
-    throw new SendError(
-      "send_in_progress",
-      "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
-    );
+    if (!existing) {
+      // Se borró entre el conflicto de arriba y esta lectura (otro intento
+      // acaba de fallarle a Graph justo ahora) — el llamador puede
+      // reintentar; no queda fila que retomar en este mismo intento.
+      throw new SendError(
+        "send_in_progress",
+        "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
+      );
+    }
+    const staleCutoff = new Date(Date.now() - STALE_RESERVATION_MS);
+    if (existing.createdAt > staleCutoff) {
+      throw new SendError(
+        "send_in_progress",
+        "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
+      );
+    }
+    // Reserva vieja, sin wamid: solo puede ser una fila muerta. Se retoma con
+    // un UPDATE condicional atómico — la condición (sin wamid Y sigue vieja)
+    // vuelve a evaluarse en el UPDATE, así que si otro proceso la retomó (o
+    // Graph la completó) en el instante entre la lectura de arriba y este
+    // UPDATE, `retaken` sale vacío y no se pisa ese trabajo. `createdAt` se
+    // adelanta a ahora — le da a ESTA toma su propio margen de
+    // `STALE_RESERVATION_MS` antes de que un cuarto intento pueda, a su vez,
+    // retomársela mientras Graph todavía no responde.
+    const retaken = await db
+      .update(schema.message)
+      .set({ text: input.text, createdAt: new Date() })
+      .where(
+        and(
+          eq(schema.message.id, id),
+          isNull(schema.message.waMessageId),
+          lt(schema.message.createdAt, staleCutoff)
+        )
+      )
+      .returning();
+    if (retaken.length === 0) {
+      throw new SendError(
+        "send_in_progress",
+        "Ya hay un envío en curso para este dispatchId; todavía no tiene wamid"
+      );
+    }
   }
 
   const { credentials, recipient } = target;

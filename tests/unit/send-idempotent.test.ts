@@ -162,9 +162,9 @@ describe("sendText con dispatchId (reserva-primero, idempotente)", () => {
     expect(second).toEqual({ messageId: first.messageId, duplicate: true });
   });
 
-  it("reserva en vuelo (sin wamid todavía) → 409 send_in_progress, sin llamar a Graph", async () => {
+  it("reserva en vuelo (sin wamid todavía, RECIENTE) → 409 send_in_progress, sin llamar a Graph", async () => {
     const id = neaMessageId("org_1", "cv_1", "dsp_en_vuelo", 0);
-    messages.set(id, { id, waMessageId: null }); // otro intento la está mandando ahora mismo
+    messages.set(id, { id, waMessageId: null, createdAt: new Date() }); // otro intento la está mandando AHORA
     selectQueue.push(convContactRow());
 
     await expect(
@@ -177,6 +177,24 @@ describe("sendText con dispatchId (reserva-primero, idempotente)", () => {
       })
     ).rejects.toMatchObject({ code: "send_in_progress" });
     expect(graphRequest).not.toHaveBeenCalled();
+  });
+
+  it("reserva VIEJA (sin wamid, >2min) → se retoma y SÍ llama a Graph (item 4b: no queda muerta para siempre)", async () => {
+    const id = neaMessageId("org_1", "cv_1", "dsp_vieja", 0);
+    const tresMinutosAtras = new Date(Date.now() - 3 * 60 * 1000);
+    messages.set(id, { id, waMessageId: null, createdAt: tresMinutosAtras, text: "reserva muerta" });
+    selectQueue.push(convContactRow());
+
+    const result = await sendText({
+      conversationId: "cv_1",
+      organizationId: "org_1",
+      text: "hola de nuevo",
+      dispatchId: "dsp_vieja",
+      seq: 0,
+    });
+
+    expect(result.duplicate).toBeUndefined();
+    expect(graphRequest).toHaveBeenCalledTimes(1);
   });
 
   it("Graph falla → se borra la reserva (invariante: cero salientes de IA en failed) y un reintento vuelve a mandar", async () => {

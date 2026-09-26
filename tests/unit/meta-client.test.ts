@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { MetaApiError, normalizeMx, normalizeRecipient } from "@/lib/meta/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { graphRequest, MetaApiError, normalizeMx, normalizeRecipient } from "@/lib/meta/client";
 
 describe("normalizeRecipient", () => {
   it("México móvil legado: 521 + 10 dígitos → 52 + 10 dígitos", () => {
@@ -76,5 +76,41 @@ describe("MetaApiError.isAuthError", () => {
     expect(
       new MetaApiError("x", { status: 500, code: 190 }).isAuthError
     ).toBe(false);
+  });
+});
+
+describe("graphRequest — timeout ante un Graph colgado (item 4d)", () => {
+  const realFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = realFetch;
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("aborta y lanza MetaApiError a los ~30s si Meta nunca responde — no retiene la reserva 300s", async () => {
+    vi.stubEnv("APP_BASE_URL", "http://localhost:3999");
+    vi.stubEnv("DATABASE_URL", "postgres://x@127.0.0.1/y");
+    vi.stubEnv("BETTER_AUTH_SECRET", "x".repeat(32));
+    vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 1).toString("base64"));
+    vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verifytoken");
+    vi.useFakeTimers();
+
+    // Un `fetch` que jamás resuelve por su cuenta — solo reacciona al abort,
+    // exactamente lo que hace `node-fetch`/undici cuando se les pasa `signal`.
+    global.fetch = vi.fn((_url: unknown, init?: { signal?: AbortSignal }) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("This operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    const call = graphRequest("me", { token: "t" });
+    const assertion = expect(call).rejects.toThrow(/no respondió/);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await assertion;
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
