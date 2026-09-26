@@ -24,6 +24,7 @@ import {
 import { ConnectorError } from "@/server/agenda/connectors/types";
 import { moveLeadToStage } from "@/server/leads/stage-history";
 import { publish } from "@/server/events/bus";
+import { citasVisibles } from "@/server/agencia/bot-perfil";
 
 /**
  * 015 — Ciclo de vida de la cita y las dos reglas INNEGOCIABLES:
@@ -362,7 +363,10 @@ export async function rescheduleForConversation(input: {
   const now = input.now ?? new Date();
 
   const convRows = await db
-    .select({ contactId: schema.conversation.contactId })
+    .select({
+      contactId: schema.conversation.contactId,
+      isTest: schema.conversation.isTest,
+    })
     .from(schema.conversation)
     .where(
       scoped(
@@ -396,6 +400,10 @@ export async function rescheduleForConversation(input: {
           eq(schema.booking.contactId, conv.contactId),
           eq(schema.booking.kind, "session"),
           eq(schema.booking.status, "agendada"),
+          // Fork: la misma regla que `booking.next`. Una conversación real no
+          // mueve citas de prueba, y una del Laboratorio, de las de prueba,
+          // solo la suya: el contacto sintético se reutiliza entre corridas.
+          citasVisibles({ id: input.conversationId, isTest: conv.isTest }),
           gte(schema.booking.scheduledAt, now)
         )
       )
