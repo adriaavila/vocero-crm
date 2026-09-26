@@ -1,5 +1,8 @@
-import type { schema } from "@/lib/db";
+import { asc, eq } from "drizzle-orm";
+import { getDb, schema } from "@/lib/db";
 import { renderKb } from "@/server/ai/prompts";
+// Capa de agencia: los frenos del piloto viajan con el perfil (server/agencia/).
+import { perfilDeAgencia } from "@/server/agencia/bot-perfil";
 
 type AgentProfile = typeof schema.agentProfile.$inferSelect;
 type KbEntry = typeof schema.kbEntry.$inferSelect;
@@ -24,4 +27,36 @@ export function serializeBotProfile(profile: AgentProfile, kb: KbEntry[]) {
     kb: renderKb(kb),
     resources: [] as { label: string; url: string }[],
   };
+}
+
+export type BotProfile = ReturnType<typeof serializeBotProfile> & {
+  profile: ReturnType<typeof serializeBotProfile>["profile"] &
+    Awaited<ReturnType<typeof perfilDeAgencia>>;
+};
+
+/**
+ * Constructor ÚNICO del perfil para un cerebro externo: `GET /api/bot/profile`
+ * y el payload de despacho a Nea (dispatch v2, campo `profile`) usan
+ * EXACTAMENTE esta función para no poder divergir. `null` cuando la instancia
+ * no tiene perfil de agente (condición esperada: el bot cae a su brief local).
+ */
+export async function buildBotProfile(organizationId: string): Promise<BotProfile | null> {
+  const db = getDb();
+  const profiles = await db
+    .select()
+    .from(schema.agentProfile)
+    .where(eq(schema.agentProfile.organizationId, organizationId))
+    .limit(1);
+  const profile = profiles[0];
+  if (!profile) return null;
+
+  const kb = await db
+    .select()
+    .from(schema.kbEntry)
+    .where(eq(schema.kbEntry.organizationId, organizationId))
+    .orderBy(asc(schema.kbEntry.createdAt));
+
+  const base = serializeBotProfile(profile, kb);
+  const agencia = await perfilDeAgencia(organizationId);
+  return { ...base, profile: { ...base.profile, ...agencia } };
 }

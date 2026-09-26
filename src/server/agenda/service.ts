@@ -81,6 +81,15 @@ export type BookingResult = {
 /** Cuántas alternativas se devuelven cuando el hueco se ocupó. */
 const FRESH_ALTERNATIVES = 3;
 
+function toBookingResult(booking: BookingRow, settings: CalendarSettings): BookingResult {
+  return {
+    booking,
+    meetingLink: booking.meetingLink,
+    linkPending: booking.linkPending,
+    label: labelInTz(booking.scheduledAt.toISOString(), settings.timezone),
+  };
+}
+
 export async function createSessionBooking(input: {
   organizationId: string;
   startUtc: string;
@@ -103,6 +112,32 @@ export async function createSessionBooking(input: {
 
   if (Number.isNaN(Date.parse(input.startUtc))) {
     throw new BookingError("invalid", "Instante inválido");
+  }
+
+  // Idempotencia por llave natural (dispatch v2, sin migración): un reintento
+  // del mismo turno (la respuesta del primero se perdió) no debe fallar con
+  // `slot_not_offered` solo porque la reserva ya existe y ya limpió la oferta
+  // — se devuelve la cita existente tal cual, como si acabara de crearse.
+  if (input.conversationId) {
+    const already = await db
+      .select()
+      .from(schema.booking)
+      .where(
+        scoped(
+          schema.booking.organizationId,
+          input.organizationId,
+          and(
+            eq(schema.booking.conversationId, input.conversationId),
+            eq(schema.booking.kind, "session"),
+            eq(schema.booking.status, "agendada")
+          )
+        )
+      )
+      .limit(20);
+    const target = already.find(
+      (b) => b.scheduledAt.getTime() === Date.parse(input.startUtc)
+    );
+    if (target) return toBookingResult(target, settings);
   }
 
   // Contexto de la conversación: contacto y si es del Laboratorio.
@@ -379,16 +414,6 @@ export async function rescheduleForConversation(input: {
   const conv = convRows[0];
   if (!conv) throw new BookingError("not_found", "Conversación no encontrada");
 
-  // Mismas reglas que al crear: el instante nuevo tiene que haberse ofrecido.
-  const offers = await getOffers(input.organizationId, input.conversationId);
-  if (!findOffered(offers, input.startUtc)) {
-    throw new BookingError(
-      "slot_not_offered",
-      "Ese horario no se ofreció en esta conversación",
-      offers
-    );
-  }
-
   const rows = await db
     .select()
     .from(schema.booking)
@@ -410,8 +435,26 @@ export async function rescheduleForConversation(input: {
     )
     .orderBy(asc(schema.booking.scheduledAt))
     .limit(1);
-
   const target = rows[0];
+
+  // Idempotencia (dispatch v2): un reintento del mismo turno no debe fallar
+  // con `slot_not_offered` solo porque mover la cita la primera vez ya limpió
+  // la oferta — si la próxima cita activa YA está en ese instante, no hay
+  // nada que mover: se devuelve tal cual.
+  if (target && target.scheduledAt.getTime() === Date.parse(input.startUtc)) {
+    return toBookingResult(target, await getSettings(input.organizationId));
+  }
+
+  // Mismas reglas que al crear: el instante nuevo tiene que haberse ofrecido.
+  const offers = await getOffers(input.organizationId, input.conversationId);
+  if (!findOffered(offers, input.startUtc)) {
+    throw new BookingError(
+      "slot_not_offered",
+      "Ese horario no se ofreció en esta conversación",
+      offers
+    );
+  }
+
   if (!target) {
     throw new BookingError("not_found", "No hay una cita activa que mover");
   }

@@ -258,11 +258,13 @@ describe("chatJson (reintentos y errores tipados)", () => {
     );
   });
 
-  it("probeAiProvider solo devuelve éxito y no propaga errores del proveedor", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(providerResponse("OK")));
+  it("probeAiProvider solo devuelve éxito y no propaga errores del proveedor (sin Nea: no exige tool calling)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(providerResponse("OK"));
+    vi.stubGlobal("fetch", fetchMock);
     await expect(
       probeAiProvider("openrouter", { token: "token-test", model: "modelo-test" })
     ).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1); // un solo intento: sin Nea no hay segunda llamada de tools
   });
 
   it("preferido sin token configurado → cae directo al otro proveedor", async () => {
@@ -332,5 +334,88 @@ describe("chatJson (reintentos y errores tipados)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("not_configured");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("probeAiProvider con Nea (dispatch v2: exige tool calling)", () => {
+  function textResponse(content: string) {
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content } }] }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }
+  function toolCallResponse() {
+    return new Response(
+      JSON.stringify({
+        choices: [{ message: { tool_calls: [{ id: "call_1", function: { name: "ok", arguments: "{}" } }] } }],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } }
+    );
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("APP_BASE_URL", "http://localhost:3000");
+    vi.stubEnv("DATABASE_URL", "postgresql://t:t@localhost:5432/t");
+    vi.stubEnv("BETTER_AUTH_SECRET", "secret-de-test-suficiente");
+    vi.stubEnv("ENCRYPTION_KEY", Buffer.alloc(32, 3).toString("base64"));
+    vi.stubEnv("META_WEBHOOK_VERIFY_TOKEN", "verify-test");
+    vi.stubEnv("BOT_API_KEY", "bot-key-de-prueba-larga");
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
+    resetEnvCacheForTests();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it("modelo que SÍ devuelve tool_calls → ok (segunda llamada, con tools + tool_choice required)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(textResponse("OK"))
+      .mockResolvedValueOnce(toolCallResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      probeAiProvider("openrouter", { token: "token-test", model: "modelo-con-tools" })
+    ).resolves.toEqual({ ok: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const toolsBody = JSON.parse(fetchMock.mock.calls[1]![1]!.body as string);
+    expect(toolsBody.tool_choice).toBe("required");
+    expect(toolsBody.tools[0].function.name).toBe("ok");
+  });
+
+  it("modelo que ignora las tools y responde en texto → ok:false (no se puede guardar)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(textResponse("OK"))
+      .mockResolvedValueOnce(textResponse("no puedo usar herramientas"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      probeAiProvider("openrouter", { token: "token-test", model: "modelo-sin-tools" })
+    ).resolves.toEqual({ ok: false });
+  });
+
+  it("el proveedor rechaza `tools` (400) → ok:false", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(textResponse("OK"))
+      .mockResolvedValueOnce(new Response("bad request", { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      probeAiProvider("openrouter", { token: "token-test", model: "modelo-sin-tools" })
+    ).resolves.toEqual({ ok: false });
+  });
+
+  it("la primera llamada (texto) ya falla → ok:false sin llegar a probar tools", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response("boom", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      probeAiProvider("openrouter", { token: "token-test", model: "modelo-cualquiera" })
+    ).resolves.toEqual({ ok: false });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

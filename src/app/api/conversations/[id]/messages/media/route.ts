@@ -18,6 +18,9 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   meta_error: 422,
   meta_unavailable: 503,
   upload_failed: 502,
+  // Dispatch v2: los adjuntos nunca llevan dispatchId, así que nunca la
+  // dispara — presente solo para que el mapa sea exhaustivo.
+  send_in_progress: 409,
 };
 
 /**

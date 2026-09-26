@@ -197,6 +197,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
         aiGenerated: false,
         origin: "operator",
         media: null,
+        transcript: null,
         createdAt: p.createdAt,
       })),
     ];

@@ -140,6 +140,7 @@ describe("una cita del Laboratorio jamás llega al proveedor", () => {
 
   it("al CREAR: la cita se registra como de prueba y no se crea reunión", async () => {
     const { createSessionBooking } = await import("@/server/agenda/service");
+    selectRows.push([]); // idempotencia (dispatch v2): sin cita previa igual
     selectRows.push([{ contactId: "ct_1", isTest: true }]); // la conversación
     selectRows.push([{ name: "Persona simulada" }]); // el contacto
     selectRows.push([]); // sin lead
@@ -185,6 +186,7 @@ describe("una cita del Laboratorio jamás llega al proveedor", () => {
 
   it("una cita REAL sí llega al proveedor (el guardarraíl no apaga todo)", async () => {
     const { createSessionBooking } = await import("@/server/agenda/service");
+    selectRows.push([]); // idempotencia (dispatch v2): sin cita previa igual
     selectRows.push([{ contactId: "ct_1", isTest: false }]);
     selectRows.push([{ name: "Cliente real" }]);
     selectRows.push([]);

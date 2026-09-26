@@ -1,17 +1,22 @@
-import { and, asc, desc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { newId } from "@/lib/db/ids";
+import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
-import { getAiRuntimeConfig, hasConfiguredAiProvider } from "@/server/ai/credentials";
 import {
-  buildNeaPayload,
+  getAiRuntimeConfig,
+  hasConfiguredAiProvider,
+  markAiCredentialInvalidIfUnchanged,
+} from "@/server/ai/credentials";
+import {
   dispatchToNea,
   selectMessagesForNea,
+  type NeaResponseBody,
   type NeaSourceMessage,
 } from "@/server/ai/nea-dispatch";
+import { buildNeaTurnSnapshot } from "@/server/ai/nea-payload";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -22,6 +27,7 @@ import {
   type AgentActionType,
 } from "@/server/ai/actions";
 import { matchesHandoffIntent } from "@/server/ai/handoff";
+import { toHandoffReason } from "@/server/bot/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getSettings } from "@/server/agenda/settings";
@@ -29,6 +35,21 @@ import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAgentRespondNow } from "@/server/business-hours";
+
+/** Reintentos del turno ante 5xx/red: ~2s y luego ~5s. */
+const TURN_RETRY_DELAYS_MS = [2_000, 5_000];
+/** Intentos totales por turno: 3 en conversaciones reales, 1 en el Laboratorio
+ * (un reintento después de que Nea SÍ alcanzó a contestar duplicaría su
+ * respuesta en la transcripción de la corrida — ver `persistTestOutbound`). */
+const REAL_TURN_ATTEMPTS = 3;
+const LAB_TURN_ATTEMPTS = 1;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
 
 /**
  * Turno del agente (FR-021..FR-025).
@@ -159,10 +180,15 @@ async function applyHandoffOnFailure(conversationId: string): Promise<void> {
 /**
  * Ejecuta UN turno del agente ahora (el Laboratorio lo llama directo, con
  * debounce 0 y sin pasar por el coalesce).
+ *
+ * `dispatchId`: solo lo pasa el worker de SaaS (`job.id`, estable si el turno
+ * reintenta dentro de `runNeaAgentTurn`). Sin él (debounce legado y
+ * Laboratorio), `runNeaAgentTurn` genera uno propio una sola vez por turno.
+ * Rei lo ignora: no despacha a nadie.
  */
-export async function runAgentTurn(conversationId: string): Promise<void> {
+export async function runAgentTurn(conversationId: string, dispatchId?: string): Promise<void> {
   if (isNeaBrain()) {
-    await runNeaAgentTurn(conversationId);
+    await runNeaAgentTurn(conversationId, dispatchId);
     return;
   }
   const db = getDb();
@@ -352,10 +378,17 @@ export async function runAgentTurn(conversationId: string): Promise<void> {
  *  - handoff activo o IA apagada en la conversación — EXCEPTO cuando el
  *    perfil tiene activación por mensajes (`activationEnabled`, columna
  *    `preset_only`): ahí Nea necesita ver la conversación pausada para poder
- *    reactivarla si el mensaje entrante coincide con la frase acordada;
- *  - al menos un mensaje entrante (sin eso no hay nada que despachar).
+ *    reactivarla si el mensaje entrante coincide con la frase acordada.
+ *
+ * Dispatch v2 (Nea sin estado): el CRM manda TODO el estado en cada intento —
+ * nada se reusa entre intentos, el snapshot se reconstruye entero cada vez
+ * porque lo pendiente pudo cambiar mientras Nea no contestaba. 3 intentos en
+ * conversaciones reales, 1 en el Laboratorio (ver `REAL_TURN_ATTEMPTS` /
+ * `LAB_TURN_ATTEMPTS`); ~2s y luego ~5s entre intentos ante 5xx/red — un 4xx
+ * jamás reintenta. Si nada está pendiente, no se despacha en absoluto (ver
+ * `buildNeaTurnSnapshot`).
  */
-async function runNeaAgentTurn(conversationId: string): Promise<void> {
+async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Promise<void> {
   const db = getDb();
   const convRows = await db
     .select()
@@ -395,20 +428,134 @@ async function runNeaAgentTurn(conversationId: string): Promise<void> {
   const contact = contactRows[0];
   if (!contact) return;
 
-  const sourceMessages = conversation.isTest
-    ? await neaMessagesSinceLastOutbound(db, conversationId)
-    : await neaRecentInboundMessages(db, conversationId);
+  // Debounce legado y Laboratorio no traen un dispatchId del llamador (no hay
+  // `agent_job`): se genera uno propio, UNA sola vez, y se reusa en todos los
+  // intentos de este turno — así el id determinista de la respuesta
+  // (`neaMessageId`) es el mismo si hay que reintentar.
+  const effectiveDispatchId = dispatchId ?? newId("dispatch");
+  const attempts = conversation.isTest ? LAB_TURN_ATTEMPTS : REAL_TURN_ATTEMPTS;
 
-  const payload = buildNeaPayload({
-    organizationId,
-    conversationId,
-    isTest: conversation.isTest,
-    contact: { identity: contact.waIdentity, name: contact.name },
-    messages: sourceMessages,
-  });
-  if (!payload.messages.length) return;
+  let lastError: Error = new Error("Nea no respondió");
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await sleep(TURN_RETRY_DELAYS_MS[attempt - 1]!);
 
-  await dispatchToNea(payload);
+    // Reconstruido FRESCO en cada intento — nunca se reusa el de la vuelta
+    // anterior: lo pendiente pudo cambiar mientras Nea no contestaba.
+    const sourceMessages = conversation.isTest
+      ? await neaMessagesSinceLastOutbound(db, conversationId)
+      : await neaRecentInboundMessages(db, conversationId);
+    const snapshot = await buildNeaTurnSnapshot({
+      organizationId,
+      conversationId,
+      isTest: conversation.isTest,
+      dispatchId: effectiveDispatchId,
+      attempt,
+      contact: { identity: contact.waIdentity, name: contact.name },
+      memoryResetAt: conversation.memoryResetAt,
+      agentCursorAt: conversation.agentCursorAt,
+      v1Messages: sourceMessages,
+    });
+    if (!snapshot) return; // nada pendiente: no se despacha.
+
+    if (attempt > 0) {
+      // Un reintento puede caer DESPUÉS de que Nea ya contestó — solo se
+      // perdió la confirmación HTTP de vuelta. El id determinista de la
+      // respuesta lo delata: si ya existe, no hay que volver a POSTear.
+      const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
+      const existing = await db
+        .select({ id: schema.message.id })
+        .from(schema.message)
+        .where(eq(schema.message.id, replyId))
+        .limit(1);
+      if (existing[0]) {
+        await advanceCursor(organizationId, conversationId, snapshot.maxPendingCreatedAt);
+        return;
+      }
+    }
+
+    const result = await dispatchToNea(snapshot.payload);
+    if (result.kind === "ok") {
+      await advanceCursor(organizationId, conversationId, snapshot.maxPendingCreatedAt);
+      await applyNeaResponse({
+        organizationId,
+        conversationId,
+        body: result.body,
+        sentLlmProvider: snapshot.payload.llm?.provider ?? null,
+        orgCredential: snapshot.orgCredential,
+      });
+      return;
+    }
+    if (result.kind === "client_error") {
+      // El payload está mal: repetirlo no ayuda. Mismo trato de siempre —
+      // el llamador decide (needs_review + handoff en el worker de SaaS, log
+      // + handoff en el debounce legado).
+      throw new Error(result.message);
+    }
+    lastError = new Error(result.message); // retryable: 5xx o red — sigue el loop.
+  }
+  throw lastError;
+}
+
+/**
+ * `agent_cursor_at = GREATEST(actual, lo pendiente que se acaba de despachar
+ * con éxito)` — nunca retrocede, incluso si un despacho tardío trae un
+ * pendiente más viejo que el cursor ya avanzado por otro más reciente.
+ */
+async function advanceCursor(
+  organizationId: string,
+  conversationId: string,
+  maxPendingCreatedAt: Date
+): Promise<void> {
+  await getDb()
+    .update(schema.conversation)
+    .set({
+      agentCursorAt: sql`greatest(coalesce(${schema.conversation.agentCursorAt}, '-infinity'::timestamp), ${maxPendingCreatedAt.toISOString()}::timestamp)`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(schema.conversation.id, conversationId),
+        eq(schema.conversation.organizationId, organizationId)
+      )
+    );
+}
+
+/**
+ * Aplica el eco de la respuesta de Nea (step 6 y el handoff pendiente):
+ *  - `llm.status` `auth_failed`/`no_credits` con `source:"org"` → la clave que
+ *    se mandó era de la organización (nunca la de plataforma): se marca
+ *    inválida SOLO si nadie la resguardó desde que se armó el despacho.
+ *  - `handoff.applied === false` → Nea le pide al CRM que aplique el handoff
+ *    (con `applied:true` ya lo hizo por su cuenta, no hay nada que hacer).
+ */
+async function applyNeaResponse(input: {
+  organizationId: string;
+  conversationId: string;
+  body: NeaResponseBody;
+  sentLlmProvider: "openai" | "openrouter" | null;
+  orgCredential: { provider: "openai" | "openrouter"; updatedAt: Date } | null;
+}): Promise<void> {
+  const llmStatus = input.body.llm?.status;
+  if (
+    input.body.llm?.source === "org" &&
+    (llmStatus === "auth_failed" || llmStatus === "no_credits") &&
+    input.orgCredential &&
+    input.sentLlmProvider === input.orgCredential.provider
+  ) {
+    await markAiCredentialInvalidIfUnchanged(
+      input.organizationId,
+      input.orgCredential.provider,
+      input.orgCredential.updatedAt
+    );
+  }
+
+  if (input.body.handoff && input.body.handoff.applied === false) {
+    await applyHandoff(
+      input.conversationId,
+      input.organizationId,
+      toHandoffReason(input.body.handoff.reason)
+    );
+  }
 }
 
 type Db = ReturnType<typeof getDb>;
@@ -544,21 +691,32 @@ async function deliverReply(
  */
 export async function persistTestOutbound(
   conversation: Pick<Conversation, "id" | "organizationId">,
-  text: string
-): Promise<{ messageId: string }> {
+  text: string,
+  opts?: { messageId?: string }
+): Promise<{ messageId: string; duplicate?: boolean }> {
   const db = getDb();
-  const id = newId("message");
-  await db.insert(schema.message).values({
-    id,
-    organizationId: conversation.organizationId,
-    conversationId: conversation.id,
-    direction: "out",
-    type: "text",
-    text,
-    status: "sent",
-    aiGenerated: true,
-    origin: "ai",
-  });
+  const id = opts?.messageId ?? newId("message");
+  // `ON CONFLICT DO NOTHING`: con un `messageId` determinista (dispatch v2,
+  // Nea respondiendo por `/api/bot/messages` con `dispatchId`), un reintento
+  // del mismo turno no duplica la respuesta de prueba en la transcripción.
+  const inserted = await db
+    .insert(schema.message)
+    .values({
+      id,
+      organizationId: conversation.organizationId,
+      conversationId: conversation.id,
+      direction: "out",
+      type: "text",
+      text,
+      status: "sent",
+      aiGenerated: true,
+      origin: "ai",
+    })
+    .onConflictDoNothing()
+    .returning({ id: schema.message.id });
+  if (inserted.length === 0) {
+    return { messageId: id, duplicate: true };
+  }
   await db
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })

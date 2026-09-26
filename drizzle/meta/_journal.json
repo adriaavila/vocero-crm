@@ -148,6 +148,13 @@
       "when": 1790048470717,
       "tag": "0014_anuncio_de_origen",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790372263090,
+      "tag": "0021_nea_sin_estado",
+      "breakpoints": true
     }
   ]
 }

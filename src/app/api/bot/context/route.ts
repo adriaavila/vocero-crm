@@ -2,12 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { apiError } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
-import { serializeFicha } from "@/server/bot/ficha";
-// Capa de agencia: allowlist del piloto y la cita que el lead ya tiene.
-import { accesoDeAgencia, proximaCita } from "@/server/agencia/bot-perfil";
-import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
+import { buildBotContext } from "@/server/bot/context";
 import { normalizeMx } from "@/lib/meta/client";
-import { hasSaaSPlan } from "@/server/agencia/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +16,9 @@ export const dynamic = "force-dynamic";
  * contrato publicado: hay cerebros externos en produccion que dependen de el.
  * No tiene fecha de retiro.
  *
- * NO devuelve el historial de mensajes: el bot lleva su propia memoria de la
- * conversación. Lo que aquí sale es lo que solo el CRM sabe — quién es la
- * persona, si un humano tomó el control y si la ventana de 24 h sigue abierta.
+ * El cuerpo lo arma `buildBotContext` (`server/bot/context.ts`) — el MISMO
+ * constructor que usa el payload de despacho a Nea (dispatch v2, campo
+ * `context`), para que esta ruta y ese payload no puedan divergir.
  */
 export async function GET(req: Request) {
   const denied = requireBotKey(req);
@@ -50,30 +46,11 @@ export async function GET(req: Request) {
   }
 
   const db = getDb();
+  let resolvedConversationId: string | null = conversationId;
 
-  let contact: typeof schema.contact.$inferSelect | undefined;
-  let conversation: typeof schema.conversation.$inferSelect | undefined;
-
-  if (conversationId) {
-    const rows = await db
-      .select({ conversation: schema.conversation, contact: schema.contact })
-      .from(schema.conversation)
-      .innerJoin(
-        schema.contact,
-        eq(schema.conversation.contactId, schema.contact.id)
-      )
-      .where(
-        and(
-          eq(schema.conversation.organizationId, organizationId),
-          eq(schema.conversation.id, conversationId)
-        )
-      )
-      .limit(1);
-    contact = rows[0]?.contact;
-    conversation = rows[0]?.conversation;
-  } else if (waIdentity) {
+  if (!resolvedConversationId && waIdentity) {
     const contacts = await db
-      .select()
+      .select({ id: schema.contact.id })
       .from(schema.contact)
       .where(
         and(
@@ -82,13 +59,13 @@ export async function GET(req: Request) {
         )
       )
       .limit(1);
-    contact = contacts[0];
+    const contact = contacts[0];
     if (contact) {
       // La conversación del Laboratorio jamás se resuelve por identidad: ese
       // camino es para el bot de producción, que nunca debe hablarle a un
       // cliente simulado.
       const convs = await db
-        .select()
+        .select({ id: schema.conversation.id })
         .from(schema.conversation)
         .where(
           and(
@@ -98,64 +75,21 @@ export async function GET(req: Request) {
           )
         )
         .limit(1);
-      conversation = convs[0];
+      resolvedConversationId = convs[0]?.id ?? null;
     }
   }
 
-  if (!contact || !conversation) {
+  const context = resolvedConversationId
+    ? await buildBotContext(organizationId, resolvedConversationId)
+    : null;
+  if (!context) {
     return apiError(404, "not_found", "Conversación no encontrada");
   }
 
-  const proEnabled = await hasSaaSPlan(organizationId, "pro");
-  const leadRows = proEnabled
-    ? await db
-        .select({ lead: schema.lead, stage: schema.pipelineStage })
-        .from(schema.lead)
-        .innerJoin(
-          schema.pipelineStage,
-          eq(schema.lead.stageId, schema.pipelineStage.id)
-        )
-        .where(
-          and(
-            eq(schema.lead.organizationId, organizationId),
-            eq(schema.lead.contactId, contact.id)
-          )
-        )
-        .limit(1)
-    : [];
-
-  const [agentAccess, booking] = await Promise.all([
-    accesoDeAgencia(organizationId),
-    proEnabled ? proximaCita(organizationId, conversation) : Promise.resolve(null),
-  ]);
-
-  return Response.json({
-    contact: {
-      id: contact.id,
-      name: contact.name,
-      /** Nombre neutro (014). Preferir este en clientes nuevos. */
-      identity: contact.waIdentity,
-      /** Alias heredado: sigue aqui para no romper bots ya desplegados. */
-      waIdentity: contact.waIdentity,
-      channel: contact.channel,
-      phone: contact.phone,
-      ficha: serializeFicha(contact),
-    },
-    conversation: {
-      id: conversation.id,
-      // Una sola verdad para el bot: si hay handoff, la IA está apagada
-      // aunque el flag siga en true.
-      aiEnabled: conversation.aiEnabled && !conversation.handoffAt,
-      handoffAt: conversation.handoffAt?.toISOString() ?? null,
-      /** Por qué se pausó. El cerebro externo lo usa para no reabrir solo. */
-      handoffReason: conversation.handoffReason,
-      windowOpen: isWindowOpen(conversation.lastInboundAt),
-      windowRemainingMs: windowRemainingMs(conversation.lastInboundAt),
-    },
-    lead: leadRows[0]
-      ? { id: leadRows[0].lead.id, stageName: leadRows[0].stage.name }
-      : null,
-    agentAccess,
-    booking: { next: booking },
-  });
+  // El cuerpo completo (contacto, conversación, lead, agentAccess, booking,
+  // adOrigen) lo arma `buildBotContext` — el MISMO constructor que usa el
+  // payload de despacho a Nea. Armarlo de nuevo aquí (como hacía esta ruta
+  // antes de dispatch v2) es exactamente la divergencia silenciosa que el
+  // docstring de arriba dice que no debe pasar.
+  return Response.json(context);
 }

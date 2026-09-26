@@ -67,6 +67,9 @@ const SEND_ERROR_STATUS: Record<SendError["code"], number> = {
   meta_error: 422,
   meta_unavailable: 503,
   upload_failed: 502,
+  // Dispatch v2: esta ruta (composer del operador) nunca manda dispatchId,
+  // así que nunca la dispara — presente solo para que el mapa sea exhaustivo.
+  send_in_progress: 409,
 };
 
 export const POST = withAuth(async (session, req: Request, ctx: Params) => {

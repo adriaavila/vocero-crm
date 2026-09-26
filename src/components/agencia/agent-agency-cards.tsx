@@ -49,6 +49,8 @@ export type AiCredentialStatus = {
   model: string;
   last4: string | null;
   lastValidatedAt: string | null;
+  /** Dispatch v2, step 6: Nea marca `invalid` cuando esta clave falla. */
+  lastValidationStatus: "valid" | "invalid" | null;
 };
 
 export type AgencyAiCredentials = {
@@ -172,6 +174,15 @@ function AiCredentialsSection({
               ? "Usando la clave de plataforma"
               : "Sin clave configurada"}
         </div>
+        {status?.source === "organization" && status.lastValidationStatus === "invalid" && (
+          // Dispatch v2, step 6: Nea reportó auth_failed/no_credits con esta
+          // clave y siguió respondiendo con la de allok. El dueño ve por qué
+          // sin tener que adivinarlo desde un turno silencioso.
+          <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
+            Tu token de {provider === "openrouter" ? "OpenRouter" : "OpenAI"} fue rechazado.
+            Respondemos con el de allok mientras lo cambias.
+          </p>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="agent-api-key">API key</Label>
           <Input

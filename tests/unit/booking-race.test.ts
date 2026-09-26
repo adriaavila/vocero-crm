@@ -141,7 +141,10 @@ vi.mock("@/lib/db", () => ({
 }));
 
 function primeLookups() {
+  // 0) idempotencia (dispatch v2): sin cita `agendada` previa en esta
+  //    conversación para ese instante — es la que se está creando ahora.
   // 1) la conversación, 2) el nombre del contacto, 3) el lead
+  selectRows.push([]);
   selectRows.push([{ contactId: "ct_1", isTest: false }]);
   selectRows.push([{ name: "Ana" }]);
   selectRows.push([{ id: "ld_1" }]);

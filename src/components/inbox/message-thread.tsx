@@ -42,7 +42,14 @@ type ContactPayload = {
 };
 
 /** 008 — Previsualización del adjunto de un mensaje, por tipo. */
-function MediaBlock({ media }: { media: MessageMediaDto }) {
+function MediaBlock({
+  media,
+  transcript,
+}: {
+  media: MessageMediaDto;
+  /** Dispatch v2: transcripción de un entrante de audio/documento/imagen. */
+  transcript?: string | null;
+}) {
   const src = `/api/media/${media.assetId}`;
 
   if (media.kind === "location") {
@@ -139,7 +146,16 @@ function MediaBlock({ media }: { media: MessageMediaDto }) {
     );
   }
   if (media.kind === "audio") {
-    return <audio controls preload="metadata" src={src} className="max-w-full" />;
+    return (
+      <span className="block">
+        <audio controls preload="metadata" src={src} className="max-w-full" />
+        {transcript && (
+          <span className="mt-1 block whitespace-pre-wrap break-words text-[12.5px] text-text-3">
+            Transcripción: {transcript}
+          </span>
+        )}
+      </span>
+    );
   }
   // document
   return (
@@ -236,7 +252,7 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
               >
                 {m.media ? (
                   <span className="block">
-                    <MediaBlock media={m.media} />
+                    <MediaBlock media={m.media} transcript={m.transcript} />
                     {m.media.caption && (
                       <span className="mt-1 block whitespace-pre-wrap break-words">
                         {m.media.caption}

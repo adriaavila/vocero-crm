@@ -92,13 +92,22 @@ describe("contrato de agencia con el cerebro externo", () => {
     const contextRoute = await import("@/app/api/bot/context/route");
     // Se lee el código: montar Next entero aquí costaría más de lo que aporta,
     // y lo que se protege es que la ruta SIGA llamando a la capa de agencia.
+    //
+    // Dispatch v2 movió el armado del cuerpo a un constructor compartido
+    // (`server/bot/{profile,context}.ts`) para que la ruta y el payload que
+    // se despacha a Nea no puedan divergir — la ruta ahora llama a ESE
+    // constructor, y es el constructor quien llama a la capa de agencia.
     const { readFileSync } = await import("node:fs");
     const p = readFileSync("src/app/api/bot/profile/route.ts", "utf8");
     const c = readFileSync("src/app/api/bot/context/route.ts", "utf8");
+    const profileBuilder = readFileSync("src/server/bot/profile.ts", "utf8");
+    const contextBuilder = readFileSync("src/server/bot/context.ts", "utf8");
     expect(typeof perfilRoute.GET).toBe("function");
     expect(typeof contextRoute.GET).toBe("function");
-    expect(p).toContain("perfilDeAgencia");
-    expect(c).toContain("accesoDeAgencia");
-    expect(c).toContain("agentAccess");
+    expect(p).toContain("buildBotProfile");
+    expect(c).toContain("buildBotContext");
+    expect(profileBuilder).toContain("perfilDeAgencia");
+    expect(contextBuilder).toContain("accesoDeAgencia");
+    expect(contextBuilder).toContain("agentAccess");
   });
 });

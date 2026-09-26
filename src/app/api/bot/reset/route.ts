@@ -6,11 +6,17 @@ import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
 import { moveLeadToStage } from "@/server/leads/stage-history";
 import { serializeFicha, upsertFicha } from "@/server/bot/ficha";
+import { SendError, sendText } from "@/server/inbox/send";
+import { clearOffers } from "@/server/agenda/offers";
 
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
   conversationId: z.string().min(1),
+  /** Aviso a mandar ANTES del reset (p. ej. "empezamos de nuevo"). */
+  notice: z.string().min(1).max(4096).optional(),
+  /** El MISMO id del despacho — hace idempotente el envío del aviso. */
+  dispatchId: z.string().min(1).optional(),
 });
 
 /**
@@ -18,6 +24,14 @@ const bodySchema = z.object({
  * reactivada (sale del handoff) y lead de vuelta a la primera etapa. El
  * historial del inbox NO se borra: es auditoría. Lo invoca el cerebro externo
  * cuando un número de su allowlist manda `/reset`.
+ *
+ * Dispatch v2: con `notice`, se manda ANTES de fijar `memory_reset_at` — así
+ * su `createdAt` queda ANTES del corte y el aviso mismo no vuelve a aparecer
+ * en `history` de despachos futuros. `memory_reset_at` es lo que hace que la
+ * memoria de Nea (pendientes + historial) arranque de cero desde este
+ * instante, aunque el hilo del inbox conserve todo como auditoría. Las
+ * ofertas vigentes se limpian: un slot ofrecido antes del reset no debe
+ * poder reservarse después de que la conversación "empezó de nuevo".
  */
 export async function POST(req: Request) {
   const denied = requireBotKey(req);
@@ -48,15 +62,42 @@ export async function POST(req: Request) {
   const conv = rows[0];
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
 
+  if (body.data.notice) {
+    try {
+      await sendText({
+        conversationId: conv.id,
+        organizationId,
+        text: body.data.notice,
+        aiGenerated: true,
+        dispatchId: body.data.dispatchId,
+        seq: 0,
+      });
+    } catch (err) {
+      if (err instanceof SendError) {
+        if (err.code === "ai_disabled") return apiError(409, "ai_paused", err.message);
+        if (err.code === "window_closed") return apiError(409, "window_closed", err.message);
+        if (err.code === "sandbox_violation") return apiError(409, "sandbox_violation", err.message);
+        if (err.code === "send_in_progress") return apiError(409, "send_in_progress", err.message);
+        return apiError(502, err.code, err.message);
+      }
+      throw err;
+    }
+  }
+
   await db
     .update(schema.conversation)
     .set({
       aiEnabled: true,
       handoffAt: null,
       handoffReason: null,
+      memoryResetAt: new Date(),
       updatedAt: new Date(),
     })
     .where(eq(schema.conversation.id, conv.id));
+
+  await clearOffers(organizationId, conv.id).catch((err) => {
+    console.warn(`[bot/reset] no se pudieron limpiar las ofertas: ${err}`);
+  });
 
   // La ficha se vacía POR LA PUERTA (`upsertFicha`), no con un update suelto:
   // esa puerta es la que filtra por organización, y el guardarraíl de
