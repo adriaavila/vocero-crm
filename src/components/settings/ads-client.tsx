@@ -148,10 +148,8 @@ export function AdsClient() {
         <CardHeader>
           <CardTitle>Conversiones de anuncios</CardTitle>
           <CardDescription>
-            Meta sabe qué conversaciones empezaron desde un anuncio, pero no
-            cuáles sirvieron. Conecta tu dataset y el CRM le avisará cuándo un
-            lead se califica y cuándo se cierra la venta, para que optimice
-            hacia quien compra y no hacia quien solo escribe.
+            Le avisamos a Meta cuando un lead de tus anuncios de WhatsApp se
+            califica o compra, para que tus anuncios busquen más gente así.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -180,7 +178,7 @@ export function AdsClient() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="capi-token">Token (opcional)</Label>
+            <Label htmlFor="capi-token">Token de eventos (opcional)</Label>
             <Input
               id="capi-token"
               value={token}
@@ -189,8 +187,8 @@ export function AdsClient() {
               autoComplete="off"
             />
             <p className="text-xs text-muted-foreground">
-              El token de tu conexión de WhatsApp ya suele poder publicar en el
-              dataset. Solo pega uno si Meta te dio otro distinto.
+              Vacío: usa el token de tu WhatsApp. Solo pega uno si Meta te dio
+              otro distinto para este dataset.
             </p>
           </div>
 
@@ -211,9 +209,17 @@ export function AdsClient() {
                   </option>
                 ))}
             </select>
-            <p className="text-xs text-muted-foreground">
-              La venta se reporta sola cuando el trato entra a tu etapa ganada.
-            </p>
+            {qualifiedStageId ? (
+              <p className="text-xs text-muted-foreground">
+                La venta se reporta sola cuando el trato entra a tu etapa
+                ganada.
+              </p>
+            ) : (
+              <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">
+                Sin etapa elegida no se reportan leads calificados. Las ventas
+                se siguen reportando igual.
+              </p>
+            )}
           </div>
 
           {error ? (
@@ -267,7 +273,9 @@ export function AdsClient() {
                 <thead className="kicker text-left">
                   <tr>
                     <th className="py-2 pr-3 font-medium">Evento</th>
-                    <th className="py-2 pr-3 font-medium">Contacto</th>
+                    <th className="hidden py-2 pr-3 font-medium sm:table-cell">
+                      Contacto
+                    </th>
                     <th className="py-2 pr-3 font-medium">Estado</th>
                     <th className="py-2 pr-3 font-medium">Cuándo</th>
                     <th className="py-2 font-medium">Detalle</th>
@@ -283,18 +291,46 @@ export function AdsClient() {
                             {row.adHeadline}
                           </span>
                         ) : null}
+                        {/* Contacto se repite aquí a 390px, donde la columna
+                            se oculta: no desaparece, solo cambia de sitio. */}
+                        <span className="block text-xs text-muted-foreground sm:hidden">
+                          {row.contactName ?? "—"}
+                        </span>
                       </td>
-                      <td className="py-2 pr-3">{row.contactName ?? "—"}</td>
+                      <td className="hidden py-2 pr-3 sm:table-cell">
+                        {row.contactName ?? "—"}
+                      </td>
                       <td className="py-2 pr-3">
                         <Badge variant={STATUS_VARIANT[row.status]}>
                           {STATUS_LABEL[row.status]}
                         </Badge>
                       </td>
-                      <td className="py-2 pr-3 whitespace-nowrap text-muted-foreground">
-                        {new Date(row.at).toLocaleString()}
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {/* Fecha corta en 390px; la hora completa solo cabe
+                            sin envolver desde sm. */}
+                        <span className="sm:hidden">
+                          {new Date(row.at).toLocaleDateString()}
+                        </span>
+                        <span className="hidden whitespace-nowrap sm:inline">
+                          {new Date(row.at).toLocaleString()}
+                        </span>
                       </td>
                       <td className="py-2 text-xs text-muted-foreground">
-                        {row.error ?? row.fbTraceId ?? "—"}
+                        {row.error ? (
+                          <span
+                            className={
+                              row.status === "failed"
+                                ? "text-danger-text"
+                                : undefined
+                            }
+                          >
+                            {row.error}
+                          </span>
+                        ) : row.fbTraceId ? (
+                          `Referencia: ${row.fbTraceId}`
+                        ) : (
+                          "—"
+                        )}
                       </td>
                     </tr>
                   ))}

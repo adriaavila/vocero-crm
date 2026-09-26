@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { apiError, parseBody, withAuth } from "@/lib/api";
+import { apiError, parseBody, withOwner } from "@/lib/api";
 import {
   atribucionDisabledResponse,
   atribucionEnabled,
@@ -19,9 +19,13 @@ export const dynamic = "force-dynamic";
  *
  * Sin la bandera `ATRIBUCION` esto no existe: 404, no 403 — no hay nada que
  * revelar sobre un endpoint que esta instancia no tiene.
+ *
+ * `withOwner`, no `withAuth`: el dataset y el token publican en nombre del
+ * negocio en Meta, igual que la conexión de WhatsApp — cualquier miembro
+ * podía leerlos y cambiarlos, y esto no es distinto de esa credencial.
  */
 
-export const GET = withAuth(async (session) => {
+export const GET = withOwner(async (session) => {
   if (!atribucionEnabled()) return atribucionDisabledResponse();
   const capi = await getCapiSettingsView(session.organizationId);
   return Response.json({ capi });
@@ -39,7 +43,7 @@ const putSchema = z.object({
   qualifiedStageId: z.string().trim().min(1).nullish(),
 });
 
-export const PUT = withAuth(async (session, req: Request) => {
+export const PUT = withOwner(async (session, req: Request) => {
   if (!atribucionEnabled()) return atribucionDisabledResponse();
 
   const body = await parseBody(req, putSchema);
@@ -79,7 +83,7 @@ export const PUT = withAuth(async (session, req: Request) => {
   return Response.json({ ok: true });
 });
 
-export const DELETE = withAuth(async (session) => {
+export const DELETE = withOwner(async (session) => {
   if (!atribucionEnabled()) return atribucionDisabledResponse();
   await deleteCapiSettings(session.organizationId);
   return Response.json({ ok: true });

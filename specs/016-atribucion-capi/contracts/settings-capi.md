@@ -1,8 +1,11 @@
 # Contrato — Ajustes de atribución (`/api/settings/capi`)
 
-Autenticada por sesión (`withAuth`), alcance por organización. **Con la bandera
-`ATRIBUCION` apagada, todos estos endpoints responden `404` sin cuerpo**: en esa
-instancia no existen.
+Autenticada por sesión, **solo propietario** (`withOwner`), alcance por
+organización — el dataset y el token publican en nombre del negocio en Meta,
+igual que la conexión de WhatsApp, así que un miembro que no sea dueño recibe
+`403 forbidden` en los cuatro endpoints. **Con la bandera `ATRIBUCION`
+apagada, todos estos endpoints responden `404` sin cuerpo**: en esa instancia
+no existen.
 
 Errores con el sobre estándar del proyecto: `{ error: { code, message } }`.
 

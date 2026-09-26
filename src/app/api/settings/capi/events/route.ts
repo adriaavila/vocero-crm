@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/api";
+import { withOwner } from "@/lib/api";
 import {
   atribucionDisabledResponse,
   atribucionEnabled,
@@ -13,8 +13,12 @@ export const dynamic = "force-dynamic";
  * Responde la única pregunta que importa cuando uno duda de esto: "¿le está
  * llegando algo a Meta y, si no, por qué?". Sin acciones: este endpoint jamás
  * escribe.
+ *
+ * `withOwner`, no `withAuth`: misma superficie que la configuración del
+ * dataset — quien puede ver el dataset y el token puede ver a quién se le
+ * reportó.
  */
-export const GET = withAuth(async (session, req: Request) => {
+export const GET = withOwner(async (session, req: Request) => {
   if (!atribucionEnabled()) return atribucionDisabledResponse();
   const raw = new URL(req.url).searchParams.get("limit");
   const parsed = raw ? Number.parseInt(raw, 10) : NaN;
