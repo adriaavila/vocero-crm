@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   plural,
   type AdRowDto,
+  type AdSpendEntryDto,
   type AdSpendListDto,
   type AdSpendSummaryDto,
   type AdsBlockDto,
@@ -15,9 +16,13 @@ import { formatMoneyCents } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { MiniaturaDeAnuncio } from "@/components/anuncio-origen";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast-provider";
 import { Section, Subhead } from "./section";
 import { RateCard, StatCard } from "./stat-card";
-import { AdSpendDialog } from "./ad-spend-dialog";
+import { AdSpendDialog, FUENTES } from "./ad-spend-dialog";
+
+/** Ventana para deshacer un borrado antes de que sea de verdad al servidor. */
+const UNDO_MS = 5000;
 
 type Conteos = { conversations: number; leads: number; won: number; winRate: RateDto };
 
@@ -43,6 +48,7 @@ export function AdsSection({
   onRetry,
   spend,
   currency,
+  today,
   onSpendChanged,
 }: {
   data: AdsBlockDto | null;
@@ -51,9 +57,90 @@ export function AdsSection({
   onRetry?: () => void;
   spend: { data: AdSpendListDto | null; loading: boolean; error: string | null };
   currency: string;
+  /** Hoy en la zona del negocio (`YYYY-MM-DD`) — el diálogo de gasto lo usa
+   * para su rango por defecto. */
+  today: string;
   onSpendChanged: () => void;
 }) {
   const [dialogoAbierto, setDialogoAbierto] = useState(false);
+  const notify = useToast();
+
+  // El ciclo de "borrado pendiente" vive AQUÍ, no en el diálogo: el diálogo
+  // se desmonta al cerrarse (`{dialogoAbierto && <AdSpendDialog .../>}`), y
+  // si eso pasara dentro de la ventana de "Deshacer" el estado de qué está
+  // pendiente se perdería con él. `AdsSection` no se desmonta con el rango,
+  // así que sobrevive a que el diálogo se cierre y reabra.
+  const [pendientesDeBorrar, setPendientesDeBorrar] = useState<Set<string>>(new Set());
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Si la pestaña se cierra o navega antes de que el timer dispare, el
+  // borrado real nunca se manda — `keepalive` deja que el navegador complete
+  // la petición aunque la página ya se esté yendo, en vez de perder cargas
+  // que el dueño creyó borradas.
+  useEffect(() => {
+    const flush = () => {
+      for (const [id] of timers.current) {
+        void fetch(`/api/analytics/spend?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          keepalive: true,
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, []);
+
+  /**
+   * Borrado optimista: desaparece de la lista AHORA (se siente instantáneo),
+   * pero el DELETE de verdad espera `UNDO_MS` — tiempo para arrepentirse
+   * antes de que sea definitivo. "Deshacer" solo cancela ese timer local; no
+   * hay que deshacer nada en el servidor porque nunca se le pidió el borrado.
+   */
+  function borrar(entrada: AdSpendEntryDto) {
+    setPendientesDeBorrar((prev) => new Set(prev).add(entrada.id));
+    const timer = setTimeout(async () => {
+      timers.current.delete(entrada.id);
+      const res = await fetch(`/api/analytics/spend?id=${encodeURIComponent(entrada.id)}`, {
+        method: "DELETE",
+      }).catch(() => null);
+      // 404 cuenta como éxito: si ya no existe (otra pestaña la borró, o un
+      // reintento tras un `keepalive` que sí llegó), el resultado que el
+      // dueño quería ya es un hecho — no hay nada que reportar como error.
+      if (!res?.ok && res?.status !== 404) {
+        setPendientesDeBorrar((prev) => {
+          const next = new Set(prev);
+          next.delete(entrada.id);
+          return next;
+        });
+        notify("No se pudo borrar esa carga.", "error");
+        return;
+      }
+      onSpendChanged();
+    }, UNDO_MS);
+    timers.current.set(entrada.id, timer);
+
+    const etiqueta = FUENTES.find((f) => f.value === entrada.source)?.label ?? entrada.source;
+    notify(`Carga de ${etiqueta} borrada.`, "success", {
+      label: "Deshacer",
+      onClick: () => {
+        const t = timers.current.get(entrada.id);
+        if (t) {
+          clearTimeout(t);
+          timers.current.delete(entrada.id);
+        }
+        setPendientesDeBorrar((prev) => {
+          const next = new Set(prev);
+          next.delete(entrada.id);
+          return next;
+        });
+      },
+    });
+  }
+
+  const entradasVisibles = (spend.data?.entries ?? []).filter(
+    (e) => !pendientesDeBorrar.has(e.id)
+  );
+
   return (
     <>
       <Section
@@ -164,10 +251,12 @@ export function AdsSection({
     </Section>
       {dialogoAbierto && (
         <AdSpendDialog
-          entries={spend.data?.entries ?? []}
+          entries={entradasVisibles}
           currency={currency}
+          today={today}
           onClose={() => setDialogoAbierto(false)}
           onChanged={onSpendChanged}
+          onDelete={borrar}
         />
       )}
     </>
@@ -240,10 +329,15 @@ function GastoCards({
           }
         />
       </div>
-      {(resumen.hasWonWithoutAmount || resumen.hasOtherCurrencySpend) && (
+      {(resumen.hasWonWithoutAmount ||
+        resumen.hasOtherCurrencySpend ||
+        resumen.hasWonOtherCurrency) && (
         <div className="space-y-0.5 text-[11px] text-text-3">
           {resumen.hasWonWithoutAmount && (
             <p>Hay tratos ganados sin monto: cuentan como cliente, no suman al retorno.</p>
+          )}
+          {resumen.hasWonOtherCurrency && (
+            <p>Hay tratos ganados en otra moneda que no suman al retorno.</p>
           )}
           {resumen.hasOtherCurrencySpend && (
             <p>Hay cargas en otra moneda que no se cuentan aquí.</p>

@@ -47,4 +47,3 @@ output/
 scratch/
 tmp-screens/
 .playwright-cli/
-tmp-screens/

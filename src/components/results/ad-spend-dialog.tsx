@@ -8,21 +8,9 @@ import { formatMoneyCents, parseMoneyToCents } from "@/lib/money";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/components/ui/toast-provider";
+import { defaultRange } from "./range-picker";
 
-/** Ventana para deshacer un borrado antes de que sea de verdad al servidor. */
-const UNDO_MS = 5000;
-
-/** Hoy - 29 días, para que el diálogo abra con el mismo rango que Resultados
- * suele mirar por default — casi siempre es lo que el dueño quiere cargar. */
-function rangoPorDefecto(): { from: string; to: string } {
-  const hoy = new Date();
-  const hace30 = new Date(hoy.getTime() - 29 * 86_400_000);
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  return { from: iso(hace30), to: iso(hoy) };
-}
-
-const FUENTES: { value: SourceValue; label: string }[] = [
+export const FUENTES: { value: SourceValue; label: string }[] = [
   { value: "anuncio", label: "Anuncio" },
   { value: "organico", label: "Contenido orgánico" },
   { value: "referido", label: "Referido" },
@@ -37,6 +25,33 @@ type Estado =
   | { tipo: "error"; mensaje: string };
 
 /**
+ * "field: mensaje; field2: mensaje2" (ver `parseBody` en `lib/api.ts`) → un
+ * mapa por campo, para poder pintar cada error bajo SU input en vez de una
+ * sola frase genérica arriba del formulario.
+ */
+function erroresPorCampo(detalle: string): Record<string, string> {
+  const mapa: Record<string, string> = {};
+  for (const parte of detalle.split(";")) {
+    const [campo, ...resto] = parte.trim().split(":");
+    if (campo && resto.length > 0) mapa[campo.trim()] = resto.join(":").trim();
+  }
+  return mapa;
+}
+
+const FORMATO_FECHA = new Intl.DateTimeFormat("es-MX", {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/** "2026-09-26" → "26 sept" — corto y en español, no el ISO crudo. `timeZone:
+ * "UTC"` porque la fecha ya es de calendario (no un instante): parsearla con
+ * la hora local restaría un día cerca de medianoche en husos negativos. */
+function fechaCorta(iso: string): string {
+  return FORMATO_FECHA.format(new Date(`${iso}T00:00:00Z`));
+}
+
+/**
  * Fork — "Cargar gasto". Por fuente y periodo, nunca por anuncio: el gasto de
  * Meta se factura por conjunto/campaña, y repartirlo entre creativos sería
  * inventar un número que nadie cargó (ver la nota en la sección).
@@ -44,32 +59,35 @@ type Estado =
  * Es una pantalla de gestión, no un alta de una sola vez: se queda abierta
  * tras guardar para poder cargar varias fuentes del mismo periodo seguidas, y
  * la lista de abajo se puede editar (borrar) sin cerrarla.
+ *
+ * El ciclo de "borrado pendiente" (optimista + deshacer) vive en `AdsSection`,
+ * no aquí: así sobrevive a que el dueño cierre y reabra este diálogo dentro
+ * de la ventana de deshacer. Este componente solo pide el borrado.
  */
 export function AdSpendDialog({
   entries,
   currency,
+  today,
   onClose,
   onChanged,
+  onDelete,
 }: {
   entries: AdSpendEntryDto[];
   currency: string;
+  /** Hoy en la zona del negocio (`YYYY-MM-DD`) — el rango por defecto usa
+   * esta fecha, no la del reloj del navegador. */
+  today: string;
   onClose: () => void;
-  /** Tras crear o borrar una carga: el padre vuelve a pedir lista + resumen. */
+  /** Tras crear una carga: el padre vuelve a pedir lista + resumen. */
   onChanged: () => void;
+  onDelete: (entry: AdSpendEntryDto) => void;
 }) {
   const [source, setSource] = useState<SourceValue>("anuncio");
-  const [from, setFrom] = useState(() => rangoPorDefecto().from);
-  const [to, setTo] = useState(() => rangoPorDefecto().to);
+  const [{ from, to }, setRango] = useState(() => defaultRange(today));
   const [monto, setMonto] = useState("");
   const [note, setNote] = useState("");
   const [estado, setEstado] = useState<Estado>({ tipo: "idle" });
-  const [pendientesDeBorrar, setPendientesDeBorrar] = useState<Set<string>>(new Set());
-  // `setTimeout` no depende de que el componente siga montado: si el dueño
-  // cierra el diálogo dentro de la ventana de "Deshacer", el borrado real
-  // igual se hace más tarde — nunca se pierde, solo ya sin el toast a la
-  // vista. Por eso este ref NO se limpia en un cleanup de useEffect.
-  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const notify = useToast();
+  const [erroresServidor, setErroresServidor] = useState<Record<string, string>>({});
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   // `showModal()` es lo que hace de esto un modal DE VERDAD: el navegador
@@ -84,12 +102,18 @@ export function AdSpendDialog({
   }, []);
 
   const parsedCents = monto.trim() ? parseMoneyToCents(monto) : null;
-  const montoInvalido = monto.trim().length > 0 && (parsedCents === null || parsedCents < 0);
-  const rangoInvalido = Boolean(from) && Boolean(to) && to < from;
+  const montoInvalidoLocal = monto.trim().length > 0 && (parsedCents === null || parsedCents < 0);
+  const rangoInvalidoLocal = Boolean(from) && Boolean(to) && to < from;
+  const montoError = montoInvalidoLocal
+    ? "No reconozco ese monto. Escríbelo como 5000 o 5,000.00."
+    : erroresServidor.amountCents;
+  const rangoError = rangoInvalidoLocal
+    ? "La fecha final va antes que la inicial."
+    : erroresServidor.periodEnd ?? erroresServidor.periodStart;
   const listo =
     Boolean(from) &&
     Boolean(to) &&
-    !rangoInvalido &&
+    !rangoInvalidoLocal &&
     parsedCents !== null &&
     parsedCents >= 0 &&
     estado.tipo !== "guardando";
@@ -97,6 +121,7 @@ export function AdSpendDialog({
   async function guardar() {
     if (!listo || parsedCents === null) return;
     setEstado({ tipo: "guardando" });
+    setErroresServidor({});
     const res = await fetch("/api/analytics/spend", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -117,9 +142,11 @@ export function AdSpendDialog({
       error?: { message?: string };
     } | null;
     if (!res.ok) {
+      const detalle = data?.error?.message ?? "";
+      setErroresServidor(erroresPorCampo(detalle));
       setEstado({
         tipo: "error",
-        mensaje: data?.error?.message ?? "No se pudo guardar la carga.",
+        mensaje: detalle || "No se pudo guardar la carga.",
       });
       return;
     }
@@ -129,54 +156,6 @@ export function AdSpendDialog({
     onChanged();
     setTimeout(() => setEstado((e) => (e.tipo === "guardado" ? { tipo: "idle" } : e)), 2000);
   }
-
-  /**
-   * Borrado optimista: desaparece de la lista AHORA (se siente instantáneo),
-   * pero el DELETE de verdad espera `UNDO_MS` — tiempo para arrepentirse
-   * antes de que sea definitivo. "Deshacer" solo cancela ese timer local; no
-   * hay que deshacer nada en el servidor porque nunca se le pidió el borrado.
-   */
-  function borrar(entrada: AdSpendEntryDto) {
-    setPendientesDeBorrar((prev) => new Set(prev).add(entrada.id));
-    const timer = setTimeout(async () => {
-      timers.current.delete(entrada.id);
-      const res = await fetch(`/api/analytics/spend?id=${encodeURIComponent(entrada.id)}`, {
-        method: "DELETE",
-      }).catch(() => null);
-      if (!res?.ok) {
-        // No se pudo: se devuelve a la lista en vez de dejarla desaparecida
-        // sin haberse borrado en verdad.
-        setPendientesDeBorrar((prev) => {
-          const next = new Set(prev);
-          next.delete(entrada.id);
-          return next;
-        });
-        notify("No se pudo borrar esa carga.", "error");
-        return;
-      }
-      onChanged();
-    }, UNDO_MS);
-    timers.current.set(entrada.id, timer);
-
-    const etiqueta = FUENTES.find((f) => f.value === entrada.source)?.label ?? entrada.source;
-    notify(`Carga de ${etiqueta} borrada.`, "success", {
-      label: "Deshacer",
-      onClick: () => {
-        const t = timers.current.get(entrada.id);
-        if (t) {
-          clearTimeout(t);
-          timers.current.delete(entrada.id);
-        }
-        setPendientesDeBorrar((prev) => {
-          const next = new Set(prev);
-          next.delete(entrada.id);
-          return next;
-        });
-      },
-    });
-  }
-
-  const visibles = entries.filter((e) => !pendientesDeBorrar.has(e.id));
 
   return (
     <dialog
@@ -232,10 +211,17 @@ export function AdSpendDialog({
                 id="as-monto"
                 value={monto}
                 inputMode="decimal"
+                aria-invalid={!!montoError}
+                aria-describedby={montoError ? "as-monto-error" : undefined}
                 onChange={(e) => setMonto(e.target.value)}
                 placeholder="5,000.00"
                 className="h-11 sm:h-9"
               />
+              {montoError && (
+                <p id="as-monto-error" role="alert" className="text-xs text-danger-text">
+                  {montoError}
+                </p>
+              )}
             </div>
           </div>
 
@@ -249,7 +235,7 @@ export function AdSpendDialog({
                 type="date"
                 value={from}
                 max={to || undefined}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(e) => setRango((r) => ({ ...r, from: e.target.value }))}
                 className="h-11 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground sm:h-9"
               />
             </div>
@@ -262,21 +248,18 @@ export function AdSpendDialog({
                 type="date"
                 value={to}
                 min={from || undefined}
-                onChange={(e) => setTo(e.target.value)}
+                aria-invalid={!!rangoError}
+                aria-describedby={rangoError ? "as-to-error" : undefined}
+                onChange={(e) => setRango((r) => ({ ...r, to: e.target.value }))}
                 className="h-11 w-full rounded-md border border-input bg-background px-2 text-sm text-foreground sm:h-9"
               />
+              {rangoError && (
+                <p id="as-to-error" role="alert" className="text-xs text-danger-text">
+                  {rangoError}
+                </p>
+              )}
             </div>
           </div>
-          {rangoInvalido && (
-            <p role="alert" className="text-xs text-danger-text">
-              La fecha final va antes que la inicial.
-            </p>
-          )}
-          {montoInvalido && (
-            <p role="alert" className="text-xs text-danger-text">
-              No reconozco ese monto. Escríbelo como 5000 o 5,000.00.
-            </p>
-          )}
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium" htmlFor="as-note">
@@ -319,11 +302,11 @@ export function AdSpendDialog({
 
         <div className="mt-5 border-t pt-4">
           <p className="text-xs font-medium text-text-2">Cargas registradas</p>
-          {visibles.length === 0 ? (
+          {entries.length === 0 ? (
             <p className="mt-2 text-xs text-text-3">Todavía no hay ninguna.</p>
           ) : (
             <ul className="mt-2 max-h-52 space-y-1.5 overflow-y-auto">
-              {visibles.map((e) => (
+              {entries.map((e) => (
                 <li
                   key={e.id}
                   className="flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs"
@@ -334,7 +317,7 @@ export function AdSpendDialog({
                       {formatMoneyCents(e.amountCents, e.currency)}
                     </p>
                     <p className="truncate text-text-3">
-                      {e.periodStart} a {e.periodEnd}
+                      {fechaCorta(e.periodStart)} a {fechaCorta(e.periodEnd)}
                       {e.note ? ` · ${e.note}` : ""}
                     </p>
                   </div>
@@ -344,7 +327,7 @@ export function AdSpendDialog({
                     size="icon"
                     aria-label={`Borrar carga de ${FUENTES.find((f) => f.value === e.source)?.label ?? e.source}, ${e.periodStart} a ${e.periodEnd}`}
                     className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
-                    onClick={() => borrar(e)}
+                    onClick={() => onDelete(e)}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>

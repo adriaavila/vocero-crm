@@ -160,6 +160,7 @@ export function ResultsClient({
           {...ads}
           spend={spend}
           currency={currency}
+          today={today}
           onSpendChanged={reloadSpend}
           onRetry={reintentarAds}
         />

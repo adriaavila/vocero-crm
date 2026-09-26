@@ -101,4 +101,14 @@ describe("adReturn", () => {
     // Gasto grande, pocos tratos: sigue "poco fiable" aunque el dinero sea mucho.
     expect(adReturn(1_000_000, 500_000, 2).reliable).toBe(false);
   });
+
+  it("bajo 1x usa dos decimales: 0.3x y 0.4x son distintos, no lo mismo", () => {
+    // 3,500 / 10,000 = 0.35 — un decimal lo redondearía a 0.3 o 0.4 sin decir
+    // cuál de los dos es real.
+    expect(adReturn(3_500, 10_000, 3).multiple).toBe(0.35);
+  });
+
+  it("1x o más sigue con un decimal: no hace falta más precisión ahí", () => {
+    expect(adReturn(25_432, 10_000, 12).multiple).toBe(2.5);
+  });
 });

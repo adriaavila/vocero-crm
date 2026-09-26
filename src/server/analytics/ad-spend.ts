@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { newId } from "@/lib/db/ids";
@@ -132,19 +132,36 @@ export function proratedCents(
 }
 
 /**
- * ¿Algún trato ganado del periodo no tiene monto capturado? Ese trato SÍ
- * cuenta como cliente (divide el costo por cliente) pero no puede sumar al
- * retorno — nadie anotó cuánto pagó. Un solo booleano para todo el resumen:
- * alcanza para mostrar la nota, no hace falta saber cuál fuente.
+ * ¿Algún trato ganado del periodo, de una fuente CON gasto cargado, no tiene
+ * monto capturado? Ese trato SÍ cuenta como cliente (divide el costo por
+ * cliente) pero no puede sumar al retorno — nadie anotó cuánto pagó. Limitado
+ * a `fuentesConGasto`: un ganado sin monto de una fuente que no tiene gasto
+ * cargado no entra en este resumen para empezar, así que no pinta su nota.
+ * Un solo booleano para todo el resumen: alcanza para mostrar la nota, no
+ * hace falta saber cuál fuente.
  */
 async function hayGanadosSinMonto(
   organizationId: string,
   start: Date,
-  end: Date
+  end: Date,
+  fuentesConGasto: string[]
 ): Promise<boolean> {
+  if (fuentesConGasto.length === 0) return false;
+  const fuente = effectiveSourceExpr(
+    schema.lead.organizationId,
+    schema.lead.contactId,
+    schema.contact.source
+  );
   const [row] = await getDb()
     .select({ n: sql<number>`count(*)::int` })
     .from(schema.lead)
+    .innerJoin(
+      schema.contact,
+      and(
+        eq(schema.contact.id, schema.lead.contactId),
+        eq(schema.contact.organizationId, schema.lead.organizationId)
+      )
+    )
     .innerJoin(
       schema.pipelineStage,
       and(
@@ -160,11 +177,14 @@ async function hayGanadosSinMonto(
         lt(schema.lead.createdAt, end),
         eq(schema.pipelineStage.kind, "won"),
         sql`${schema.lead.amountCents} is null`,
+        inArray(fuente, fuentesConGasto),
         notLabContact(schema.lead.contactId, schema.lead.organizationId)
       )
     );
   return (row?.n ?? 0) > 0;
 }
+
+type WonPorFuente = { wonCents: number; otraMoneda: boolean };
 
 /** Dinero de tratos ganados por fuente, en la cohorte y moneda del negocio. */
 async function wonCentsPorFuente(
@@ -172,7 +192,7 @@ async function wonCentsPorFuente(
   start: Date,
   end: Date,
   currency: string
-): Promise<Map<string, number>> {
+): Promise<Map<string, WonPorFuente>> {
   const rows = await getDb()
     .select({
       key: effectiveSourceExpr(
@@ -185,6 +205,15 @@ async function wonCentsPorFuente(
           and ${schema.lead.amountCents} is not null
           and coalesce(${schema.lead.currency}, ${currency}) = ${currency}
       ), 0)::bigint`,
+      // Un ganado con monto en OTRA moneda no se puede sumar (no hay tipo de
+      // cambio), pero tampoco se puede esconder: la fuente se marca para que
+      // el resumen avise en vez de simplemente valer menos de lo real.
+      otraMoneda: sql<boolean>`bool_or(
+        ${schema.pipelineStage.kind} = 'won'
+          and ${schema.lead.amountCents} is not null
+          and ${schema.lead.currency} is not null
+          and ${schema.lead.currency} != ${currency}
+      )`,
     })
     .from(schema.lead)
     .innerJoin(
@@ -211,7 +240,12 @@ async function wonCentsPorFuente(
       )
     )
     .groupBy(sql`1`);
-  return new Map(rows.map((r) => [r.key ?? "desconocida", Number(r.wonCents)]));
+  return new Map(
+    rows.map((r) => [
+      r.key ?? "desconocida",
+      { wonCents: Number(r.wonCents), otraMoneda: r.otraMoneda },
+    ])
+  );
 }
 
 /**
@@ -272,21 +306,26 @@ export async function adSpendSummary(
       empty: true,
       hasWonWithoutAmount: false,
       hasOtherCurrencySpend,
+      hasWonOtherCurrency: false,
     };
   }
 
   const [wonCentsPorF, hasWonWithoutAmount] = await Promise.all([
     wonCentsPorFuente(organizationId, period.start, period.end, currency),
-    hayGanadosSinMonto(organizationId, period.start, period.end),
+    hayGanadosSinMonto(organizationId, period.start, period.end, fuentesConGasto),
   ]);
   const conteoPorFuente = new Map(conteos.map((c) => [c.key ?? "desconocida", c]));
+
+  const hasWonOtherCurrency = fuentesConGasto.some(
+    (fuente) => wonCentsPorF.get(fuente)?.otraMoneda ?? false
+  );
 
   const bySource: AdSpendSourceSummaryDto[] = fuentesConGasto.map((fuente) => {
     const spendCents = spendPorFuente.get(fuente) ?? 0;
     const conteo = conteoPorFuente.get(fuente);
     const prospects = conteo?.leads ?? 0;
     const customers = conteo?.won ?? 0;
-    const wonCents = wonCentsPorF.get(fuente) ?? 0;
+    const wonCents = wonCentsPorF.get(fuente)?.wonCents ?? 0;
     return {
       source: fuente as SourceValue,
       label: SOURCE_LABELS[fuente as SourceValue] ?? fuente,
@@ -315,5 +354,6 @@ export async function adSpendSummary(
     empty: false,
     hasWonWithoutAmount,
     hasOtherCurrencySpend,
+    hasWonOtherCurrency,
   };
 }

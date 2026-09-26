@@ -345,8 +345,12 @@ export function adReturn(
   wonCount: number
 ): AdReturnDto {
   if (spendCents <= 0) return { multiple: null, sample: 0, reliable: false };
+  const crudo = wonCents / spendCents;
+  // Bajo 1x (todavía no se recupera el gasto) un decimal solo distingue
+  // "0.3x" de "0.4x" — con dos, 0.35x dice si falta poco o falta mucho.
+  const factor = crudo < 1 ? 100 : 10;
   return {
-    multiple: Math.round((wonCents / spendCents) * 10) / 10,
+    multiple: Math.round(crudo * factor) / factor,
     sample: wonCount,
     reliable: wonCount >= MIN_SAMPLE,
   };
@@ -398,6 +402,13 @@ export type AdSpendSummaryDto = {
    * por eso quedan fuera de todo lo de arriba.
    */
   hasOtherCurrencySpend: boolean;
+  /**
+   * true = al menos un trato ganado (de una fuente con gasto) tiene un monto
+   * capturado en OTRA moneda. Sin tipo de cambio no se puede sumar al
+   * retorno, así que queda fuera de todo lo de arriba — el retorno queda
+   * entendido de menos, no de más.
+   */
+  hasWonOtherCurrency: boolean;
 };
 
 /** Respuesta de `/api/analytics/spend`: todas las cargas + el resumen del periodo. */
