@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * `POST /api/bot/reset` (dispatch v2): con `notice`, se manda ANTES de fijar
+ * `POST /api/bot/reset` (dispatch v2).
+ *
+ * Orden EXACTO (revisado tras un bug real): reactiva (sale del handoff)
+ * PRIMERO, manda el `notice` DESPUÉS (ya reactivada — nunca 409 `ai_paused`
+ * por el handoff que este mismo reset acaba de limpiar), y solo entonces fija
  * `memory_reset_at` — así el aviso mismo queda ANTES del corte y no vuelve a
- * aparecer en `history` de despachos futuros. Las ofertas vigentes se
- * limpian. El resto (ficha vaciada, etapa al inicio) sigue igual que antes.
+ * aparecer en `history` de despachos futuros. Una conversación de prueba
+ * (Laboratorio) nunca llama a `sendText`: el aviso se persiste como saliente
+ * de prueba, igual que Nea contestando por `/api/bot/messages`. Las ofertas
+ * vigentes se limpian. El resto (ficha vaciada, etapa al inicio) sigue igual
+ * que antes.
  */
 
 vi.mock("@/server/bot/auth", async (importOriginal) => {
@@ -13,10 +20,10 @@ vi.mock("@/server/bot/auth", async (importOriginal) => {
 });
 
 /** `order`: sella CUÁNDO (en secuencia global) pasó cada evento relevante,
- * para probar "el aviso se manda ANTES del update con memory_reset_at" sin
- * fake timers ni relojes reales. Todo en `vi.hoisted` porque los `vi.mock`
- * de más abajo se hoistean por encima de cualquier `const` normal. */
-const { sendText, order, seal } = vi.hoisted(() => {
+ * para probar "esto pasó ANTES que aquello" sin fake timers ni relojes
+ * reales. Todo en `vi.hoisted` porque los `vi.mock` de más abajo se
+ * hoistean por encima de cualquier `const` normal. */
+const { sendText, persistTestOutbound, order, seal } = vi.hoisted(() => {
   const order: string[] = [];
   const seal = (label: string) => order.push(label);
   return {
@@ -26,11 +33,19 @@ const { sendText, order, seal } = vi.hoisted(() => {
       seal("sendText");
       return { messageId: "msg_aviso" };
     }),
+    persistTestOutbound: vi.fn(async (..._args: unknown[]) => {
+      seal("persistTestOutbound");
+      return { messageId: "msg_aviso_prueba" };
+    }),
   };
 });
 vi.mock("@/server/inbox/send", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/inbox/send")>();
   return { ...actual, sendText };
+});
+vi.mock("@/server/ai/pipeline", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/ai/pipeline")>();
+  return { ...actual, persistTestOutbound };
 });
 
 const { clearOffers } = vi.hoisted(() => ({ clearOffers: vi.fn(async () => {}) }));
@@ -72,6 +87,7 @@ vi.mock("@/lib/db", () => ({
       set: (values: Record<string, unknown>) => {
         updates.push(values);
         if ("memoryResetAt" in values) seal("update-memory-reset");
+        else if ("aiEnabled" in values) seal("update-reactivate");
         return { where: () => Promise.resolve(undefined) };
       },
     }),
@@ -96,7 +112,7 @@ function req(body: unknown): Request {
   });
 }
 
-const CONV = { id: "cv_1", contactId: "ct_1" };
+const CONV = { id: "cv_1", organizationId: "org_1", contactId: "ct_1", isTest: false };
 const CONTACT_ROW = { id: "ct_1", organizationId: "org_1", ficha: {} };
 
 /** Cola completa para un reset feliz sin etapas/leads (los pasos best-effort no revientan sin ellos). */
@@ -110,11 +126,13 @@ function pushHappyPath() {
 describe("POST /api/bot/reset", () => {
   beforeEach(() => {
     vi.stubEnv("BOT_API_KEY", KEY);
+    vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
     resetRateLimit();
     selectQueue.length = 0;
     updates.length = 0;
     order.length = 0;
     sendText.mockClear();
+    persistTestOutbound.mockClear();
     clearOffers.mockClear();
     upsertFicha.mockClear();
     moveLeadToStage.mockClear();
@@ -129,12 +147,13 @@ describe("POST /api/bot/reset", () => {
     expect(res.status).toBe(200);
     expect(sendText).not.toHaveBeenCalled();
     expect(clearOffers).toHaveBeenCalledWith("org_1", "cv_1");
-    const convUpdate = updates.find((u) => "memoryResetAt" in u);
-    expect(convUpdate).toMatchObject({ aiEnabled: true, handoffAt: null, handoffReason: null });
-    expect(convUpdate?.memoryResetAt).toBeInstanceOf(Date);
+    const reactivate = updates.find((u) => "aiEnabled" in u);
+    expect(reactivate).toMatchObject({ aiEnabled: true, handoffAt: null, handoffReason: null });
+    const memoryReset = updates.find((u) => "memoryResetAt" in u);
+    expect(memoryReset?.memoryResetAt).toBeInstanceOf(Date);
   });
 
-  it("con notice: se manda el aviso ANTES de fijar memory_reset_at", async () => {
+  it("con notice: reactiva PRIMERO, manda el aviso, y solo entonces fija memory_reset_at", async () => {
     pushHappyPath();
 
     const res = await POST(req({ conversationId: "cv_1", notice: "Empezamos de nuevo" }));
@@ -143,11 +162,9 @@ describe("POST /api/bot/reset", () => {
     expect(sendText).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: "cv_1", text: "Empezamos de nuevo" })
     );
-    const convUpdate = updates.find((u) => "memoryResetAt" in u);
-    expect(convUpdate).toBeDefined();
-    // El orden real de ejecución: el aviso se manda ANTES del update que fija
-    // memory_reset_at — así su propio createdAt queda antes del corte.
-    expect(order).toEqual(["sendText", "update-memory-reset"]);
+    expect(updates.some((u) => "memoryResetAt" in u)).toBe(true);
+    // Orden real de ejecución.
+    expect(order).toEqual(["update-reactivate", "sendText", "update-memory-reset"]);
   });
 
   it("el notice se manda con el dispatchId dado (idempotente, seq 0)", async () => {
@@ -160,20 +177,53 @@ describe("POST /api/bot/reset", () => {
     );
   });
 
-  it("el aviso falla (ai_disabled) → 409 ai_paused, y NO llega a fijar memory_reset_at ni a limpiar ofertas", async () => {
-    selectQueue.push([CONV]); // solo la conversación: no debería llegar más lejos
-    sendText.mockRejectedValueOnce(new SendError("ai_disabled", "La IA fue pausada"));
+  it("BUG que encontró el revisor: una conversación YA en handoff con notice → se reactiva y el aviso SALE (nunca 409, porque el handoff se limpia ANTES de mandarlo)", async () => {
+    selectQueue.push([CONV]); // la propia conversación (isTest:false, sin importar el handoff previo: la ruta no lo lee, solo lo limpia)
+    selectQueue.push([CONTACT_ROW]);
+    selectQueue.push([]);
+    selectQueue.push([]);
+
+    const res = await POST(req({ conversationId: "cv_1", notice: "Seguimos aquí" }));
+
+    expect(res.status).toBe(200);
+    expect(sendText).toHaveBeenCalledOnce();
+    // La reactivación pasó ANTES del envío — es lo que evita el 409 ai_paused.
+    expect(order[0]).toBe("update-reactivate");
+    expect(order).toContain("sendText");
+  });
+
+  it("conversación de PRUEBA (Laboratorio) con notice → se persiste como saliente de prueba, JAMÁS llama a sendText", async () => {
+    selectQueue.push([{ ...CONV, isTest: true }]);
+    selectQueue.push([CONTACT_ROW]);
+    selectQueue.push([]);
+    selectQueue.push([]);
+
+    const res = await POST(
+      req({ conversationId: "cv_1", notice: "Reiniciamos la prueba", dispatchId: "dsp_lab_reset" })
+    );
+
+    expect(res.status).toBe(200);
+    expect(persistTestOutbound).toHaveBeenCalledOnce();
+    expect(persistTestOutbound.mock.calls[0]![1]).toBe("Reiniciamos la prueba");
+    expect(sendText).not.toHaveBeenCalled();
+  });
+
+  it("el aviso falla por una razón AJENA al handoff (p. ej. fuera de horario) → 409, y NO llega a fijar memory_reset_at ni a limpiar ofertas", async () => {
+    selectQueue.push([CONV]);
+    sendText.mockRejectedValueOnce(new SendError("outside_hours", "Fuera de horario"));
 
     const res = await POST(req({ conversationId: "cv_1", notice: "Hola" }));
 
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error?: { code?: string } };
-    expect(body.error?.code).toBe("ai_paused");
+    expect(body.error?.code).toBe("outside_hours");
     expect(clearOffers).not.toHaveBeenCalled();
     expect(updates.some((u) => "memoryResetAt" in u)).toBe(false);
+    // Pero SÍ llegó a reactivar: eso pasa siempre, antes que nada.
+    expect(updates.some((u) => "aiEnabled" in u)).toBe(true);
   });
 
-  it("conversación no encontrada → 404, sin tocar sendText/clearOffers", async () => {
+  it("conversación no encontrada → 404, sin tocar sendText/clearOffers/ningún update", async () => {
     selectQueue.push([]); // no existe
 
     const res = await POST(req({ conversationId: "cv_missing", notice: "Hola" }));
@@ -181,6 +231,7 @@ describe("POST /api/bot/reset", () => {
     expect(res.status).toBe(404);
     expect(sendText).not.toHaveBeenCalled();
     expect(clearOffers).not.toHaveBeenCalled();
+    expect(updates).toEqual([]);
   });
 
   it("clearOffers falla → no revienta el reset (best-effort, igual que el resto de pasos no críticos)", async () => {

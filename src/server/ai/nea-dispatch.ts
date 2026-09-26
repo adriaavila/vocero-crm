@@ -49,6 +49,15 @@ export type NeaHistoryMedia = {
   /** ≤4000 caracteres — ver `POST /api/bot/messages/[id]/transcript`. */
   transcript: string | null;
   location: unknown | null;
+  /**
+   * El payload de Meta TAL CUAL, sin transformar (`message.contacts` del
+   * webhook de WhatsApp — `mediaAsset.payload` para un mensaje `kind:
+   * "contacts"`, ver `server/inbox/ingest.ts`): un arreglo de objetos con
+   * forma `{ name: { formatted_name, first_name } | string, phones?:
+   * [{ phone, type? }], emails?: [...], ... }` — cada implementación de
+   * cliente de WhatsApp manda un subconjunto distinto de campos, así que no
+   * se normaliza aquí. `null` salvo en un mensaje de tipo `contacts`.
+   */
   contacts: unknown | null;
 } | null;
 

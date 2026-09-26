@@ -84,8 +84,9 @@ describe("claimUpToCapacity (cupo de concurrencia)", () => {
     // Cupo = 2: reclama job_1 y job_2, se detiene aunque job_3 siga disponible.
     expect(execute).toHaveBeenCalledTimes(2);
     expect(runAgentTurn).toHaveBeenCalledTimes(2);
-    expect(runAgentTurn).toHaveBeenCalledWith("conv_1");
-    expect(runAgentTurn).toHaveBeenCalledWith("conv_2");
+    // Dispatch v2: `job.id` viaja como dispatchId (segundo argumento).
+    expect(runAgentTurn).toHaveBeenCalledWith("conv_1", "job_1");
+    expect(runAgentTurn).toHaveBeenCalledWith("conv_2", "job_2");
     // Ninguno de los dos turnos "en vuelo" ha terminado todavía.
     expect(deferreds).toHaveLength(2);
   });
@@ -104,7 +105,7 @@ describe("claimUpToCapacity (cupo de concurrencia)", () => {
 
     // Ahora sí reclama job_3 (el cupo liberado por job_1).
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(runAgentTurn).toHaveBeenCalledWith("conv_3");
+    expect(runAgentTurn).toHaveBeenCalledWith("conv_3", "job_3");
   });
 
   it("con AGENT_WORKER_CONCURRENCY=1, un turno en vuelo bloquea el resto (comportamiento explícito, no accidental)", async () => {

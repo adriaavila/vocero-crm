@@ -162,7 +162,10 @@ async function processJob(
 ): Promise<void> {
   const claimedAt = job.lockedAt ?? new Date();
   try {
-    await runAgentTurn(job.conversationId);
+    // Dispatch v2: `job.id` es el `dispatchId` — estable entre los reintentos
+    // que `runNeaAgentTurn` hace DENTRO de este mismo turno (no se genera uno
+    // nuevo por intento).
+    await runAgentTurn(job.conversationId, job.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error desconocido";
     await getDb()
