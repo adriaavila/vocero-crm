@@ -16,7 +16,7 @@ import {
   type NeaResponseBody,
   type NeaSourceMessage,
 } from "@/server/ai/nea-dispatch";
-import { buildNeaTurnSnapshot } from "@/server/ai/nea-payload";
+import { buildNeaTurnSnapshot, PENDING_LIMIT } from "@/server/ai/nea-payload";
 import { publish } from "@/server/events/bus";
 import { isWindowOpen } from "@/server/inbox/window";
 import { SendError, sendText } from "@/server/inbox/send";
@@ -186,11 +186,20 @@ async function applyHandoffOnFailure(conversationId: string): Promise<void> {
  * Laboratorio), `runNeaAgentTurn` genera uno propio una sola vez por turno.
  * Rei lo ignora: no despacha a nadie.
  */
-export async function runAgentTurn(conversationId: string, dispatchId?: string): Promise<void> {
+export async function runAgentTurn(
+  conversationId: string,
+  dispatchId?: string
+): Promise<{ leftover: boolean }> {
   if (isNeaBrain()) {
-    await runNeaAgentTurn(conversationId, dispatchId);
-    return;
+    return runNeaAgentTurn(conversationId, dispatchId);
   }
+  await runReiAgentTurn(conversationId);
+  return { leftover: false };
+}
+
+/** Rei (LLM interno, sin despacho): sin cursor ni pendiente que reprogramar —
+ *  `runAgentTurn` siempre le devuelve `leftover:false` a quien la llame. */
+async function runReiAgentTurn(conversationId: string): Promise<void> {
   const db = getDb();
   const convRows = await db
     .select()
@@ -388,9 +397,15 @@ export async function runAgentTurn(conversationId: string, dispatchId?: string):
  * jamás reintenta. Si nada está pendiente, no se despacha en absoluto (ver
  * `buildNeaTurnSnapshot`).
  */
-async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Promise<void> {
+async function runNeaAgentTurn(
+  conversationId: string,
+  dispatchId?: string
+): Promise<{ leftover: boolean }> {
   const initial = await loadNeaGateState(conversationId);
-  if (!initial) return;
+  // Sin gate (perfil apagado, handoff, facturación, horario…): el turno no
+  // corre — y tampoco hay que reprogramar solo. Un `leftover:true` aquí haría
+  // que una conversación en pausa se reprograme sola una y otra vez.
+  if (!initial) return { leftover: false };
   const { organizationId } = initial;
 
   const contactRows = await getDb()
@@ -399,7 +414,7 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
     .where(eq(schema.contact.id, initial.conversation.contactId))
     .limit(1);
   const contact = contactRows[0];
-  if (!contact) return;
+  if (!contact) return { leftover: false };
 
   // Debounce legado y Laboratorio no traen un dispatchId del llamador (no hay
   // `agent_job`): se genera uno propio, UNA sola vez, y se reusa en todos los
@@ -410,14 +425,14 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
 
   let state = initial;
   let lastError: Error = new Error("Nea no respondió");
-  // Los ids pendientes del ÚLTIMO intento que de verdad se posteó — es lo que
-  // se usa para avanzar el cursor si un intento posterior descubre que esa
-  // respuesta ya había llegado (bloque `attempt > 0` de abajo). El snapshot
-  // FRESCO de un intento que se salta por eso nunca sirve para esto: puede
-  // traer mensajes que llegaron después de que Nea ya contestó, y que
-  // todavía nadie le mandó — avanzar el cursor hasta ahí los perdería para
-  // siempre.
-  let lastPostedPendingIds: string[] | null = null;
+  // Los ids pendientes del PRIMER intento que de verdad se posteó (siempre
+  // el intento 0 — nunca se salta el primero). Fix-27b: es lo único seguro
+  // para avanzar el cursor cuando un reintento descubre que la respuesta
+  // determinista YA EXISTE — puede ser el eco de CUALQUIER intento anterior,
+  // no necesariamente el último, así que se asume el conjunto MÁS CHICO
+  // posible (el del primero) en vez de adivinar. Ver el comentario en
+  // `neaReplyExists`.
+  let firstPostedPendingIds: string[] | null = null;
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0) {
@@ -428,7 +443,9 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
       // turno con 3 intentos puede tardar varios segundos; tiempo de sobra
       // para que el dueño tome la conversación a mitad del reintento.
       const fresh = await loadNeaGateState(conversationId);
-      if (!fresh) return;
+      // Mismo motivo que arriba: un gate que se apagó a mitad del reintento
+      // (el dueño tomó la conversación) no es un "sobrante" que reprogramar.
+      if (!fresh) return { leftover: false };
       state = fresh;
     }
     const { conversation } = state;
@@ -447,27 +464,49 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
       contact: { identity: contact.waIdentity, name: contact.name },
       v1Messages: sourceMessages,
     });
-    if (!snapshot) return; // nada pendiente: no se despacha.
+    if (!snapshot) return { leftover: false }; // nada pendiente: no se despacha.
+
+    const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
 
     if (attempt > 0) {
       // Un reintento puede caer DESPUÉS de que Nea ya contestó — solo se
       // perdió la confirmación HTTP de vuelta. El id determinista de la
-      // respuesta lo delata — pero solo cuenta si de verdad se ENTREGÓ (tiene
-      // wamid, o en el Laboratorio quedó `sent`): una reserva todavía en
-      // vuelo o muerta (sin wamid) no es una respuesta completada.
-      const replyId = neaMessageId(organizationId, conversationId, effectiveDispatchId, 0);
-      if (await neaReplyLanded(organizationId, conversationId, replyId, conversation.isTest)) {
-        if (lastPostedPendingIds) {
-          await advanceCursor(organizationId, conversationId, lastPostedPendingIds);
+      // respuesta lo delata. Regla conservadora (fix-27b): en cuanto la fila
+      // ATERRIZÓ (wamid, o en el Laboratorio `status='sent'` — una reserva
+      // sin eso puede seguir en vuelo O estar muerta, ninguna cuenta como
+      // "ya contestada"), se deja de insistir en este turno y se avanza el
+      // cursor SOLO hasta el primer intento posteado — nunca se intenta
+      // dispatchear de nuevo asumiendo que "total, ya existe" cubre lo
+      // pendiente completo de ESTE intento.
+      if (await neaReplyExists(organizationId, conversationId, replyId, conversation.isTest)) {
+        if (firstPostedPendingIds) {
+          await advanceCursor(organizationId, conversationId, firstPostedPendingIds);
         }
-        return;
+        return { leftover: true };
       }
     }
 
     const result = await dispatchToNea(snapshot.payload);
-    lastPostedPendingIds = snapshot.pendingIds;
+    const thisAttemptPendingIds = snapshot.pendingIds;
+    if (attempt === 0) firstPostedPendingIds = thisAttemptPendingIds;
     if (result.kind === "ok") {
-      await advanceCursor(organizationId, conversationId, snapshot.pendingIds);
+      let pendingIdsToAdvance = thisAttemptPendingIds;
+      let leftover = thisAttemptPendingIds.length >= PENDING_LIMIT; // item 2: pudo cortarse en 10.
+      if (attempt > 0) {
+        // Re-chequeo (fix-27b, review de la segunda vuelta): cierra la
+        // carrera entre el chequeo de arriba (ANTES de este POST) y el 2xx
+        // que acaba de llegar — un intento VIEJO puede haber terminado de
+        // aterrizar justo durante la espera de este POST, y Nea, al chocar
+        // contra esa reserva ya completada, contesta 2xx sin haber armado
+        // nada nuevo para el pendiente COMPLETO de este intento.
+        if (await neaReplyExists(organizationId, conversationId, replyId, conversation.isTest)) {
+          pendingIdsToAdvance = firstPostedPendingIds ?? [];
+          leftover = true;
+        }
+      }
+      if (pendingIdsToAdvance.length > 0) {
+        await advanceCursor(organizationId, conversationId, pendingIdsToAdvance);
+      }
       await applyNeaResponse({
         organizationId,
         conversationId,
@@ -475,7 +514,7 @@ async function runNeaAgentTurn(conversationId: string, dispatchId?: string): Pro
         sentLlmProvider: snapshot.payload.llm?.provider ?? null,
         orgCredential: snapshot.orgCredential,
       });
-      return;
+      return { leftover };
     }
     if (result.kind === "client_error") {
       // El payload está mal: repetirlo no ayuda. Mismo trato de siempre —
@@ -535,14 +574,33 @@ async function loadNeaGateState(conversationId: string): Promise<NeaGateState | 
 }
 
 /**
- * true si la respuesta con este id determinista de verdad se ENTREGÓ. No
- * basta con que la fila exista: una reserva sin `wa_message_id` puede seguir
- * en vuelo (Graph todavía no respondió) o estar muerta (el proceso se cayó
- * antes de borrarla tras un fallo) — ninguna de las dos es una respuesta que
- * Nea haya completado. El Laboratorio nunca tiene wamid (jamás toca Graph):
- * ahí `status='sent'` ES la confirmación.
+ * true si la respuesta determinista (seq 0) YA ATERRIZÓ — tiene `wa_message_id`,
+ * o en el Laboratorio quedó `status='sent'` (ahí nunca hay wamid: no toca
+ * Graph). Fix-27b (dos rondas de review de la carrera de reintentos):
+ *
+ *  - distinguir por timestamp ("¿es más vieja que el POST de este intento?")
+ *    deja huecos: una respuesta puede tardar VARIOS intentos en completarse
+ *    (un timeout de 90s o un 502/504 de gateway no significa que Nea se
+ *    detuvo, puede seguir procesando en segundo plano) y aterrizar recién en
+ *    el tercer intento, con un id determinista que choca contra el de
+ *    CUALQUIER intento anterior — no necesariamente el inmediatamente previo,
+ *    y un `created_at` posterior al POST de este mismo intento no prueba que
+ *    ESTE intento la causó;
+ *  - una mera EXISTENCIA (sin exigir wamid/`sent`) es demasiado laxa para la
+ *    devolución anticipada: una reserva sin wamid puede seguir en vuelo o
+ *    estar MUERTA (el proceso se cayó antes de borrarla tras un fallo) —
+ *    ninguna de las dos es una respuesta completada, y darla por contestada
+ *    dejaría un pendiente sin responder para siempre en este turno.
+ *
+ * La regla conservadora que sí se sostiene: en cuanto la fila ATERRIZÓ en un
+ * reintento (por chequeo previo al POST, o por el re-chequeo tras un 2xx —
+ * ver los dos usos en `runNeaAgentTurn`), se asume que esa respuesta cubre AL
+ * MENOS el primer intento posteado — nunca se intenta adivinar a cuál
+ * exactamente. El peor caso es volver a mandarle a Nea un pendiente que en
+ * los hechos ya contestó (se reintenta en el próximo turno); nunca se da por
+ * contestado uno que Nea nunca vio.
  */
-async function neaReplyLanded(
+async function neaReplyExists(
   organizationId: string,
   conversationId: string,
   replyId: string,

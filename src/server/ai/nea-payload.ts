@@ -21,7 +21,7 @@ import {
  * llamada es interna al mismo archivo.
  */
 
-export { computePendingCutoff } from "@/server/ai/nea-history";
+export { computePendingCutoff, PENDING_LIMIT } from "@/server/ai/nea-history";
 
 export type NeaTurnSnapshot = {
   payload: NeaDispatchPayloadV2;

@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, inArray, isNull, ne, not, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, not, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import type { NeaHistoryItem, NeaHistoryRole } from "@/server/ai/nea-dispatch";
 
@@ -14,7 +14,10 @@ import type { NeaHistoryItem, NeaHistoryRole } from "@/server/ai/nea-dispatch";
  */
 
 const HISTORY_LIMIT = 20;
-const PENDING_LIMIT = 10;
+/** Exportado: `pipeline.ts` lo usa para saber si el pendiente de un intento
+ *  pudo haberse cortado (fix-27b, `leftover` de `runNeaAgentTurn`) — si
+ *  `pendingIds.length === PENDING_LIMIT`, puede haber más después del corte. */
+export const PENDING_LIMIT = 10;
 const MAX_TEXT_LEN = 2000;
 const MAX_TRANSCRIPT_LEN = 4000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -202,7 +205,18 @@ async function fetchJoined(
   organizationId: string,
   conversationId: string,
   extra: NonNullable<ReturnType<typeof and>>,
-  limit: number
+  limit: number,
+  /**
+   * "newest" (default, para `history`): los N MÁS RECIENTES, devueltos en
+   * orden cronológico — correcto para "los últimos N de contexto".
+   * "oldest" (para `pending`, fix-27b): los N MÁS VIEJOS después del corte —
+   * un `ORDER BY created_at DESC LIMIT N` para el pendiente descartaba en
+   * SILENCIO los mensajes más viejos cuando había más de N; con "oldest" se
+   * toman esos primero, y los que sobren quedan pendientes para el próximo
+   * turno (el cursor solo avanza hasta el más viejo de los que de verdad se
+   * despacharon) — la cola drena en orden, nunca salta mensajes.
+   */
+  order: "newest" | "oldest" = "newest"
 ): Promise<JoinedRow[]> {
   const rows = await db
     .select({ message: schema.message, media: schema.mediaAsset })
@@ -215,16 +229,19 @@ async function fetchJoined(
         extra
       )
     )
-    .orderBy(desc(schema.message.createdAt))
+    .orderBy(order === "newest" ? desc(schema.message.createdAt) : asc(schema.message.createdAt))
     .limit(limit);
-  return rows.reverse();
+  return order === "newest" ? rows.reverse() : rows;
 }
 
 /**
  * Arma `history` (últimos 20 desde `memory_reset_at`, sin los outbound
  * `failed`, con todo pendiente incluido aunque caiga fuera de esos 20) y el
- * conjunto pendiente (hasta 10 entrantes después del corte). Devuelve `null`
- * si no hay nada pendiente — señal de "no despachar".
+ * conjunto pendiente (hasta 10 entrantes después del corte — los 10 MÁS
+ * VIEJOS, nunca los más nuevos: si hay más de 10, los que sobran quedan
+ * pendientes para el próximo turno en vez de perderse — ver el comentario de
+ * `order` en `fetchJoined`). Devuelve `null` si no hay nada pendiente — señal
+ * de "no despachar".
  *
  * `memory_reset_at`/`agent_cursor_at` NUNCA se reciben como parámetro: se
  * leen frescos, DENTRO de la propia consulta SQL, en cada llamada — ver
@@ -249,7 +266,8 @@ export async function buildHistoryAndPending(input: {
     organizationId,
     conversationId,
     and(eq(schema.message.direction, "in"), gt(schema.message.createdAt, cutoffExpr))!,
-    PENDING_LIMIT
+    PENDING_LIMIT,
+    "oldest"
   );
   if (pendingRows.length === 0) return null;
 

@@ -41,7 +41,7 @@ vi.mock("@/lib/db", () => ({
     select: () => selectChain([]),
     update: () => updateChain(),
   }),
-  schema: { agentJob: {}, message: {} },
+  schema: { agentJob: {}, message: {}, conversation: { agentCursorAt: "agentCursorAt", id: "id" } },
 }));
 vi.mock("@/server/ai/pipeline", () => ({
   applyHandoff: vi.fn(),
