@@ -219,7 +219,7 @@ describe("bookings idempotentes por llave natural (dispatch v2)", () => {
     });
 
     it("item 6: violación única SIN que la llave natural coincida (una carrera de verdad) → sigue devolviendo slot_taken", async () => {
-      const { createSessionBooking, BookingError } = await import("@/server/agenda/service");
+      const { createSessionBooking } = await import("@/server/agenda/service");
       selectRows.push([]); // idempotencia de ENTRADA
       selectRows.push([{ contactId: "ct_1", isTest: false }]); // la conversación
       selectRows.push([{ name: "Ana" }]); // el contacto
@@ -235,7 +235,7 @@ describe("bookings idempotentes por llave natural (dispatch v2)", () => {
           source: "ai",
           requireOffer: true,
         })
-      ).rejects.toMatchObject({ code: "slot_taken" } satisfies Partial<InstanceType<typeof BookingError>>);
+      ).rejects.toMatchObject({ code: "slot_taken" });
     });
 
     it("sin conversationId (camino manual con contactId) no consulta idempotencia", async () => {
