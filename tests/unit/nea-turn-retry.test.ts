@@ -131,8 +131,8 @@ function snapshotWith(overrides: Record<string, unknown> = {}) {
 }
 
 /** Empuja las 3 filas de los gates (conversación, perfil, contacto), una sola vez por turno. */
-function pushGates(conv: Record<string, unknown> = CONVERSATION) {
-  selectQueue.push([conv], [PROFILE], [CONTACT]);
+function pushGates(conv: Record<string, unknown> = CONVERSATION, profile: Record<string, unknown> = PROFILE) {
+  selectQueue.push([conv], [profile], [CONTACT]);
 }
 /**
  * Empuja las 2 filas que `loadNeaGateState` relee en CADA intento posterior
@@ -374,6 +374,27 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     const sqlText = JSON.stringify(cursorUpdate!.values.agentCursorAt);
     expect(sqlText.toLowerCase()).toContain("greatest");
     expect(sqlText.toLowerCase()).toContain("coalesce");
+  });
+
+  it("chat pausado y Nea calla (action silent) → NO avanza el cursor: lo pendiente se contesta al encender la IA", async () => {
+    pushGates({ ...CONVERSATION, aiEnabled: false }, { ...PROFILE, activationEnabled: true });
+    pushAttempt();
+    dispatchToNea.mockResolvedValue({ kind: "ok", body: { ok: true, action: "silent" } });
+
+    await runAgentTurn("cv_1");
+
+    expect(dispatchToNea).toHaveBeenCalledTimes(1);
+    expect(updates.find((u) => "agentCursorAt" in u.values)).toBeUndefined();
+  });
+
+  it("chat activo y Nea calla (action silent) → SÍ avanza el cursor", async () => {
+    pushGates();
+    pushAttempt();
+    dispatchToNea.mockResolvedValue({ kind: "ok", body: { ok: true, action: "silent" } });
+
+    await runAgentTurn("cv_1");
+
+    expect(updates.find((u) => "agentCursorAt" in u.values)).toBeDefined();
   });
 
   it("fix-27b item 2: el pendiente se cortó en el límite (10) → leftover:true, aunque el intento haya sido 2xx en el primero", async () => {

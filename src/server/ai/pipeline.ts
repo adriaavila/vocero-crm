@@ -504,7 +504,13 @@ async function runNeaAgentTurn(
           leftover = true;
         }
       }
-      if (pendingIdsToAdvance.length > 0) {
+      // Chat pausado sin frase activadora: Nea calla sin leer lo pendiente.
+      // No se avanza el cursor, así esos mensajes se contestan cuando la IA
+      // se encienda (antes quedaban marcados como atendidos para siempre).
+      const pausedSilence =
+        !conversation.aiEnabled &&
+        (result.body as { action?: string } | null)?.action === "silent";
+      if (pendingIdsToAdvance.length > 0 && !pausedSilence) {
         await advanceCursor(organizationId, conversationId, pendingIdsToAdvance);
       }
       await applyNeaResponse({
