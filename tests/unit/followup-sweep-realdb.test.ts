@@ -41,7 +41,7 @@ describeReal("real Postgres — seguimiento automático: quién recibe el empuj�
     /** Qué quedó DESPUÉS del entrante, en orden. */
     after: { origin: "ai" | "manual"; status?: string; minAgo: number; direction?: "out" | "in" }[];
     conv?: { aiEnabled?: boolean; handoff?: boolean; isTest?: boolean };
-    booking?: "agendada" | "cancelada";
+    booking?: "agendada" | "cancelada" | "soloContacto";
     stage?: "open" | "lost";
     org?: string;
   };
@@ -56,6 +56,7 @@ describeReal("real Postgres — seguimiento automático: quién recibe el empuj�
     enHandoff: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], conv: { handoff: true } },
     deLaboratorio: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], conv: { isTest: true } },
     conCita: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], booking: "agendada" },
+    citaSoloPorContacto: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], booking: "soloContacto" },
     citaCancelada: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], booking: "cancelada" },
     leadPerdido: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], stage: "lost" },
     leadAbierto: { inboundMinAgo: 300, after: [{ origin: "ai", minAgo: 299 }], stage: "open" },
@@ -94,8 +95,10 @@ describeReal("real Postgres — seguimiento automático: quién recibe el empuj�
       }
     }
     if (c.booking) {
+      const soloContacto = c.booking === "soloContacto";
       await sql`insert into booking (id, organization_id, conversation_id, contact_id, scheduled_at, duration_minutes, status)
-        values (${`bk_fu_${name}`}, ${org}, ${cv}, ${ct}, now() + interval '2 days', 30, ${c.booking})`;
+        values (${`bk_fu_${name}`}, ${org}, ${soloContacto ? null : cv}, ${ct}, now() + interval '2 days', 30,
+                ${soloContacto ? "agendada" : c.booking!})`;
     }
     if (c.stage) {
       await sql`insert into lead (id, organization_id, contact_id, stage_id)

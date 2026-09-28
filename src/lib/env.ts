@@ -80,7 +80,8 @@ const envSchema = z.object({
   // `calendarTimeZone()`) porque el worker corre fuera del ciclo de una
   // request y los tests la pisan con `vi.stubEnv` sin resetear el cache de
   // `getEnv()`.
-  AGENT_FOLLOWUP_HOURS: z.coerce.number().min(0).default(4),
+  // Máx. 23: más de 23h30 nunca calzaría dentro de la ventana de 24h.
+  AGENT_FOLLOWUP_HOURS: z.coerce.number().min(0).max(23).default(4),
   // Secreto compartido con allok para `POST /api/provision`: allok entrega ahí
   // las credenciales de un número recién conectado. Sin ella, la ruta responde 401.
   PROVISION_API_KEY: z.string().min(16).optional(),

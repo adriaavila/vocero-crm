@@ -196,18 +196,20 @@ export async function runAgentTurn(
   conversationId: string,
   dispatchId?: string
 ): Promise<{ leftover: boolean }> {
+  if (dispatchId && (await import("./followup")).isFollowupJobId(dispatchId)) {
+    // Sin Nea no hay quién escriba el empujón: jamás cae al turno de Rei, que
+    // contestaría de nuevo el último mensaje (ya contestado) del lead.
+    if (!isNeaBrain()) return { leftover: true };
+    // Un empujón JAMÁS lanza: el catch de `processJob` convertiría el error en
+    // handoff "error" y pausaría un chat sano. `leftover:true`: si el lead
+    // escribió mientras este job ocupaba el cupo activo, su turno normal se
+    // agenda igual (sin pendiente, ese turno no despacha nada).
+    return runNeaFollowupTurn(conversationId, dispatchId).catch((error) => {
+      console.error(`[agente] seguimiento ${dispatchId} falló:`, error);
+      return { leftover: true };
+    });
+  }
   if (isNeaBrain()) {
-    if (dispatchId) {
-      const { isFollowupJobId } = await import("./followup");
-      if (isFollowupJobId(dispatchId)) {
-        // Un empujón JAMÁS lanza: el catch de `processJob` convertiría el
-        // error en handoff "error" y pausaría un chat sano (ver abajo).
-        return runNeaFollowupTurn(conversationId, dispatchId).catch((error) => {
-          console.error(`[agente] seguimiento ${dispatchId} falló:`, error);
-          return { leftover: false };
-        });
-      }
-    }
     return runNeaAgentTurn(conversationId, dispatchId);
   }
   await runReiAgentTurn(conversationId);
@@ -583,8 +585,10 @@ async function runNeaFollowupTurn(
   dispatchId: string
 ): Promise<{ leftover: boolean }> {
   const gate = await loadNeaGateState(conversationId);
-  if (!gate || gate.conversation.handoffAt || !gate.conversation.aiEnabled) {
-    return { leftover: false };
+  // `leftover:true` en cada salida temprana: el turno normal de un entrante
+  // que llegó mientras este job ocupaba el cupo activo se agenda igual.
+  if (!gate || gate.conversation.handoffAt || !gate.conversation.aiEnabled || gate.conversation.isTest) {
+    return { leftover: true };
   }
   const { conversation, organizationId } = gate;
 

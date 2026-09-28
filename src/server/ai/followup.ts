@@ -107,7 +107,7 @@ export async function sweepFollowups(now: Date = new Date()): Promise<number> {
       )
       and not exists (
         select 1 from booking bk
-        where bk.conversation_id = c.id
+        where (bk.conversation_id = c.id or bk.contact_id = c.contact_id)
           and bk.is_test = false
           and bk.status <> 'cancelada'
       )

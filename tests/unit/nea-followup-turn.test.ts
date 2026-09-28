@@ -157,12 +157,12 @@ describe("runNeaFollowupTurn (vía runAgentTurn con un job ajfu_)", () => {
     expect(dispatchToNea).not.toHaveBeenCalled();
   });
 
-  it("IA apagada → nada, aunque el perfil tenga activación por mensajes", async () => {
+  it("IA apagada → no despacha, aunque el perfil tenga activación por mensajes; leftover:true por si el lead escribió", async () => {
     selectQueue.push([{ ...CONVERSATION, aiEnabled: false }], [{ ...PROFILE, activationEnabled: true }]);
 
     const result = await runAgentTurn("cv_1", JOB);
 
-    expect(result).toEqual({ leftover: false });
+    expect(result).toEqual({ leftover: true });
     expect(dispatchToNea).not.toHaveBeenCalled();
   });
 
@@ -221,9 +221,17 @@ describe("runNeaFollowupTurn (vía runAgentTurn con un job ajfu_)", () => {
     buildNeaTurnSnapshot.mockRejectedValue(new Error("se cayó la base"));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(runAgentTurn("cv_1", JOB)).resolves.toEqual({ leftover: false });
+    await expect(runAgentTurn("cv_1", JOB)).resolves.toEqual({ leftover: true });
     expect(dispatchToNea).not.toHaveBeenCalled();
     log.mockRestore();
+  });
+
+  it("sin Nea (NEA_DISPATCH_URL ausente) un job de seguimiento jamás cae al turno de Rei", async () => {
+    vi.stubEnv("NEA_DISPATCH_URL", "");
+
+    await expect(runAgentTurn("cv_1", JOB)).resolves.toEqual({ leftover: true });
+    expect(selectQueue.length).toBe(0);
+    expect(dispatchToNea).not.toHaveBeenCalled();
   });
 
   it("un job normal sigue por el turno de siempre (sin followup)", async () => {

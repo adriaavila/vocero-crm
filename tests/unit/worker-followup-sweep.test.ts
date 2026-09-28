@@ -5,16 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * sumo cada 60s, y un sweep que falla no detiene el poll.
  */
 
-const { execute, sweepFollowups } = vi.hoisted(() => ({
+const { execute, sweepFollowups, applyHandoff, scheduleAgentTurn, staleRows } = vi.hoisted(() => ({
   execute: vi.fn(async () => []),
   sweepFollowups: vi.fn(async () => 0),
+  applyHandoff: vi.fn(async () => {}),
+  scheduleAgentTurn: vi.fn(async () => {}),
+  /** Lo que devuelve el UPDATE de `markStaleJobs` en su próxima llamada. */
+  staleRows: [] as { id: string; conversationId: string; organizationId: string }[][],
 }));
 
 function updateChain() {
   const c: Record<string, unknown> = {};
   c.set = () => c;
   c.where = () => c;
-  c.returning = () => Promise.resolve([]);
+  c.returning = () => Promise.resolve(staleRows.shift() ?? []);
   return c;
 }
 
@@ -23,11 +27,14 @@ vi.mock("@/lib/db", () => ({
   schema: { agentJob: {}, message: {}, conversation: {} },
 }));
 vi.mock("@/server/ai/pipeline", () => ({
-  applyHandoff: vi.fn(),
+  applyHandoff,
   runAgentTurn: vi.fn(),
-  scheduleAgentTurn: vi.fn(),
+  scheduleAgentTurn,
 }));
-vi.mock("@/server/ai/followup", () => ({ sweepFollowups }));
+vi.mock("@/server/ai/followup", () => ({
+  sweepFollowups,
+  isFollowupJobId: (id: string) => id.startsWith("ajfu_"),
+}));
 
 import { resetWorkerStateForTests, startAgentWorker } from "@/server/ai/worker";
 
@@ -36,6 +43,9 @@ describe("worker: sweep del seguimiento automático", () => {
     vi.useFakeTimers();
     execute.mockClear();
     sweepFollowups.mockReset().mockResolvedValue(0);
+    applyHandoff.mockClear();
+    scheduleAgentTurn.mockClear();
+    staleRows.length = 0;
     resetWorkerStateForTests();
     vi.stubEnv("ALLOK_SAAS_MODE", "true");
   });
@@ -69,5 +79,20 @@ describe("worker: sweep del seguimiento automático", () => {
     expect(execute.mock.calls.length).toBeGreaterThan(claimsBefore);
     expect(log).toHaveBeenCalled();
     log.mockRestore();
+  });
+
+  it("un seguimiento interrumpido (stale) no pausa el chat: re-agenda el turno normal; un turno normal sí escala", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    staleRows.push([
+      { id: "ajfu_cv_1", conversationId: "cv_1", organizationId: "org_1" },
+      { id: "aj_normal", conversationId: "cv_2", organizationId: "org_1" },
+    ]);
+
+    startAgentWorker();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(scheduleAgentTurn).toHaveBeenCalledWith("cv_1");
+    expect(applyHandoff).not.toHaveBeenCalledWith("cv_1", expect.anything(), expect.anything());
+    expect(applyHandoff).toHaveBeenCalledWith("cv_2", "org_1", "error");
   });
 });

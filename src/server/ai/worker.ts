@@ -2,7 +2,7 @@ import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipeline";
-import { sweepFollowups } from "@/server/ai/followup";
+import { isFollowupJobId, sweepFollowups } from "@/server/ai/followup";
 
 const POLL_MS = 1_000;
 const STALE_AFTER_MS = 10 * 60_000;
@@ -133,8 +133,15 @@ async function markStaleJobs(): Promise<void> {
     });
   if (stale.length) {
     console.warn(`[agent-worker] ${stale.length} trabajo(s) requieren revisión`);
+    // Un seguimiento interrumpido NO pausa el chat: no es un turno del lead.
+    // Se re-agenda el turno normal por si el lead escribió mientras el job
+    // ocupaba el cupo activo (sin pendiente, ese turno no despacha nada).
     await Promise.allSettled(
-      stale.map((job) => applyHandoff(job.conversationId, job.organizationId, "error"))
+      stale.map((job) =>
+        isFollowupJobId(job.id)
+          ? scheduleAgentTurn(job.conversationId)
+          : applyHandoff(job.conversationId, job.organizationId, "error")
+      )
     );
   }
 }
