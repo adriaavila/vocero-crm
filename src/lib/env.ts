@@ -71,6 +71,16 @@ const envSchema = z.object({
   // (`POST ${NEA_DISPATCH_URL}`). Sin ella, Rei (el agente interno) contesta
   // si tiene proveedor de IA configurado.
   NEA_DISPATCH_URL: z.string().url().optional(),
+  // Seguimiento automático (`server/ai/followup.ts`): horas de silencio del
+  // lead, desde el último mensaje del agente, antes de mandarle UN empujón
+  // dentro de la ventana de 24h de WhatsApp. Default 4h (el comportamiento de
+  // Nea v1, perdido al volverse Nea sin estado el 2026-09-26); `0` apaga la
+  // función. Documentada aquí para quedar validada junto al resto del
+  // entorno; se lee de `process.env` directo (`agentFollowupHours()`, como
+  // `calendarTimeZone()`) porque el worker corre fuera del ciclo de una
+  // request y los tests la pisan con `vi.stubEnv` sin resetear el cache de
+  // `getEnv()`.
+  AGENT_FOLLOWUP_HOURS: z.coerce.number().min(0).default(4),
   // Secreto compartido con allok para `POST /api/provision`: allok entrega ahí
   // las credenciales de un número recién conectado. Sin ella, la ruta responde 401.
   PROVISION_API_KEY: z.string().min(16).optional(),
@@ -197,4 +207,12 @@ export function isWahaConfigured(): boolean {
 
 export function calendarTimeZone(): string {
   return process.env.CALENDAR_TIME_ZONE?.trim() || "UTC";
+}
+
+/** Horas de silencio del lead (desde el último mensaje del agente) antes de
+ *  mandarle UN seguimiento automático — ver `server/ai/followup.ts`. `0`
+ *  apaga la función. */
+export function agentFollowupHours(): number {
+  const raw = Number(process.env.AGENT_FOLLOWUP_HOURS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 4;
 }

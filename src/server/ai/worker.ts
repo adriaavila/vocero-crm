@@ -2,12 +2,17 @@ import { and, eq, gt, lt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipeline";
+import { sweepFollowups } from "@/server/ai/followup";
 
 const POLL_MS = 1_000;
 const STALE_AFTER_MS = 10 * 60_000;
 const DEFAULT_CONCURRENCY = 4;
+/** Seguimiento automático: encontrar candidatos es más caro que reclamar un
+ *  trabajo (varios `NOT EXISTS`), así que corre mucho menos seguido que el
+ *  poll de 1s — de sobra para una función pensada en horas de silencio. */
+const FOLLOWUP_SWEEP_INTERVAL_MS = 60_000;
 
-type WorkerState = { started: boolean; id: string; inFlight: number };
+type WorkerState = { started: boolean; id: string; inFlight: number; lastSweepAt: number };
 
 const globalForWorker = globalThis as unknown as {
   __voceroAgentWorker?: WorkerState;
@@ -19,6 +24,7 @@ function workerState(): WorkerState {
       started: false,
       id: `agent-worker-${process.pid}-${crypto.randomUUID()}`,
       inFlight: 0,
+      lastSweepAt: 0,
     };
   }
   return globalForWorker.__voceroAgentWorker;
@@ -52,6 +58,15 @@ async function poll(state: WorkerState): Promise<void> {
   try {
     await markStaleJobs();
     await claimUpToCapacity(state);
+    // Seguimiento automático: a lo sumo cada `FOLLOWUP_SWEEP_INTERVAL_MS`,
+    // no en cada poll de 1s — un sweep que fallara no debe tumbar el loop
+    // (misma protección que `markStaleJobs`/`claimUpToCapacity`: ambos viven
+    // en este mismo try).
+    const now = Date.now();
+    if (now - state.lastSweepAt >= FOLLOWUP_SWEEP_INTERVAL_MS) {
+      state.lastSweepAt = now;
+      await sweepFollowups();
+    }
   } catch (error) {
     console.error("[agent-worker] poll falló:", error);
   }

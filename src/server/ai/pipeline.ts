@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -185,12 +185,29 @@ async function applyHandoffOnFailure(conversationId: string): Promise<void> {
  * reintenta dentro de `runNeaAgentTurn`). Sin él (debounce legado y
  * Laboratorio), `runNeaAgentTurn` genera uno propio una sola vez por turno.
  * Rei lo ignora: no despacha a nadie.
+ *
+ * Un `dispatchId` de seguimiento automático (`ajfu_<conversationId>`, ver
+ * `server/ai/followup.ts`) se enruta a `runNeaFollowupTurn` en vez del turno
+ * normal — import dinámico para no crear un ciclo estático con
+ * `followup.ts` (que sí importa `loadNeaGateState` de este archivo), igual
+ * que el import dinámico de `./worker` más abajo en `scheduleAgentTurn`.
  */
 export async function runAgentTurn(
   conversationId: string,
   dispatchId?: string
 ): Promise<{ leftover: boolean }> {
   if (isNeaBrain()) {
+    if (dispatchId) {
+      const { isFollowupJobId } = await import("./followup");
+      if (isFollowupJobId(dispatchId)) {
+        // Un empujón JAMÁS lanza: el catch de `processJob` convertiría el
+        // error en handoff "error" y pausaría un chat sano (ver abajo).
+        return runNeaFollowupTurn(conversationId, dispatchId).catch((error) => {
+          console.error(`[agente] seguimiento ${dispatchId} falló:`, error);
+          return { leftover: false };
+        });
+      }
+    }
     return runNeaAgentTurn(conversationId, dispatchId);
   }
   await runReiAgentTurn(conversationId);
@@ -533,6 +550,126 @@ async function runNeaAgentTurn(
   throw lastError;
 }
 
+/**
+ * Turno de seguimiento automático: `server/ai/followup.ts` (`sweepFollowups`)
+ * encola UN `agent_job` con id `ajfu_<conversationId>` cuando el agente ya
+ * habló y el lead quedó en silencio `AGENT_FOLLOWUP_HOURS` horas; el worker
+ * lo reclama como cualquier otro trabajo y llega aquí por `runAgentTurn`.
+ *
+ * Diferencias con `runNeaAgentTurn`:
+ *  - `loadNeaGateState` exige ADEMÁS `aiEnabled && !handoffAt` SIN la
+ *    excepción de activación por mensajes: esa excepción existe para que Nea
+ *    vea la conversación pausada y pueda reactivarla si el entrante coincide
+ *    con la frase acordada — un seguimiento no es una respuesta a un
+ *    entrante, no hay frase que reconocer, así que un chat en handoff o con
+ *    la IA apagada JAMÁS recibe un empujón;
+ *  - CARRERA: si el lead escribió algo DESPUÉS del último mensaje del agente
+ *    (pudo pasar mientras este job esperaba turno en la cola), el
+ *    seguimiento ya no aplica — y como el índice único de trabajo activo por
+ *    conversación le impidió a `scheduleAgentTurn` encolar el turno normal de
+ *    ESE entrante mientras este job seguía en vuelo, este turno devuelve
+ *    `leftover:true` para que el worker sí lo reprograme (ver el comentario
+ *    de `processJob`, más abajo en `worker.ts`: reprograma con `freshInbound`
+ *    o `leftover`);
+ *  - JAMÁS avanza `agent_cursor_at` (no hay pendiente que marcar: `followup`
+ *    no contesta ningún mensaje del lead) y JAMÁS lanza — un seguimiento que
+ *    falla no debe pausar la conversación con un handoff "error" (a
+ *    diferencia de un turno normal, ver el catch de `processJob` en
+ *    `worker.ts`). El job igual termina `done`, que es lo único que importa:
+ *    consume el único seguimiento posible por conversación.
+ */
+async function runNeaFollowupTurn(
+  conversationId: string,
+  dispatchId: string
+): Promise<{ leftover: boolean }> {
+  const gate = await loadNeaGateState(conversationId);
+  if (!gate || gate.conversation.handoffAt || !gate.conversation.aiEnabled) {
+    return { leftover: false };
+  }
+  const { conversation, organizationId } = gate;
+
+  const contactRows = await getDb()
+    .select({ waIdentity: schema.contact.waIdentity, name: schema.contact.name })
+    .from(schema.contact)
+    .where(eq(schema.contact.id, conversation.contactId))
+    .limit(1);
+  const contact = contactRows[0];
+  if (!contact) return { leftover: false };
+
+  // ¿Quién habló más reciente entre el lead y el agente? Si es el lead, la
+  // carrera de arriba se disparó: no se despacha nada, y el `leftover:true`
+  // le avisa al worker que reprograme el turno normal de ese entrante.
+  const lastSpeakerRows = await getDb()
+    .select({ direction: schema.message.direction })
+    .from(schema.message)
+    .where(
+      and(
+        eq(schema.message.organizationId, organizationId),
+        eq(schema.message.conversationId, conversationId),
+        or(
+          eq(schema.message.direction, "in"),
+          and(eq(schema.message.direction, "out"), eq(schema.message.origin, "ai"))
+        )
+      )
+    )
+    .orderBy(desc(schema.message.createdAt))
+    .limit(1);
+  if (lastSpeakerRows[0]?.direction === "in") {
+    return { leftover: true };
+  }
+
+  const replyId = neaMessageId(organizationId, conversationId, dispatchId, 0);
+  let lastError: Error = new Error("Nea no respondió");
+
+  for (let attempt = 0; attempt < REAL_TURN_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      await sleep(TURN_RETRY_DELAYS_MS[attempt - 1]!);
+      // Mismo motivo que en `runNeaAgentTurn`: la confirmación HTTP pudo
+      // perderse aunque Nea sí haya contestado — el id determinista lo
+      // delata. Un seguimiento no tiene pendiente que avanzar: alcanza con
+      // dejar de insistir.
+      if (await neaReplyExists(organizationId, conversationId, replyId, false)) {
+        return { leftover: false };
+      }
+    }
+    const snapshot = await buildNeaTurnSnapshot({
+      organizationId,
+      conversationId,
+      isTest: false,
+      dispatchId,
+      attempt,
+      contact: { identity: contact.waIdentity, name: contact.name },
+      v1Messages: [],
+      followup: true,
+    });
+    if (!snapshot) return { leftover: false };
+
+    const result = await dispatchToNea(snapshot.payload);
+    if (result.kind === "ok") {
+      await applyNeaResponse({
+        organizationId,
+        conversationId,
+        body: result.body,
+        sentLlmProvider: snapshot.payload.llm?.provider ?? null,
+        orgCredential: snapshot.orgCredential,
+      });
+      return { leftover: false };
+    }
+    if (result.kind === "client_error") {
+      // El payload está mal: repetirlo no ayuda. A diferencia de un turno
+      // normal, un seguimiento NUNCA lanza — el job igual termina `done` (ya
+      // consumió el único seguimiento de esta conversación) y nadie se entera
+      // por handoff: no vale la pena pausar un chat sano por un empujón que
+      // no salió.
+      console.error(`[agente] seguimiento ${dispatchId} rechazado por Nea: ${result.message}`);
+      return { leftover: false };
+    }
+    lastError = new Error(result.message); // retryable: 5xx o red — sigue el loop.
+  }
+  console.error(`[agente] seguimiento ${dispatchId} agotó los reintentos: ${lastError.message}`);
+  return { leftover: false };
+}
+
 type NeaGateState = {
   conversation: typeof schema.conversation.$inferSelect;
   profile: typeof schema.agentProfile.$inferSelect;
@@ -542,9 +679,11 @@ type NeaGateState = {
 /**
  * Conversación + perfil + los gates que quedan del lado del CRM (ver el
  * comentario sobre `runNeaAgentTurn` más arriba) — releído en CADA intento
- * del loop de reintentos, no solo al principio del turno.
+ * del loop de reintentos, no solo al principio del turno. También lo reusa
+ * `runNeaFollowupTurn` (seguimiento automático) para los mismos gates, más
+ * los suyos propios.
  */
-async function loadNeaGateState(conversationId: string): Promise<NeaGateState | null> {
+export async function loadNeaGateState(conversationId: string): Promise<NeaGateState | null> {
   const db = getDb();
   const convRows = await db
     .select()
