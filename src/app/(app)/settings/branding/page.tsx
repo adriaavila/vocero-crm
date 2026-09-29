@@ -3,6 +3,7 @@ import { FaviconCard } from "@/components/settings/favicon-card";
 import { getBranding } from "@/server/branding";
 import { getSessionOrNull } from "@/lib/auth/session";
 import { brand } from "@/lib/brand";
+import { faviconHref } from "@/lib/favicon";
 import { isAllokBrand } from "@/lib/tenant-host";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default async function BrandingSettingsPage() {
       <BrandingClient />
       <FaviconCard
         branding={branding}
+        generatedHref={faviconHref({ ...branding, favicon: null })}
         generatedHint={
           // El punto que cambia de color con el estado es la identidad "all
           // ok" en sí misma: solo describe lo que pasa bajo la marca allok.

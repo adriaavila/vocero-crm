@@ -4,11 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImageUp, Trash2 } from "lucide-react";
 import type { Branding } from "@/lib/branding";
-import {
-  faviconHref,
-  FAVICON_MIMES,
-  MAX_FAVICON_BYTES,
-} from "@/lib/favicon";
+import { FAVICON_MIMES, MAX_FAVICON_BYTES } from "@/lib/favicon";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -16,16 +12,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
  * El icono de la pestaña.
  *
  * Se muestra SIEMPRE una vista previa: sin logo subido, la del icono generado
- * con la inicial y el acento. Así queda claro que la instancia ya tiene uno y
- * que subir algo es reemplazarlo, no estrenarlo.
+ * con la inicial y el acento (o el símbolo de la marca activa, bajo SaaS).
+ * Así queda claro que la instancia ya tiene uno y que subir algo es
+ * reemplazarlo, no estrenarlo.
  */
 export function FaviconCard({
   branding,
   generatedHint = "La inicial sobre tu color de acento. Sube un logo para reemplazarlo.",
+  generatedHref,
 }: {
   branding: Branding;
-  /** Capa de agencia: el SaaS genera el símbolo de allok, no la inicial. */
+  /** Capa de agencia: el SaaS genera el símbolo de la marca activa, no la inicial. */
   generatedHint?: string;
+  /**
+   * `faviconHref(branding)` con `favicon: null`, resuelto en el servidor:
+   * `faviconCacheKey` llama a `brandFaviconSvg()` (lee `brand()`, que lee
+   * `process.env.BRAND`), y eso no es `NEXT_PUBLIC_` — un componente cliente
+   * lo vería siempre como "allok". Subir/quitar un logo no cambia esta parte
+   * (solo cambia el número de versión del archivo subido), así que un solo
+   * valor del servidor alcanza para toda la vida del componente.
+   */
+  generatedHref: string;
 }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
@@ -35,7 +42,12 @@ export function FaviconCard({
   const [rev, setRev] = useState(0);
   const [actual, setActual] = useState(branding.favicon);
 
-  const src = `${faviconHref({ ...branding, favicon: actual })}&r=${rev}`;
+  // Subido: la clave es solo la versión (sniffFaviconMime/faviconCacheKey del
+  // servidor hacen lo mismo) — no depende de la marca. Sin logo: el href
+  // generado en el servidor.
+  const src = actual
+    ? `/api/branding/favicon?v=u${actual.version}&r=${rev}`
+    : `${generatedHref}&r=${rev}`;
 
   async function subir(file: File) {
     setError(null);
