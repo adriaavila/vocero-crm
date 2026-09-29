@@ -6,6 +6,15 @@ import {
 } from "@/server/inbox/webhook";
 import { processEchoesValue, processMessagesValue } from "@/server/inbox/ingest";
 import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
+// Fork — Embedded Signup en la app (server/agencia/whatsapp-signup): estos dos
+// campos solo llegan tras pedir el sync de coexistencia y JAMÁS deben verse
+// como un mensaje nuevo (sin publish, sin turno de agente).
+import {
+  processHistoryValue,
+  processSmbAppStateSyncValue,
+  type HistoryFieldValue,
+  type SmbAppStateSyncValue,
+} from "@/server/agencia/whatsapp-signup/history-sync";
 
 /**
  * Webhook público de WhatsApp (contrato webhook.md).
@@ -80,6 +89,21 @@ async function processPayload(payload: WebhookPayload): Promise<void> {
         await processEchoesValue(change.value);
       } else if (change.field === "message_template_status_update") {
         await processTemplateStatusValue(entry.id ?? null, change.value);
+      } else if (change.field === "history") {
+        // Best-effort a propósito: una forma de payload inesperada, o
+        // cualquier otro error, jamás debe tumbar los `messages` del MISMO
+        // payload que vengan después en este arreglo.
+        try {
+          await processHistoryValue(change.value as unknown as HistoryFieldValue);
+        } catch (err) {
+          console.error("[webhook] error procesando history:", err);
+        }
+      } else if (change.field === "smb_app_state_sync") {
+        try {
+          await processSmbAppStateSyncValue(change.value as unknown as SmbAppStateSyncValue);
+        } catch (err) {
+          console.error("[webhook] error procesando smb_app_state_sync:", err);
+        }
       }
       // otros fields: ignorar sin error
     }

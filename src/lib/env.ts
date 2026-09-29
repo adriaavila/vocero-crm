@@ -22,6 +22,16 @@ const envSchema = z.object({
   META_APP_SECRET: z.string().optional(),
   META_GRAPH_API_VERSION: z.string().default("v25.0"),
   META_GRAPH_BASE_URL: z.string().url().default("https://graph.facebook.com"),
+  // Embedded Signup EN la app (sin pasar por allok.fun): apagado hasta tener
+  // los tres. La misma imagen sirve allok.fun y una segunda marca (reiprop.tech
+  // u otra): nada aquí puede asumir un dominio fijo.
+  META_APP_ID: z.string().optional(),
+  // Config de Meta Login for Business para coexistencia (el negocio ya usa la
+  // app de WhatsApp Business en su teléfono). Recomendada y default.
+  META_ES_CONFIG_ID: z.string().optional(),
+  // Config para número nuevo (Cloud API puro, sin coexistencia). Opcional: sin
+  // ella la pantalla de alta solo ofrece coexistencia.
+  META_ES_CONFIG_ID_CLOUD_API: z.string().optional(),
   // Proveedor de IA principal (agente, parseo de perfil y juez del Laboratorio).
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().url().default("https://api.openai.com"),
@@ -193,6 +203,23 @@ export function isAgentConfigured(): boolean {
 
 export function isWahaConfigured(): boolean {
   return Boolean(process.env.WAHA_API_URL?.trim() && process.env.WAHA_API_KEY?.trim());
+}
+
+/**
+ * Embedded Signup corre DENTRO de la app (sin pasar por allok.fun) cuando hay
+ * app id de Meta + config de coexistencia. La config de Cloud API es aparte
+ * (`isEmbeddedSignupCloudApiConfigured`): sin ella, la pantalla de alta solo
+ * ofrece coexistencia — nunca cae a la de coexistencia por error, porque eso
+ * dispararía /register sobre un número que debía quedar coexistiendo.
+ */
+export function isEmbeddedSignupConfigured(): boolean {
+  return Boolean(
+    process.env.META_APP_ID?.trim() && process.env.META_ES_CONFIG_ID?.trim()
+  );
+}
+
+export function isEmbeddedSignupCloudApiConfigured(): boolean {
+  return Boolean(process.env.META_ES_CONFIG_ID_CLOUD_API?.trim());
 }
 
 export function calendarTimeZone(): string {
