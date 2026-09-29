@@ -61,10 +61,14 @@ const jetbrainsMono = JetBrains_Mono({
 // reutiliza la MISMA fuente Instrument Serif que ya se descarga para Vocero,
 // bajo un nombre de variable propio — así `[data-brand="rei"]` puede
 // reasignar `--font-serif` sin autorreferenciarse (ver globals.css).
+// `preload: false` en las dos: solo las usa `[data-brand="rei"]`, y
+// precargarlas en un build de allok bajaría dos fuentes que ese despliegue
+// nunca pinta.
 const geistMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-geist-mono",
   display: "swap",
+  preload: false,
 });
 const reiSerif = Instrument_Serif({
   subsets: ["latin"],
@@ -72,6 +76,7 @@ const reiSerif = Instrument_Serif({
   style: ["normal", "italic"],
   variable: "--font-instrument-serif",
   display: "swap",
+  preload: false,
 });
 
 export const dynamic = "force-dynamic";

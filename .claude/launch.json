@@ -58,10 +58,10 @@
         "GOOGLE_CAL_BASE_URL": "http://localhost:3314/api/dev/google-mock",
         "GOOGLE_OAUTH_BASE_URL": "http://localhost:3314/api/dev/google-mock",
         "ZERNIO_BASE_URL": "http://localhost:3314/api/dev/zernio-mock",
-        "CONTACT_WHATSAPP": "59171234567",
-        "CONTACT_EMAIL": "hola@reiprop.tech",
-        "LEGAL_NAME": "Rei Prop S.R.L.",
-        "LEGAL_ADDRESS": "Av. Arce 2333, La Paz, Bolivia"
+        "CONTACT_WHATSAPP": "EJEMPLO-59171234567",
+        "CONTACT_EMAIL": "EJEMPLO-hola@reiprop.tech",
+        "LEGAL_NAME": "EJEMPLO-Rei Prop S.R.L.",
+        "LEGAL_ADDRESS": "EJEMPLO-Av. Arce 2333, La Paz, Bolivia"
       }
     }
   ]

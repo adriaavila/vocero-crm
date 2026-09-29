@@ -51,7 +51,9 @@ function extraReservedSubdomains(): string[] {
  */
 function envRootDomain(): string | undefined {
   const trimmed = process.env.ALLOK_ROOT_DOMAIN?.trim();
-  return trimmed ? trimmed : undefined;
+  if (!trimmed) return undefined;
+  // "." (o cualquier cosa que se limpie a nada) tampoco es un dominio.
+  return cleanRootDomain(trimmed) ? trimmed : undefined;
 }
 
 /** El dominio raíz configurado, ya limpio (sin puntos sueltos ni mayúsculas). */

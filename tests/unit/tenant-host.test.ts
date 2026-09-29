@@ -113,6 +113,12 @@ describe("gotcha: ALLOK_ROOT_DOMAIN vacío (docker-compose ${VAR:-})", () => {
     expect(resolvedRootDomain()).toBe("allok.fun");
   });
 
+  it("un solo punto se limpia a nada: también cuenta como no configurado", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", ".");
+    expect(resolvedRootDomain()).toBe("allok.fun");
+    expect(saasAppHost()).toBe("app.allok.fun");
+  });
+
   it("un valor real sigue ganando, limpio de mayúsculas y puntos sueltos", () => {
     vi.stubEnv("ALLOK_ROOT_DOMAIN", " Reiprop.Tech. ");
     expect(resolvedRootDomain()).toBe("reiprop.tech");
