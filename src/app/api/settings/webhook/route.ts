@@ -1,4 +1,4 @@
-import { withAuth } from "@/lib/api";
+import { withOwner } from "@/lib/api";
 import { getEnv } from "@/lib/env";
 import { isChannelEnabled } from "@/server/channels/enabled";
 
@@ -12,8 +12,12 @@ export const dynamic = "force-dynamic";
  * Instagram por separado (productos distintos de la misma app), así que aquí
  * viajan las tres URLs y la pantalla de cada canal enseña la suya. Las de un
  * canal apagado van en null: no existen en esta instancia (ADR-001).
+ *
+ * Fork — owner-only: el verify token es válido para TODA la instancia
+ * (segmento secreto de la URL del webhook); un miembro sin ese rol no debe
+ * poder leerlo.
  */
-export const GET = withAuth(async () => {
+export const GET = withOwner(async () => {
   const env = getEnv();
   const base = env.APP_BASE_URL.replace(/\/$/, "");
   const url = `${base}/api/webhooks/wa/${env.META_WEBHOOK_VERIFY_TOKEN}`;
