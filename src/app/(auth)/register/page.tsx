@@ -5,7 +5,7 @@ import { brand } from "@/lib/brand";
 import { isAllokSaaSMode, isSaaSAdminEmail, resolvedRootDomain } from "@/lib/tenant-host";
 import { soldSaaSPlans } from "@/lib/saas-plans";
 import { isSaaSSelfServe } from "@/server/auth/registration";
-import { startUrl } from "@/components/agencia/allok/setup-contact";
+import { contactChannelSuffix, startUrl } from "@/components/agencia/allok/setup-contact";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,7 +43,7 @@ function SetupWithUs() {
       </CardHeader>
       <CardContent className="space-y-4">
         <a href={startUrl()} className={cn(buttonVariants(), "h-11 w-full")}>
-          Escribir por WhatsApp
+          Escribir {contactChannelSuffix()}
         </a>
         <p className="text-center text-sm text-muted-foreground">
           ¿Ya tienes cuenta?{" "}

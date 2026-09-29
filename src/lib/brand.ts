@@ -102,3 +102,21 @@ export function brandById(id: BrandId): Brand {
     helpMessage: "Hola, necesito recuperar el acceso a mi cuenta de allok.",
   };
 }
+
+/**
+ * Qué le falta a Rei para hablarle a un cliente de verdad: sin
+ * CONTACT_WHATSAPP/CONTACT_EMAIL el sitio público no tiene a dónde mandar un
+ * "quiero empezar" (cae a la demo); sin LEGAL_NAME/LEGAL_ADDRESS los legales
+ * imprimen "[pendiente: ...]" en vez de un dato real. Vacío para allok (trae
+ * los suyos de fábrica) y para cualquier instancia fuera del SaaS.
+ */
+export function missingReiConfigVars(saasMode: boolean): string[] {
+  if (!saasMode || activeBrandId() !== "rei") return [];
+  const missing: string[] = [];
+  if (!nonEmpty(process.env.CONTACT_WHATSAPP) && !nonEmpty(process.env.CONTACT_EMAIL)) {
+    missing.push("CONTACT_WHATSAPP", "CONTACT_EMAIL");
+  }
+  if (!nonEmpty(process.env.LEGAL_NAME)) missing.push("LEGAL_NAME");
+  if (!nonEmpty(process.env.LEGAL_ADDRESS)) missing.push("LEGAL_ADDRESS");
+  return missing;
+}

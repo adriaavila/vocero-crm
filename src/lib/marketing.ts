@@ -70,6 +70,14 @@ export function contactHref(message?: string): string {
   return demoUrl();
 }
 
+/** "por WhatsApp" / "por correo" — el canal que de verdad tiene configurado esta marca. */
+export function contactChannelSuffix(): string {
+  const c = contact();
+  if (c.whatsapp) return "por WhatsApp";
+  if (c.email) return "por correo";
+  return "";
+}
+
 /** Dónde vive la demo pública. Configurable: en local no es un subdominio. */
 export function demoUrl(): string {
   return nonEmpty(process.env.DEMO_URL) ?? "https://demo.reiprop.tech";
@@ -105,7 +113,7 @@ export function plans(): Plan[] {
         "Tu propio subdominio",
         "Tu número de WhatsApp Business conectado",
         "Agente de IA que responde sobre tu catálogo: venta, alquiler y anticrético",
-        "Bandeja compartida con tu equipo, sin límite de usuarios",
+        "Bandeja compartida con tu equipo, hasta 10 usuarios",
         "Catálogo, embudo y visitas",
         "Tu logo y tu color en toda la interfaz",
       ],

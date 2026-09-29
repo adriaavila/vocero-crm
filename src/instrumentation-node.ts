@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { missingReiConfigVars } from "@/lib/brand";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 /**
@@ -27,8 +28,15 @@ export async function cleanupOrphanRuns(): Promise<void> {
     // La BD puede no estar lista aún (migraciones corren antes del server).
     console.error("[boot] limpieza de corridas huérfanas falló:", err);
   }
-  if (isAllokSaaSMode()) {
+  const saasMode = isAllokSaaSMode();
+  if (saasMode) {
     const { startAgentWorker } = await import("@/server/ai/worker");
     startAgentWorker();
+  }
+  const missing = missingReiConfigVars(saasMode);
+  if (missing.length > 0) {
+    console.warn(
+      `[boot] Rei SaaS sin configurar: falta(n) ${missing.join(", ")}. El sitio público cae a valores genéricos (demo, "[pendiente: ...]" en los legales) hasta que se definan.`
+    );
   }
 }

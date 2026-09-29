@@ -30,7 +30,7 @@ export default function RegisterForm({
    * `NEXT_PUBLIC_`): un componente cliente no puede leerla directo, siempre
    * baja por prop.
    */
-  brand: Pick<Brand, "Name" | "pricingHref">;
+  brand: Pick<Brand, "id" | "Name" | "pricingHref">;
   /** `clinica-perez.<dominio-raíz>`, también resuelto en el servidor. */
   exampleHost: string;
 }) {

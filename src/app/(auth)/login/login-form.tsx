@@ -14,12 +14,15 @@ export default function LoginForm({
   brandName,
   startUrl,
   helpUrl,
+  channelSuffix,
 }: {
   saasClosed: boolean;
   /** Resueltos en el servidor: ver el comentario en register-form.tsx. */
   brandName: string;
   startUrl: string;
   helpUrl: string;
+  /** "por WhatsApp" / "por correo" — el canal que de verdad tiene configurado esta marca. */
+  channelSuffix: string;
 }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -90,7 +93,7 @@ export default function LoginForm({
               <p className="text-center text-xs text-muted-foreground">
                 ¿Olvidaste tu contraseña?{" "}
                 <a href={helpUrl} className="text-primary hover:underline">
-                  Escríbenos por WhatsApp
+                  Escríbenos {channelSuffix}
                 </a>
               </p>
               <p className="text-center text-sm text-muted-foreground">
