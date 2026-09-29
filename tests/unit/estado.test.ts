@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   conversationNote,
   conversationState,
@@ -92,5 +92,28 @@ describe("estado del negocio", () => {
     expect(systemState({ ...ok, owner: false, whatsapp: "missing" }).href).toBeNull();
     expect(systemState({ ...ok, owner: false, agentOn: false }).href).toBeNull();
     expect(systemState({ ...ok, owner: false, waiting: 1 }).href).toBe("/inbox");
+  });
+});
+
+describe("la marca en las frases (systemState/conversationNote)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const ok: SystemInput = { whatsapp: "connected", billingActive: true, agentOn: true, waiting: 0, working: 0, owner: true };
+
+  it("BRAND=allok (el default): las frases de hoy, sin cambiar una letra", () => {
+    vi.stubEnv("BRAND", "");
+    expect(systemState(ok).reason).toBe("Todo en orden. allok contesta por ti.");
+    expect(systemState({ ...ok, billingActive: false }).reason).toBe(
+      "Reactiva tu plan para que allok siga contestando."
+    );
+    expect(conversationNote(unanswered(30_000), "atendiendo", NOW)).toBe("allok está respondiendo");
+  });
+
+  it("BRAND=rei: las mismas frases, con Rei", () => {
+    vi.stubEnv("BRAND", "rei");
+    expect(systemState(ok).reason).toBe("Todo en orden. Rei contesta por ti.");
+    expect(systemState({ ...ok, billingActive: false }).reason).toBe(
+      "Reactiva tu plan para que Rei siga contestando."
+    );
+    expect(conversationNote(unanswered(30_000), "atendiendo", NOW)).toBe("Rei está respondiendo");
   });
 });
