@@ -17,10 +17,11 @@ type Member = {
   createdAt: string;
 };
 
-const MAX_TEAM_MEMBERS = 3;
+const DEFAULT_SEAT_LIMIT = 3;
 
 export function TeamClient() {
   const [members, setMembers] = useState<Member[]>([]);
+  const [seatLimit, setSeatLimit] = useState(DEFAULT_SEAT_LIMIT);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [tempPassword, setTempPassword] = useState("");
@@ -34,8 +35,9 @@ export function TeamClient() {
   const refetch = useCallback(async () => {
     const res = await fetch("/api/settings/team").catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as { members: Member[] };
+    const data = (await res.json()) as { members: Member[]; seatLimit?: number };
     setMembers(data.members);
+    if (typeof data.seatLimit === "number") setSeatLimit(data.seatLimit);
   }, []);
 
   useEffect(() => {
@@ -101,7 +103,7 @@ export function TeamClient() {
         <CardHeader>
           <CardTitle>Crear cuenta de equipo</CardTitle>
           <CardDescription>
-            Completo incluye hasta 3 usuarios, incluido el propietario. Sin correos ni invitaciones: comparte tú mismo la contraseña temporal con tu compañero (se muestra UNA sola vez).
+            Tu plan incluye hasta {seatLimit} usuario{seatLimit === 1 ? "" : "s"}, incluido el propietario. Sin correos ni invitaciones: comparte tú mismo la contraseña temporal con tu compañero (se muestra UNA sola vez).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -152,7 +154,7 @@ export function TeamClient() {
           )}
           <Button
             disabled={
-              saving || members.length >= MAX_TEAM_MEMBERS || !name.trim() || !email.trim() || tempPassword.length < 8
+              saving || members.length >= seatLimit || !name.trim() || !email.trim() || tempPassword.length < 8
             }
             onClick={() => void create()}
           >
@@ -163,8 +165,8 @@ export function TeamClient() {
       </Card>
 
       <div className="space-y-2">
-        <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Miembros</p><span className="text-xs text-text-3">{members.length}/{MAX_TEAM_MEMBERS}</span></div>
-        {members.length >= MAX_TEAM_MEMBERS && <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">Llegaste al límite de Completo. Los accesos existentes se conservan.</p>}
+        <div className="flex items-center justify-between gap-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Miembros</p><span className="text-xs text-text-3">{members.length}/{seatLimit}</span></div>
+        {members.length >= seatLimit && <p className="rounded-md border border-warning-soft bg-warning-tint px-3 py-2 text-xs text-warning-text">Llegaste al límite de tu plan. Los accesos existentes se conservan.</p>}
         {members.map((m) => (
           <div
             key={m.id}

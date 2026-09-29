@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   getOrganizationBilling,
   hasRememberedBillingEvent,
+  isCurrentOrFirstSubscriptionEvent,
   planForPriceId,
   rememberBillingEvent,
   saveOrganizationBilling,
@@ -94,6 +95,9 @@ export async function POST(request: Request) {
     const subscription = event.data.object as Stripe.Subscription;
     const priceId = subscription.items.data[0]?.price.id ?? null;
     const current = await getOrganizationBilling(organizationId);
+    if (!isCurrentOrFirstSubscriptionEvent(current, subscription.id)) {
+      return Response.json({ received: true, ignored: true, stale_subscription: true });
+    }
     await saveOrganizationBilling(organizationId, {
       plan: planForPriceId(priceId) ?? current.plan,
       status: statusFromStripe(subscription.status),

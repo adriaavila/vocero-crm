@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
-import { isSaaSPlan, PLAN_CATALOG, PLAN_ORDER, planMeetsTier, soldSaaSPlans } from "../../src/lib/saas-plans";
+import { describe, expect, it, vi } from "vitest";
+import {
+  billingStatusLabel,
+  formatManualSource,
+  isSaaSPlan,
+  PLAN_CATALOG,
+  PLAN_ORDER,
+  planMeetsTier,
+  soldSaaSPlans,
+} from "../../src/lib/saas-plans";
 
 describe("Catálogo de planes SaaS", () => {
   it("tiene una entrada de catálogo por cada plan del orden de nivel", () => {
@@ -13,6 +21,12 @@ describe("Catálogo de planes SaaS", () => {
   it("Agencia (inmobiliaria) es el plan más caro, a USD 299/mes", () => {
     expect(PLAN_CATALOG.inmobiliaria.name).toBe("Agencia");
     expect(PLAN_CATALOG.inmobiliaria.priceUsd).toBe(299);
+  });
+
+  it("cupo de usuarios: Esencial/Completo en 3 (como siempre), Agencia en 10", () => {
+    expect(PLAN_CATALOG.basic.seats).toBe(3);
+    expect(PLAN_CATALOG.pro.seats).toBe(3);
+    expect(PLAN_CATALOG.inmobiliaria.seats).toBe(10);
   });
 
   it("isSaaSPlan solo acepta los tres literales conocidos", () => {
@@ -68,6 +82,50 @@ describe("Catálogo de planes SaaS", () => {
 
     it("una lista solo de valores desconocidos cae al default", () => {
       expect(soldSaaSPlans("enterprise,foo")).toEqual(["basic", "pro"]);
+    });
+
+    it("no distingue mayúsculas", () => {
+      expect(soldSaaSPlans("Basic,PRO,Inmobiliaria")).toEqual(["basic", "pro", "inmobiliaria"]);
+    });
+
+    it("avisa por consola de los valores desconocidos que descarta", () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      soldSaaSPlans("basic,typo_pro");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("typo_pro"));
+      warn.mockRestore();
+    });
+  });
+
+  describe("billingStatusLabel", () => {
+    it("traduce cada estado conocido al español", () => {
+      expect(billingStatusLabel("active")).toBe("activo");
+      expect(billingStatusLabel("trialing")).toBe("en prueba");
+      expect(billingStatusLabel("past_due")).toBe("pago pendiente");
+      expect(billingStatusLabel("unpaid")).toBe("impago");
+      expect(billingStatusLabel("canceled")).toBe("cancelado");
+      expect(billingStatusLabel("incomplete")).toBe("incompleto");
+      expect(billingStatusLabel("inactive")).toBe("inactivo");
+    });
+
+    it("un estado desconocido se muestra tal cual", () => {
+      expect(billingStatusLabel("algo_raro")).toBe("algo_raro");
+    });
+  });
+
+  describe("formatManualSource", () => {
+    it("formatea manual_<fecha> en español", () => {
+      // El ICU de "short month" varía por entorno ("sep" vs "sept"); se
+      // valida la forma, no el string exacto del mes.
+      expect(formatManualSource("manual_2026-09-29")).toMatch(/^Manual · 29 sept?\.? 2026$/);
+    });
+
+    it("sin fuente, null", () => {
+      expect(formatManualSource(null)).toBeNull();
+      expect(formatManualSource(undefined)).toBeNull();
+    });
+
+    it("un formato que no matchea se muestra tal cual", () => {
+      expect(formatManualSource("stripe_checkout")).toBe("stripe_checkout");
     });
   });
 });

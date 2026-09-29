@@ -30,6 +30,26 @@ export type SaaSBillingState = {
   grantedBy: string | null;
   /** Cuándo se concedió a mano por última vez. */
   grantedAt: string | null;
+  /** Email del admin de allok que quitó el plan a mano por última vez. */
+  revokedBy: string | null;
+  /** Cuándo se quitó a mano por última vez. */
+  revokedAt: string | null;
+  /**
+   * Id de la suscripción de Stripe que una concesión manual confirmada
+   * desenganchó (nunca se cancela desde código — solo se deja de mirar).
+   * El webhook la usa para ignorar eventos tardíos de esa suscripción vieja.
+   */
+  detachedSubscriptionId: string | null;
+  /** Últimos 10 cambios manuales (alta/baja), el más reciente primero. */
+  history: BillingHistoryEntry[];
+};
+
+export type BillingHistoryEntry = {
+  at: string;
+  by: string;
+  action: "grant" | "revoke";
+  plan: SaaSPlan | null;
+  confirmOverrideStripe: boolean;
 };
 
 type Metadata = Record<string, unknown>;
@@ -70,6 +90,25 @@ function asStatus(value: unknown): SaaSBillingStatus {
     : "inactive";
 }
 
+function asHistory(value: unknown): BillingHistoryEntry[] {
+  if (!Array.isArray(value)) return [];
+  const entries: BillingHistoryEntry[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = raw as Record<string, unknown>;
+    if (entry.action !== "grant" && entry.action !== "revoke") continue;
+    if (typeof entry.at !== "string" || typeof entry.by !== "string") continue;
+    entries.push({
+      at: entry.at,
+      by: entry.by,
+      action: entry.action,
+      plan: asPlan(entry.plan),
+      confirmOverrideStripe: entry.confirmOverrideStripe === true,
+    });
+  }
+  return entries.slice(0, 10);
+}
+
 export function billingFromMetadata(raw: string | null | undefined): SaaSBillingState {
   const billing = billingMetadata(parseMetadata(raw));
   return {
@@ -84,6 +123,10 @@ export function billingFromMetadata(raw: string | null | undefined): SaaSBilling
     source: typeof billing.source === "string" ? billing.source : null,
     grantedBy: typeof billing.grantedBy === "string" ? billing.grantedBy : null,
     grantedAt: typeof billing.grantedAt === "string" ? billing.grantedAt : null,
+    revokedBy: typeof billing.revokedBy === "string" ? billing.revokedBy : null,
+    revokedAt: typeof billing.revokedAt === "string" ? billing.revokedAt : null,
+    detachedSubscriptionId: typeof billing.detachedSubscriptionId === "string" ? billing.detachedSubscriptionId : null,
+    history: asHistory(billing.history),
   };
 }
 
@@ -132,8 +175,13 @@ export function appOrigin(request: Request): string {
   ).replace(/\/$/, "");
 }
 
-export async function getOrganizationBilling(organizationId: string): Promise<SaaSBillingState> {
-  const rows = await getDb()
+type Db = ReturnType<typeof getDb>;
+/** El tipo de `tx` que entrega `db.transaction(async (tx) => ...)` — misma interfaz de consultas que `Db`. */
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+export type DbOrTx = Db | Tx;
+
+export async function getOrganizationBilling(organizationId: string, db: DbOrTx = getDb()): Promise<SaaSBillingState> {
+  const rows = await db
     .select({ metadata: schema.organization.metadata })
     .from(schema.organization)
     .where(eq(schema.organization.id, organizationId))
@@ -141,12 +189,27 @@ export async function getOrganizationBilling(organizationId: string): Promise<Sa
   return billingFromMetadata(rows[0]?.metadata);
 }
 
-export async function getOrganizationForBilling(organizationId: string) {
-  const rows = await getDb()
+export async function getOrganizationForBilling(organizationId: string, db: DbOrTx = getDb()) {
+  const rows = await db
     .select({ id: schema.organization.id, name: schema.organization.name, slug: schema.organization.slug, metadata: schema.organization.metadata })
     .from(schema.organization)
     .where(eq(schema.organization.id, organizationId))
     .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Igual que `getOrganizationForBilling`, pero con `SELECT ... FOR UPDATE`:
+ * solo tiene efecto dentro de una transacción (`getDb().transaction(...)`).
+ * Usado por la concesión/baja manual de plan para que dos llamadas
+ * concurrentes sobre el mismo negocio no se pisen (lee-decide-escribe).
+ */
+export async function getOrganizationForBillingLocked(organizationId: string, tx: Tx) {
+  const rows = await tx
+    .select({ id: schema.organization.id, name: schema.organization.name, slug: schema.organization.slug, metadata: schema.organization.metadata })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .for("update");
   return rows[0] ?? null;
 }
 
@@ -169,8 +232,9 @@ export function tenantOrigin(slug: string, request: Request): string {
 export async function saveOrganizationBilling(
   organizationId: string,
   patch: Partial<SaaSBillingState>,
+  db: DbOrTx = getDb(),
 ): Promise<SaaSBillingState> {
-  const organization = await getOrganizationForBilling(organizationId);
+  const organization = await getOrganizationForBilling(organizationId, db);
   if (!organization) throw new Error("Organización no encontrada");
   const metadata = parseMetadata(organization.metadata);
   const current = billingFromMetadata(organization.metadata);
@@ -181,7 +245,7 @@ export async function saveOrganizationBilling(
       : {}),
     billing: next,
   };
-  await getDb()
+  await db
     .update(schema.organization)
     .set({ metadata: JSON.stringify(metadata) })
     .where(eq(schema.organization.id, organizationId));
@@ -205,6 +269,30 @@ export function mergeBillingState(
   return current.updatedAt && next.updatedAt && Date.parse(next.updatedAt) < Date.parse(current.updatedAt)
     ? current
     : next;
+}
+
+/**
+ * ¿Este negocio ya tuvo alguna vez una suscripción real o una concesión
+ * manual? Cualquiera de las dos cuenta para no regalar una segunda prueba
+ * gratis a quien pagó por link/transferencia y ahora pasa por checkout.
+ */
+export function hadPriorSubscription(current: SaaSBillingState): boolean {
+  return current.subscriptionId !== null || current.grantedAt !== null;
+}
+
+/**
+ * ¿Este evento de `customer.subscription.*` es de la suscripción vigente (o
+ * la primera que ve esta organización)? Una concesión manual confirmada
+ * desengancha la suscripción vieja (`detachedSubscriptionId`) sin cancelarla
+ * en Stripe: si ese evento tardío llega después, no debe resucitarla ni
+ * pisar la concesión. También cubre el caso de una suscripción activa
+ * distinta (`current.subscriptionId` ya apunta a otra).
+ */
+export function isCurrentOrFirstSubscriptionEvent(current: SaaSBillingState, incomingSubscriptionId: string): boolean {
+  return (
+    current.subscriptionId === incomingSubscriptionId ||
+    (current.subscriptionId === null && current.detachedSubscriptionId !== incomingSubscriptionId)
+  );
 }
 
 export async function rememberBillingEvent(

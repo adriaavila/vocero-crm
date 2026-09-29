@@ -1,0 +1,1 @@
+ALTER TABLE "saas_admin_audit" ADD COLUMN "detail" text;

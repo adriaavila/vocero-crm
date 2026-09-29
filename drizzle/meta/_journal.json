@@ -162,6 +162,13 @@
       "when": 1790427283555,
       "tag": "9010_gasto_anuncios",
       "breakpoints": true
+    },
+    {
+      "idx": 9011,
+      "version": "7",
+      "when": 1790704601407,
+      "tag": "9011_auditoria_detalle",
+      "breakpoints": true
     }
   ]
 }

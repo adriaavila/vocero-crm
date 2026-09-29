@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * el respaldo de "paga por link o transferencia" a la concesión que hoy se
  * hace con SQL a mano en producción (specs/018). Se prueba la ruta completa
  * (no solo `grantSaaSPlan`/`revokeSaaSPlan`) porque la autorización y la
- * auditoría viven en `requireSaaSAdmin`, delante de la lógica de negocio.
+ * auditoría viven alrededor de la lógica de negocio.
  */
 
 const headersState = vi.hoisted(() => ({ host: "admin.localhost" }));
@@ -20,7 +20,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 type FakeOrg = { id: string; name: string; slug: string | null; metadata: string | null };
-type AuditRow = { id: string; userId: string; action: string; organizationId: string | null };
+type AuditRow = { id: string; userId: string; action: string; organizationId: string | null; detail: string | null };
 const dbState = vi.hoisted(() => ({
   org: null as FakeOrg | null,
   auditRows: [] as AuditRow[],
@@ -32,27 +32,34 @@ vi.mock("@/lib/db", async (importOriginal) => {
     const rows = dbState.org ? [{ ...dbState.org }] : [];
     const c: Record<string, unknown> = {};
     for (const m of ["from", "where", "limit"]) c[m] = () => c;
+    // `.for("update")` es siempre el último eslabón antes del await, igual
+    // que `.limit()` — no hace falta simular el bloqueo real, solo la forma.
+    c.for = () => Promise.resolve(rows);
     (c as { then: unknown }).then = (resolve: (v: unknown) => unknown) => Promise.resolve(rows).then(resolve);
     return c;
   }
-  return {
-    ...actual,
-    getDb: () => ({
-      select: () => selectChain(),
-      update: () => ({
-        set: (values: Record<string, unknown>) => ({
-          where: () => {
-            if (dbState.org && typeof values.metadata === "string") dbState.org.metadata = values.metadata;
-            return Promise.resolve(undefined);
-          },
-        }),
-      }),
-      insert: () => ({
-        values: (row: AuditRow) => {
-          dbState.auditRows.push(row);
+  const client = {
+    select: () => selectChain(),
+    update: () => ({
+      set: (values: Record<string, unknown>) => ({
+        where: () => {
+          if (dbState.org && typeof values.metadata === "string") dbState.org.metadata = values.metadata;
           return Promise.resolve(undefined);
         },
       }),
+    }),
+    insert: () => ({
+      values: (row: Omit<AuditRow, "detail"> & { detail?: string | null }) => {
+        dbState.auditRows.push({ detail: null, ...row });
+        return Promise.resolve(undefined);
+      },
+    }),
+  };
+  return {
+    ...actual,
+    getDb: () => ({
+      ...client,
+      transaction: async <T>(fn: (tx: typeof client) => Promise<T>) => fn(client),
     }),
   };
 });
@@ -66,12 +73,16 @@ function ctx(id = ORG_ID) {
   return { params: Promise.resolve({ id }) };
 }
 
-function req(method: "POST" | "DELETE", body: unknown): Request {
+function req(method: "POST" | "DELETE", body: unknown, contentType: string | null = "application/json"): Request {
   return new Request(`http://localhost/api/saas/businesses/${ORG_ID}/plan`, {
     method,
-    headers: { "content-type": "application/json" },
+    headers: contentType ? { "content-type": contentType } : {},
     body: JSON.stringify(body),
   });
+}
+
+function auditDetail(row: AuditRow | undefined): Record<string, unknown> {
+  return row?.detail ? (JSON.parse(row.detail) as Record<string, unknown>) : {};
 }
 
 describe("Alta/baja manual de plan desde el panel admin", () => {
@@ -114,76 +125,97 @@ describe("Alta/baja manual de plan desde el panel admin", () => {
     });
   });
 
-  describe("conceder un plan", () => {
-    it("actualiza la metadata, dejando plan/estado/fuente/quién y cuándo, y audita con la organización", async () => {
-      const res = await POST(req("POST", { plan: "pro" }), ctx());
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { billing: Record<string, unknown> };
-      expect(body.billing).toMatchObject({ plan: "pro", status: "active", grantedBy: "admin@allok.fun" });
-      expect(body.billing.source).toMatch(/^manual_\d{4}-\d{2}-\d{2}$/);
-      expect(typeof body.billing.grantedAt).toBe("string");
-
-      expect(dbState.auditRows).toHaveLength(1);
-      expect(dbState.auditRows[0]).toMatchObject({ userId: "user_admin", action: "grant_plan", organizationId: ORG_ID });
+  describe("validación del body", () => {
+    it("sin Content-Type: application/json, 415", async () => {
+      const res = await POST(req("POST", { plan: "pro" }, "text/plain"), ctx());
+      expect(res.status).toBe(415);
+      expect(dbState.auditRows).toEqual([]);
     });
 
-    it("es idempotente: repetirlo confirma el mismo plan sin romper nada", async () => {
-      await POST(req("POST", { plan: "pro" }), ctx());
-      const res = await POST(req("POST", { plan: "pro" }), ctx());
-      expect(res.status).toBe(200);
-      expect(dbState.auditRows).toHaveLength(2);
-    });
-
-    it("un plan que este despliegue no vende (fuera de SAAS_PLANS) se rechaza con 422", async () => {
-      // SAAS_PLANS sin configurar → default basic,pro (inmobiliaria no vendida aquí).
-      const res = await POST(req("POST", { plan: "inmobiliaria" }), ctx());
+    it("una clave extra en el body se rechaza (schema estricto)", async () => {
+      const res = await POST(req("POST", { plan: "pro", extra: "nope" }), ctx());
       expect(res.status).toBe(422);
-      expect(dbState.org?.metadata).toBeNull();
-    });
-
-    it("con SAAS_PLANS ampliado, Agencia (inmobiliaria) sí se puede conceder", async () => {
-      vi.stubEnv("SAAS_PLANS", "basic,pro,inmobiliaria");
-      const res = await POST(req("POST", { plan: "inmobiliaria" }), ctx());
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { billing: { plan: string } };
-      expect(body.billing.plan).toBe("inmobiliaria");
     });
 
     it("un valor de plan inválido se rechaza con 422", async () => {
       const res = await POST(req("POST", { plan: "enterprise" }), ctx());
       expect(res.status).toBe(422);
     });
+  });
 
-    it("negocio inexistente → 404", async () => {
+  describe("conceder un plan", () => {
+    it("actualiza la metadata, dejando plan/estado/fuente/quién y cuándo, y audita con la organización y el detalle", async () => {
+      const res = await POST(req("POST", { plan: "pro" }), ctx());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { billing: Record<string, unknown> };
+      expect(body.billing).toMatchObject({ plan: "pro", status: "active", grantedBy: "admin@allok.fun" });
+      expect(body.billing.source).toMatch(/^manual_\d{4}-\d{2}-\d{2}$/);
+      expect(typeof body.billing.grantedAt).toBe("string");
+      expect(body.billing.history).toMatchObject([{ action: "grant", plan: "pro", by: "admin@allok.fun" }]);
+
+      expect(dbState.auditRows).toHaveLength(1);
+      expect(dbState.auditRows[0]).toMatchObject({ userId: "user_admin", action: "grant_plan", organizationId: ORG_ID });
+      expect(auditDetail(dbState.auditRows[0])).toMatchObject({ plan: "pro", confirmOverrideStripe: false, result: "ok" });
+    });
+
+    it("es idempotente: repetirlo confirma el mismo plan sin romper nada, y el historial no pasa de 10", async () => {
+      for (let i = 0; i < 12; i++) {
+        await POST(req("POST", { plan: "pro" }), ctx());
+      }
+      const res = await POST(req("POST", { plan: "pro" }), ctx());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { billing: { history: unknown[] } };
+      expect(dbState.auditRows).toHaveLength(13);
+      expect(body.billing.history).toHaveLength(10);
+    });
+
+    it("Agencia (inmobiliaria) se puede conceder sin necesidad de SAAS_PLANS — eso solo gobierna checkout/registro", async () => {
+      // SAAS_PLANS no está configurado (default basic,pro) y aun así el admin puede concederlo.
+      const res = await POST(req("POST", { plan: "inmobiliaria" }), ctx());
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { billing: { plan: string } };
+      expect(body.billing.plan).toBe("inmobiliaria");
+    });
+
+    it("negocio inexistente → 404, y NO se escribe auditoría (nada que auditar)", async () => {
       dbState.org = null;
       const res = await POST(req("POST", { plan: "pro" }), ctx("org_missing"));
       expect(res.status).toBe(404);
+      expect(dbState.auditRows).toEqual([]);
     });
 
     describe("resguardo de Stripe vigente", () => {
       beforeEach(() => {
-        // Agencia (inmobiliaria) es el plan que se concede en estas pruebas —
-        // hay que habilitarlo explícitamente, igual que en producción.
-        vi.stubEnv("SAAS_PLANS", "basic,pro,inmobiliaria");
         dbState.org!.metadata = JSON.stringify({
-          allok: { billing: { plan: "pro", status: "active", subscriptionId: "sub_123" } },
+          allok: { billing: { plan: "pro", status: "active", customerId: "cus_1", subscriptionId: "sub_123" } },
         });
       });
 
-      it("no pisa en silencio una suscripción de Stripe activa (409, sin escribir)", async () => {
+      it("no pisa en silencio una suscripción de Stripe activa (409, sin escribir), pero sí audita el intento bloqueado", async () => {
         const res = await POST(req("POST", { plan: "inmobiliaria" }), ctx());
         expect(res.status).toBe(409);
         expect(dbState.org?.metadata).toContain("sub_123");
         expect(dbState.org?.metadata).toContain('"plan":"pro"');
+        expect(dbState.auditRows).toHaveLength(1);
+        expect(auditDetail(dbState.auditRows[0])).toMatchObject({ result: "stripe_subscription_active" });
       });
 
-      it("con confirmOverrideStripe:true sí reemplaza el plan", async () => {
+      it("con confirmOverrideStripe:true desengancha la suscripción (no la cancela en Stripe): subscriptionId/priceId/currentPeriodEnd a null, customerId se conserva, detachedSubscriptionId guarda la vieja", async () => {
         const res = await POST(req("POST", { plan: "inmobiliaria", confirmOverrideStripe: true }), ctx());
         expect(res.status).toBe(200);
-        const body = (await res.json()) as { billing: { plan: string; subscriptionId: string | null } };
+        const body = (await res.json()) as {
+          billing: {
+            plan: string;
+            subscriptionId: string | null;
+            customerId: string | null;
+            detachedSubscriptionId: string | null;
+          };
+        };
         expect(body.billing.plan).toBe("inmobiliaria");
-        // El patch de la concesión no toca subscriptionId: Stripe sigue de su lado.
-        expect(body.billing.subscriptionId).toBe("sub_123");
+        expect(body.billing.subscriptionId).toBeNull();
+        expect(body.billing.customerId).toBe("cus_1");
+        expect(body.billing.detachedSubscriptionId).toBe("sub_123");
+        expect(auditDetail(dbState.auditRows[0])).toMatchObject({ confirmOverrideStripe: true, result: "ok" });
       });
     });
   });
@@ -203,7 +235,17 @@ describe("Alta/baja manual de plan desde el panel admin", () => {
       });
     });
 
-    it("pasa el estado a canceled y conserva plan/fuente/quién lo concedió", async () => {
+    it("sin Content-Type: application/json, 415", async () => {
+      const res = await DELETE(req("DELETE", {}, "text/plain"), ctx());
+      expect(res.status).toBe(415);
+    });
+
+    it("una clave extra en el body se rechaza (schema estricto)", async () => {
+      const res = await DELETE(req("DELETE", { confirmOverrideStripe: true, extra: 1 }), ctx());
+      expect(res.status).toBe(422);
+    });
+
+    it("pasa el estado a canceled, conserva plan/fuente/quién lo concedió, y deja quién/cuándo lo quitó", async () => {
       const res = await DELETE(req("DELETE", {}), ctx());
       expect(res.status).toBe(200);
       const body = (await res.json()) as { billing: Record<string, unknown> };
@@ -212,8 +254,12 @@ describe("Alta/baja manual de plan desde el panel admin", () => {
         status: "canceled",
         source: "manual_2026-09-01",
         grantedBy: "admin@allok.fun",
+        revokedBy: "admin@allok.fun",
       });
+      expect(typeof body.billing.revokedAt).toBe("string");
+      expect(body.billing.history).toMatchObject([{ action: "revoke", plan: "pro", by: "admin@allok.fun" }]);
       expect(dbState.auditRows.at(-1)).toMatchObject({ action: "revoke_plan", organizationId: ORG_ID });
+      expect(auditDetail(dbState.auditRows.at(-1))).toMatchObject({ result: "ok" });
     });
 
     it("es idempotente: quitar un plan ya cancelado no falla", async () => {
@@ -222,17 +268,28 @@ describe("Alta/baja manual de plan desde el panel admin", () => {
       expect(res.status).toBe(200);
     });
 
-    it("también respeta el resguardo de Stripe vigente", async () => {
+    it("negocio inexistente → 404 sin auditar", async () => {
+      dbState.org = null;
+      const res = await DELETE(req("DELETE", {}), ctx("org_missing"));
+      expect(res.status).toBe(404);
+      expect(dbState.auditRows).toEqual([]);
+    });
+
+    it("también respeta el resguardo de Stripe vigente, y confirmado desengancha igual que al conceder", async () => {
       dbState.org!.metadata = JSON.stringify({
-        allok: { billing: { plan: "pro", status: "active", subscriptionId: "sub_999" } },
+        allok: { billing: { plan: "pro", status: "active", customerId: "cus_1", subscriptionId: "sub_999" } },
       });
       const blocked = await DELETE(req("DELETE", {}), ctx());
       expect(blocked.status).toBe(409);
 
       const confirmed = await DELETE(req("DELETE", { confirmOverrideStripe: true }), ctx());
       expect(confirmed.status).toBe(200);
-      const body = (await confirmed.json()) as { billing: { status: string } };
+      const body = (await confirmed.json()) as {
+        billing: { status: string; subscriptionId: string | null; detachedSubscriptionId: string | null };
+      };
       expect(body.billing.status).toBe("canceled");
+      expect(body.billing.subscriptionId).toBeNull();
+      expect(body.billing.detachedSubscriptionId).toBe("sub_999");
     });
 
     it("un no-admin no puede quitar el plan (404, sin cambios)", async () => {
