@@ -3,6 +3,7 @@ import {
   isValidSignature,
   isValidWebhookToken,
   type WebhookPayload,
+  type WebhookValue,
 } from "@/server/inbox/webhook";
 import { processEchoesValue, processMessagesValue } from "@/server/inbox/ingest";
 import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
@@ -78,34 +79,42 @@ export async function POST(req: Request, { params }: Params) {
   return Response.json({ received: true });
 }
 
+/**
+ * `messages` PRIMERO, siempre — ante un payload mixto (Meta puede mandar
+ * `messages` e `history`/`smb_app_state_sync` en el mismo POST), la
+ * conversación en curso no puede esperar a que termine una importación de
+ * historial. Los demás fields van después, en el orden en que llegaron.
+ *
+ * `history`/`smb_app_state_sync` NO llevan su propio try/catch: un error de
+ * base de datos ahí debe subir y volver un 503 (Meta reintiende TODO el
+ * payload; los inserts son idempotentes por `wa_message_id`, así que
+ * reintentar es seguro). Esas funciones ya descartan por su cuenta lo que es
+ * un problema de FORMA del payload (ver history-sync.ts) — lo único que llega
+ * hasta aquí es un fallo real.
+ */
 async function processPayload(payload: WebhookPayload): Promise<void> {
+  const changes: { entryId: string | null; field?: string; value: WebhookValue }[] = [];
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (!change.value) continue;
-      if (change.field === "messages") {
-        await processMessagesValue(change.value);
-      } else if (change.field === "smb_message_echoes") {
-        // 008: mensajes enviados a mano desde la app del teléfono (coexistence)
-        await processEchoesValue(change.value);
-      } else if (change.field === "message_template_status_update") {
-        await processTemplateStatusValue(entry.id ?? null, change.value);
-      } else if (change.field === "history") {
-        // Best-effort a propósito: una forma de payload inesperada, o
-        // cualquier otro error, jamás debe tumbar los `messages` del MISMO
-        // payload que vengan después en este arreglo.
-        try {
-          await processHistoryValue(change.value as unknown as HistoryFieldValue);
-        } catch (err) {
-          console.error("[webhook] error procesando history:", err);
-        }
-      } else if (change.field === "smb_app_state_sync") {
-        try {
-          await processSmbAppStateSyncValue(change.value as unknown as SmbAppStateSyncValue);
-        } catch (err) {
-          console.error("[webhook] error procesando smb_app_state_sync:", err);
-        }
-      }
-      // otros fields: ignorar sin error
+      changes.push({ entryId: entry.id ?? null, field: change.field, value: change.value });
     }
+  }
+
+  for (const change of changes) {
+    if (change.field === "messages") await processMessagesValue(change.value);
+  }
+  for (const change of changes) {
+    if (change.field === "smb_message_echoes") {
+      // 008: mensajes enviados a mano desde la app del teléfono (coexistence)
+      await processEchoesValue(change.value);
+    } else if (change.field === "message_template_status_update") {
+      await processTemplateStatusValue(change.entryId, change.value);
+    } else if (change.field === "history") {
+      await processHistoryValue(change.value as unknown as HistoryFieldValue);
+    } else if (change.field === "smb_app_state_sync") {
+      await processSmbAppStateSyncValue(change.value as unknown as SmbAppStateSyncValue);
+    }
+    // otros fields: ignorar sin error
   }
 }

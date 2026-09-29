@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipeline";
@@ -211,6 +211,11 @@ async function processJob(
     // no llegó a cubrir hasta `claimedAt` lo señala `leftover` en su lugar
     // (la regla conservadora de la carrera de reintentos, o el límite de 10
     // pendientes por despacho) — nunca comparando contra el cursor.
+    // Fork — Embedded Signup en la app: un mensaje importado por `history`
+    // (server/agencia/whatsapp-signup/history-sync.ts) trae su timestamp real
+    // de WhatsApp como `createdAt`, así que casi nunca caería aquí — pero un
+    // historial de "ayer" sí podría, y una importación NUNCA es evidencia de
+    // que hay algo nuevo que contestar.
     const freshInbound = await getDb()
       .select({ id: schema.message.id })
       .from(schema.message)
@@ -219,6 +224,7 @@ async function processJob(
           eq(schema.message.conversationId, job.conversationId),
           eq(schema.message.direction, "in"),
           gt(schema.message.createdAt, claimedAt),
+          ne(schema.message.origin, "history"),
         )
       )
       .limit(1);

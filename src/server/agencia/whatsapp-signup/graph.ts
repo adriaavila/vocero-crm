@@ -33,8 +33,24 @@ export const REQUIRED_PERMISSIONS = [
   "whatsapp_business_messaging",
 ] as const;
 
-/** Código de error de Graph para "el número ya está registrado" — es el estado deseado. */
+/**
+ * Código de Graph que allok.fun trata como "el número ya está registrado"
+ * (estado deseado, no falla el alta) tras observarlo en producción.
+ *
+ * OJO — la documentación pública de Meta (verificado 2026-09-29 via búsqueda,
+ * sin acceso a un sandbox real en esta sesión) describe 133016 como "Account
+ * register/deregister rate limit exceeded" (demasiados intentos en poco
+ * tiempo), NO "ya registrado". Se conserva el trato de allok.fun porque es
+ * el comportamiento verificado en producción que este módulo porta — pero si
+ * alguna vez un reintento LEGÍTIMO (no un número ya registrado) empieza a
+ * fallar en silencio como "éxito", este es el primer sospechoso: puede que
+ * Meta esté devolviendo el código genérico de límite de tasa, no el de
+ * "ya registrado", y haga falta distinguirlos por el mensaje además del código.
+ */
 export const ALREADY_REGISTERED_CODE = 133016;
+
+/** Confirmado en la documentación pública de Meta: PIN de verificación en dos pasos incorrecto. */
+export const PIN_MISMATCH_CODE = 133005;
 
 function requireAppCredentials(): { appId: string; appSecret: string } {
   const env = getEnv();

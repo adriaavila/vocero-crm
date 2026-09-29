@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { deriveRegistrationPin } from "@/server/agencia/whatsapp-signup/pin";
+import { copyForStep } from "@/server/agencia/whatsapp-signup/copy";
 
 /**
  * Orquestación de `POST /api/whatsapp/embedded-signup/complete`
@@ -18,6 +19,7 @@ const graph = {
   registerPhoneNumber: vi.fn(),
   getPhoneCoexistenceStatus: vi.fn(),
   requestSmbAppDataSync: vi.fn(),
+  PIN_MISMATCH_CODE: 133005,
 };
 vi.mock("@/server/agencia/whatsapp-signup/graph", () => graph);
 
@@ -28,9 +30,11 @@ const syncTemplates = vi.fn();
 vi.mock("@/server/whatsapp/templates", () => ({ syncTemplates }));
 
 const syncGuard = {
-  getWhatsappSignupSync: vi.fn(),
-  alreadySyncedForPhone: vi.fn(),
-  recordWhatsappSignupSync: vi.fn(),
+  claimWhatsappSignupSync: vi.fn(),
+  finalizeWhatsappSignupSync: vi.fn(),
+  releaseWhatsappSignupSync: vi.fn(),
+  recordWhatsappSignupError: vi.fn(),
+  clearWhatsappSignupError: vi.fn(),
 };
 vi.mock("@/server/agencia/whatsapp-signup/sync-guard", () => syncGuard);
 
@@ -60,6 +64,21 @@ beforeAll(() => {
 
 const PHONE_PROFILE = { id: "phone_1", display_phone_number: "+52 55 1111 2222", verified_name: "Negocio E2E" };
 
+class FakeMetaApiError extends Error {
+  status: number;
+  code: number | null;
+  constructor(message: string, opts: { status: number; code?: number | null }) {
+    super(message);
+    this.name = "MetaApiError";
+    this.status = opts.status;
+    this.code = opts.code ?? null;
+  }
+}
+vi.mock("@/lib/meta/client", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/meta/client")>("@/lib/meta/client");
+  return { ...actual, MetaApiError: FakeMetaApiError };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   clashRows = [];
@@ -77,9 +96,11 @@ beforeEach(() => {
   graph.registerPhoneNumber.mockResolvedValue({ alreadyRegistered: false });
   graph.getPhoneCoexistenceStatus.mockResolvedValue({ isOnBizApp: true, platformType: "CLOUD_API" });
   graph.requestSmbAppDataSync.mockResolvedValue({ requestId: "req_1" });
-  syncGuard.getWhatsappSignupSync.mockResolvedValue(null);
-  syncGuard.alreadySyncedForPhone.mockReturnValue(false);
-  syncGuard.recordWhatsappSignupSync.mockResolvedValue(undefined);
+  syncGuard.claimWhatsappSignupSync.mockResolvedValue(true);
+  syncGuard.finalizeWhatsappSignupSync.mockResolvedValue(undefined);
+  syncGuard.releaseWhatsappSignupSync.mockResolvedValue(undefined);
+  syncGuard.recordWhatsappSignupError.mockResolvedValue(undefined);
+  syncGuard.clearWhatsappSignupError.mockResolvedValue(undefined);
   syncTemplates.mockResolvedValue(3);
 });
 
@@ -110,12 +131,14 @@ describe("runEmbeddedSignupCompletion — camino feliz", () => {
     // Orden obligatorio del spec: credenciales primero, webhook después, sync al final.
     expect(order(saveCredentials)).toBeLessThan(order(graph.subscribeWabaOverride));
     expect(order(graph.subscribeWabaOverride)).toBeLessThan(order(graph.verifyOverrideWithRetry));
-    expect(order(graph.verifyOverrideWithRetry)).toBeLessThan(order(graph.requestSmbAppDataSync));
-    expect(order(graph.verifyOverrideWithRetry)).toBeLessThan(order(graph.getPhoneCoexistenceStatus));
+    expect(order(graph.verifyOverrideWithRetry)).toBeLessThan(order(syncGuard.claimWhatsappSignupSync));
+    expect(order(syncGuard.claimWhatsappSignupSync)).toBeLessThan(order(graph.requestSmbAppDataSync));
 
     expect(graph.registerPhoneNumber).not.toHaveBeenCalled();
     expect(graph.requestSmbAppDataSync).toHaveBeenCalledTimes(2); // smb_app_state_sync + history
-    expect(syncGuard.recordWhatsappSignupSync).toHaveBeenCalledTimes(1);
+    expect(syncGuard.finalizeWhatsappSignupSync).toHaveBeenCalledTimes(1);
+    expect(syncGuard.releaseWhatsappSignupSync).not.toHaveBeenCalled();
+    expect(syncGuard.clearWhatsappSignupError).toHaveBeenCalledWith("org_1");
     expect(syncTemplates).toHaveBeenCalledWith("org_1");
   });
 
@@ -135,14 +158,46 @@ describe("runEmbeddedSignupCompletion — camino feliz", () => {
     });
     expect(graph.requestSmbAppDataSync).not.toHaveBeenCalled();
     expect(graph.getPhoneCoexistenceStatus).not.toHaveBeenCalled();
+    expect(syncGuard.claimWhatsappSignupSync).not.toHaveBeenCalled();
   });
 
-  it("sync una sola vez: si ya se sincronizó ese teléfono, no lo vuelve a pedir", async () => {
-    syncGuard.alreadySyncedForPhone.mockReturnValue(true);
+  it("sync una sola vez: la reserva atómica niega un segundo intento del mismo número", async () => {
+    syncGuard.claimWhatsappSignupSync.mockResolvedValue(false); // ya reservado
     const result = await run("coexistence");
     expect(result.ok).toBe(true);
     expect(graph.requestSmbAppDataSync).not.toHaveBeenCalled();
-    expect(syncGuard.recordWhatsappSignupSync).not.toHaveBeenCalled();
+    expect(syncGuard.finalizeWhatsappSignupSync).not.toHaveBeenCalled();
+  });
+
+  it("si AMBOS envíos de sync fallan, libera la reserva (no queda 'gastada' sin haberse pedido)", async () => {
+    graph.requestSmbAppDataSync.mockRejectedValue(new Error("network"));
+    const result = await run("coexistence");
+    expect(result.ok).toBe(true);
+    expect(syncGuard.releaseWhatsappSignupSync).toHaveBeenCalledWith("org_1", "phone_1");
+    expect(syncGuard.finalizeWhatsappSignupSync).not.toHaveBeenCalled();
+  });
+
+  it("si SOLO uno de los dos envíos falla, conserva la reserva (finaliza, no libera)", async () => {
+    graph.requestSmbAppDataSync
+      .mockResolvedValueOnce({ requestId: "req_ok" })
+      .mockRejectedValueOnce(new Error("network"));
+    const result = await run("coexistence");
+    expect(result.ok).toBe(true);
+    expect(syncGuard.finalizeWhatsappSignupSync).toHaveBeenCalledTimes(1);
+    expect(syncGuard.releaseWhatsappSignupSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("runEmbeddedSignupCompletion — copys fijos (nunca el texto crudo de Meta)", () => {
+  it("el error nunca lleva el mensaje real de Meta, siempre el copy fijo del paso", async () => {
+    graph.exchangeCodeForToken.mockRejectedValue(
+      new FakeMetaApiError("Meta secret internal detail xyz", { status: 502 })
+    );
+    const result = await run();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toBe(copyForStep("exchange"));
+    expect(result.error).not.toContain("xyz");
   });
 });
 
@@ -197,17 +252,38 @@ describe("runEmbeddedSignupCompletion — caminos infelices", () => {
     expect(result.step).toBe("resolve");
   });
 
-  it("502 si Meta no confirma el override del webhook tras los reintentos", async () => {
+  it("502 si Meta no confirma el override del webhook tras los reintentos, y anota el error", async () => {
     graph.verifyOverrideWithRetry.mockResolvedValue(false);
     const result = await run();
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.status).toBe(502);
     expect(result.step).toBe("webhook_verify");
+    expect(syncGuard.recordWhatsappSignupError).toHaveBeenCalledWith("org_1", "phone_1", "webhook_verify");
   });
 
-  it("mejor esfuerzo: si el sync de coexistencia falla, el alta sigue en ok", async () => {
-    syncGuard.getWhatsappSignupSync.mockRejectedValue(new Error("boom"));
+  it("502 con step 'register_pin_mismatch' si Meta responde 133005 (PIN incorrecto), no el genérico", async () => {
+    graph.registerPhoneNumber.mockRejectedValue(
+      new FakeMetaApiError("PIN incorrecto", { status: 400, code: 133005 })
+    );
+    const result = await run("cloud_api");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.step).toBe("register_pin_mismatch");
+    expect(result.error).toBe(copyForStep("register_pin_mismatch"));
+    expect(syncGuard.recordWhatsappSignupError).toHaveBeenCalledWith("org_1", "phone_1", "register_pin_mismatch");
+  });
+
+  it("502 con step 'register' genérico para cualquier OTRO error de Meta en el registro", async () => {
+    graph.registerPhoneNumber.mockRejectedValue(new FakeMetaApiError("otra cosa", { status: 400, code: 1 }));
+    const result = await run("cloud_api");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.step).toBe("register");
+  });
+
+  it("mejor esfuerzo: si el sync de coexistencia falla al reservar, el alta sigue en ok", async () => {
+    syncGuard.claimWhatsappSignupSync.mockRejectedValue(new Error("boom"));
     const result = await run("coexistence");
     expect(result.ok).toBe(true);
   });

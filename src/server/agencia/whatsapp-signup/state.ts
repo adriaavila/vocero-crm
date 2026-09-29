@@ -7,9 +7,12 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
  * HMAC-SHA256 en base64url, separados por un punto. Puro a propósito — sin
  * DB, sin `getEnv()` — para poder probarse sin levantar Postgres ni Next.
  *
- * La clave es `META_APP_SECRET`: ya es obligatoria en esta instancia (la
- * constitución del fork la exige para el webhook) y así no hace falta un
- * secreto nuevo solo para esto.
+ * La clave de firma no es `META_APP_SECRET` en crudo — es
+ * HMAC-SHA256(META_APP_SECRET, "es-state"), una subclave derivada. Así una
+ * fuga de la firma de un estado (corta vida, un solo uso) no expone el
+ * secreto real de la app, y separar la clave del webhook de la de este
+ * estado es la práctica correcta aunque hoy compartan la misma raíz (ya es
+ * obligatoria en esta instancia: la constitución del fork la exige).
  */
 
 export type EmbeddedSignupMode = "coexistence" | "cloud_api";
@@ -28,8 +31,13 @@ export const SIGNUP_STATE_COOKIE = "wa_embedded_signup_state";
 /** Path-scoped: la cookie solo viaja hacia esta superficie, nunca al resto del CRM. */
 export const SIGNUP_STATE_COOKIE_PATH = "/api/whatsapp/embedded-signup";
 
+/** Subclave derivada de META_APP_SECRET, exclusiva de este estado firmado. */
+function deriveStateKey(secret: string): Buffer {
+  return createHmac("sha256", secret).update("es-state").digest();
+}
+
 function sign(payload: string, secret: string): string {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
+  return createHmac("sha256", deriveStateKey(secret)).update(payload).digest("base64url");
 }
 
 export function createSignupState(

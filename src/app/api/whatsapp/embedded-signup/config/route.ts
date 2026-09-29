@@ -1,15 +1,21 @@
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 import { canAutomate } from "@/server/agencia/entitlements";
 import { resolveOwnerForOrgSlug } from "@/server/agencia/whatsapp-signup/auth";
+import { copyForStep } from "@/server/agencia/whatsapp-signup/copy";
+import { getWhatsappSignupError } from "@/server/agencia/whatsapp-signup/sync-guard";
 import {
   buildStateCookieHeader,
   createSignupState,
   type EmbeddedSignupMode,
 } from "@/server/agencia/whatsapp-signup/state";
 import { getEnv, isEmbeddedSignupCloudApiConfigured, isEmbeddedSignupConfigured } from "@/lib/env";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 export const dynamic = "force-dynamic";
+
+/** 30 / 10 min por usuario: el uso legítimo pide esto una vez por modo elegido. */
+const CONFIG_RATE_LIMIT = { windowMs: 10 * 60 * 1000, max: 30 };
 
 /**
  * `GET /api/whatsapp/embedded-signup/config?org=<slug>&mode=coexistence|cloud_api`
@@ -67,6 +73,14 @@ export async function GET(request: Request): Promise<Response> {
   }
   const { context } = resolved;
 
+  const rl = checkRateLimit(`wa-signup-config:${context.userId}`, CONFIG_RATE_LIMIT);
+  if (!rl.allowed) {
+    return Response.json(
+      { error: "rate_limited", message: "Demasiados intentos. Espera unos minutos y vuelve a intentar." },
+      { status: 429 }
+    );
+  }
+
   if (isAllokSaaSMode() && !(await canAutomate(context.organizationId))) {
     return Response.json(
       {
@@ -93,6 +107,12 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   const existing = await getCredentialsByOrg(context.organizationId);
+  // El error se muestra solo si es del MISMO número que está guardado ahora:
+  // una conexión nueva y exitosa para otro número no debe arrastrar un aviso
+  // viejo. Diagnóstico únicamente — el bridge sigue mostrando el botón de
+  // conectar; nunca "éxito" solo porque haya una fila de credenciales.
+  const lastError = existing ? await getWhatsappSignupError(context.organizationId) : null;
+  const needsAttention = Boolean(existing && lastError && lastError.phoneNumberId === existing.phoneNumberId);
 
   const response = Response.json({
     appId: env.META_APP_ID,
@@ -108,6 +128,8 @@ export async function GET(request: Request): Promise<Response> {
           displayPhoneNumber: existing.displayPhoneNumber,
           verifiedName: existing.verifiedName,
           status: existing.status,
+          needsAttention,
+          needsAttentionMessage: needsAttention ? copyForStep(lastError!.step) : null,
         }
       : null,
   });
