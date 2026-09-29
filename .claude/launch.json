@@ -29,6 +29,15 @@
         "ALLOK_SAAS_MODE": "true",
         "ALLOK_ADMIN_EMAILS": "admin@allok.fun"
       }
+    },
+    {
+      "name": "vocero-dev-3314",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "--port", "3314"],
+      "port": 3314,
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=8192"
+      }
     }
   ]
 }
