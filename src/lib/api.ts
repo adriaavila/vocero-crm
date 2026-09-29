@@ -89,11 +89,21 @@ export function withProOwner<Args extends unknown[]>(
   });
 }
 
-/** Parsea el body JSON con un esquema Zod; inválido → Response 422. */
-export async function parseBody<T>(
+/**
+ * Parsea el body JSON con un esquema Zod; inválido → Response 422.
+ *
+ * `S extends z.ZodTypeAny` + `z.infer<S>` (no `schema: z.ZodType<T>` con `T`
+ * inferido por contexto): con un shape que mezcla `.default()` o
+ * `.transform()` en algún campo (vertical inmobiliario, `PropertyInputSchema`),
+ * la forma anterior perdía precisión — un campo con default salía opcional, y
+ * uno transformado conservaba el tipo de ENTRADA en vez del de salida. Este
+ * patrón es el que recomienda la propia documentación de zod para wrappers
+ * genéricos; no cambia en nada el comportamiento en runtime.
+ */
+export async function parseBody<S extends z.ZodTypeAny>(
   req: Request,
-  schema: z.ZodType<T>
-): Promise<{ ok: true; data: T } | { ok: false; response: Response }> {
+  schema: S
+): Promise<{ ok: true; data: z.infer<S> } | { ok: false; response: Response }> {
   let raw: unknown;
   try {
     raw = await req.json();
