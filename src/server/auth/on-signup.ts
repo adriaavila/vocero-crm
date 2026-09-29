@@ -5,6 +5,7 @@ import { isAllokSaaSMode, isLegacyAppHost, isSaaSAppHost, slugifyTenantName, ten
 import { defaultAgentProfile, defaultResponseSchedule } from "@/server/agent/default-profile";
 import { ensureOnboarding } from "@/server/onboarding/whatsapp-onboarding";
 import { startSelfServeTrial } from "@/server/saas/billing";
+import { defaultVerticalFromEnv } from "@/server/agencia/vertical";
 
 /** Etapas sembradas del pipeline (US2). */
 const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
@@ -74,10 +75,19 @@ export async function onUserCreated(
     const slug = matchingSlug[0]
       ? baseSlug.slice(0, 50 - collisionSuffix.length).replace(/-+$/, "") + collisionSuffix
       : baseSlug;
+    // Vertical inmobiliario (parte 1): esta ÚNICA rama crea la organización
+    // en los DOS modos (SaaS y legacy de un solo negocio), así que fijar el
+    // vertical aquí cubre a la vez el registro público, el alta admin
+    // (POST /api/saas/businesses llama a signUpEmail, que dispara este mismo
+    // hook) y la instancia dedicada sin SaaS. allok no define
+    // DEFAULT_VERTICAL: `vertical` queda undefined y ninguna organización
+    // nace con él.
+    const vertical = defaultVerticalFromEnv();
     await tx.insert(schema.organization).values({
       id: orgId,
       name: userName || "Mi negocio",
       slug,
+      metadata: vertical ? JSON.stringify({ vertical }) : null,
     });
     await tx.insert(schema.member).values({
       id: newId("member"),
