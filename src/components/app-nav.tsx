@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  Building2,
   CalendarDays,
   ChartColumn,
   CircleUserRound,
@@ -89,6 +90,10 @@ const CONFIGURACION_ITEM: NavItem = {
 
 const ALLOK_PRO_NAV: NavItem[] = [
   { href: "/pipeline", label: "Ventas", icon: Kanban },
+  // Vertical inmobiliario (parte 1): el catálogo va junto a Ventas —es el
+  // inventario del que salen los tratos—, antes de medir. Filtrada por
+  // `realty` más abajo, como `/bookings` por `agenda`.
+  { href: "/properties", label: "Propiedades", icon: Building2 },
   // 019 (upstream) — "primero se atiende y se organiza [Ventas], luego se
   // mide": no hay una entrada "Contactos" en el nav allok (va dentro de
   // Ventas), así que Resultados va justo después de Ventas y antes de la
@@ -104,11 +109,27 @@ const ALLOK_PRO_NAV: NavItem[] = [
  * SIEMPRE al final, incluso sin Pro (donde no hay nada de `ALLOK_PRO_NAV`
  * que la empuje). Exportada y pura para poder probar el orden sin renderizar
  * el componente — ver tests/unit/app-nav-order.test.ts.
+ *
+ * `realty` (parte 1 del vertical inmobiliario) es un flag POR ORGANIZACIÓN
+ * (`organization.metadata.vertical`), no de instancia como `agenda`: un
+ * mismo despliegue de Rei CRM sirve a varias agencias. Por eso llega aparte
+ * y no se deduce de `pro` — una organización Pro sin el vertical no debe ver
+ * "Propiedades".
  */
-export function buildAllokNav(pro: boolean, agenda: boolean): NavItem[] {
+export function buildAllokNav(
+  pro: boolean,
+  agenda: boolean,
+  realty: boolean = false
+): NavItem[] {
   return [
     ...ALLOK_NAV,
-    ...(pro ? ALLOK_PRO_NAV.filter((item) => item.href !== "/bookings" || agenda) : []),
+    ...(pro
+      ? ALLOK_PRO_NAV.filter(
+          (item) =>
+            (item.href !== "/bookings" || agenda) &&
+            (item.href !== "/properties" || realty)
+        )
+      : []),
     CONFIGURACION_ITEM,
   ];
 }
@@ -118,6 +139,13 @@ const AGENDA_ITEM: NavItem = {
   href: "/bookings",
   label: "Citas",
   icon: CalendarDays,
+};
+
+/** Vertical inmobiliario (parte 1) — solo en una instancia SIN `saasMode`. */
+const PROPERTIES_ITEM: NavItem = {
+  href: "/properties",
+  label: "Propiedades",
+  icon: Building2,
 };
 
 /**
@@ -140,6 +168,7 @@ export function AppNav({
   theme,
   commit,
   agenda = false,
+  realty = false,
   saasMode = false,
   allokBrand = false,
   saasPlan = null,
@@ -161,6 +190,13 @@ export function AppNav({
    * todavía debe ver la entrada igual.
    */
   agenda?: boolean;
+  /**
+   * Vertical inmobiliario (parte 1) — ¿esta ORGANIZACIÓN tiene el vertical
+   * activo? A diferencia de `agenda` (bandera de instancia), viene de
+   * `organization.metadata.vertical`: dos agencias del mismo despliegue de
+   * Rei CRM pueden diferir.
+   */
+  realty?: boolean;
   saasMode?: boolean;
   /** El diseño allok (barra de tinta, all ● k con el estado). También en una dedicada. */
   allokBrand?: boolean;
@@ -196,9 +232,18 @@ export function AppNav({
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const esPropietario = role === "owner";
-  const sourceNav = saasMode ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda) : NAV;
-  const items = (agenda && !saasMode
-    ? [...sourceNav.slice(0, 2), AGENDA_ITEM, ...sourceNav.slice(2)]
+  const sourceNav = saasMode
+    ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda, realty)
+    : NAV;
+  // Legacy (sin saasMode): Citas y Propiedades se insertan a mano en el mismo
+  // lugar (justo después de Bandeja) en vez de vivir en `ALLOK_PRO_NAV`, que
+  // solo aplica al nav allok.
+  const legacyExtras = [
+    ...(agenda ? [AGENDA_ITEM] : []),
+    ...(realty ? [PROPERTIES_ITEM] : []),
+  ];
+  const items = (legacyExtras.length > 0 && !saasMode
+    ? [...sourceNav.slice(0, 2), ...legacyExtras, ...sourceNav.slice(2)]
     : sourceNav
   ).filter((item) => !item.owner || esPropietario);
   // Gana la ruta más específica: en /settings/team no se encienden a la vez
