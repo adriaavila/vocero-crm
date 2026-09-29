@@ -1,3 +1,4 @@
+import { brand } from "./brand";
 import { resolveAccentSet, type Branding } from "./branding";
 
 /**
@@ -147,7 +148,35 @@ export function allokFaviconSvg(dot = "#20e58d"): string {
  */
 export function faviconCacheKey(branding: Branding): string {
   if (branding.favicon) return `u${branding.favicon.version}`;
-  return `g${huella(`${allokFaviconSvg()}|${generatedFaviconSvg(branding)}`)}`;
+  return `g${huella(`${brandFaviconSvg()}|${generatedFaviconSvg(branding)}`)}`;
+}
+
+/**
+ * El símbolo de Rei: un sello simple, esmeralda, con la inicial en serif —
+ * la misma voz editorial del sistema Rei (Instrument Serif), sin degradados
+ * ni emoji. Geometría propia y fija (no depende del nombre del negocio),
+ * como ALLOK_MARK: es la identidad de la MARCA, no del white-label por
+ * organización.
+ */
+export const REI_MARK_ACCENT = "#0a7350";
+
+export function reiFaviconSvg(): string {
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Rei">`,
+    `<rect width="64" height="64" rx="14" fill="${REI_MARK_ACCENT}"/>`,
+    `<text x="32" y="35" fill="#ffffff" font-family="Georgia,'Instrument Serif',serif"`,
+    ` font-size="34" font-weight="600" text-anchor="middle" dominant-baseline="central">R</text>`,
+    `</svg>`,
+  ].join("");
+}
+
+/**
+ * El símbolo de la marca activa del despliegue (`brand()`), para donde el
+ * icono se dibuja sin logo subido: allok firma con su punto de estado, Rei
+ * con su sello. Único punto de despacho — favicon y OG pasan por acá.
+ */
+export function brandFaviconSvg(): string {
+  return brand().id === "rei" ? reiFaviconSvg() : allokFaviconSvg();
 }
 
 /** Sufijo de `/icon.svg` y los PNG del manifiesto: cambia con el símbolo. */

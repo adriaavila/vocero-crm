@@ -351,6 +351,163 @@
       0 32px 72px -24px rgba(0, 0, 0, 0.8);
   }
 
+  /*
+    ── Rei · sistema rei ────────────────────────────────────────────────────
+    Portado de `adriaavila/vocero-inmobiliario` (design/rei.md documenta las
+    reglas). Esmeralda, plata y tinta; el dorado es acento editorial, nunca un
+    CTA. Bajo [data-brand="rei"] — un atributo PROPIO, no [data-saas]: allok y
+    Rei pueden convivir en el mismo build y cada uno pinta lo suyo. Va DESPUÉS
+    del bloque allok para ganar el empate de especificidad por orden de
+    aparición (misma forma de selector: :root con un atributo).
+
+    Dos capas, igual que el resto del archivo: primero los tokens `--rei-*`
+    con su nombre propio, después los alias de la app (--bg, --text, --border)
+    apuntando a ellos. El acento NO se fija acá: lo escribe el white-label en
+    `:root:root` (accentCssVariables) — el default de una organización nueva
+    bajo Rei es la esmeralda (ver `defaultAccent` en `lib/brand.ts`).
+  */
+  :root[data-brand="rei"] {
+    color-scheme: light;
+
+    --rei-brand-50: #edf7f2;
+    --rei-brand-100: #d3ede0;
+    --rei-brand-500: #0a7350;
+    --rei-brand-700: #06462f;
+    --rei-gold-500: #b08a2e;
+    --rei-gold-700: #8a6a1e;
+    --rei-paper: #f5f8f9;
+    --rei-silver-50: #fafcfc;
+    --rei-silver-100: #f1f5f6;
+    --rei-ink: #0f1417;
+    --rei-ink-3: #55606a;
+    --rei-ink-4: #6e7a84;
+    --rei-ink-5: #97a2aa;
+    --rei-line: rgba(15, 32, 40, 0.1);
+    --rei-line-soft: rgba(15, 32, 40, 0.055);
+    --rei-line-strong: rgba(15, 32, 40, 0.18);
+    --rei-noir: #08110e;
+    --rei-on-noir: #f2f6f4;
+
+    /* ── Alias de la app ───────────────────────────────────────────────── */
+    --bg: #ffffff;
+    --bg-subtle: var(--rei-silver-50);
+    --bg-panel: var(--rei-paper);
+    --bg-hover: var(--rei-silver-100);
+    --bg-active: var(--rei-brand-50);
+    --text: var(--rei-ink);
+    --text-2: var(--rei-ink-3);
+    --text-3: var(--rei-ink-4);
+    --text-4: var(--rei-ink-5);
+    --border: var(--rei-line);
+    --border-strong: var(--rei-line-strong);
+
+    --chat-bg: var(--rei-paper);
+    --bubble-in: #ffffff;
+    --bubble-in-border: var(--rei-line-soft);
+    --bubble-out: var(--accent-tint);
+    --bubble-out-border: var(--accent-soft);
+    --bubble-out-text: var(--text);
+
+    --success: var(--rei-brand-500);
+    --success-tint: var(--rei-brand-50);
+    --success-soft: var(--rei-brand-100);
+    --success-text: var(--rei-brand-700);
+
+    --warning: #c08a12;
+    --warning-tint: #fdf6e7;
+    --warning-soft: #f9e8bf;
+    --warning-text: #855a09;
+
+    --danger: #c2321f;
+    --danger-tint: #fdf0ee;
+    --danger-soft: #f2c9c2;
+    --danger-text: #921a10;
+    --danger-fg: #ffffff;
+
+    --info: #1256a8;
+    --info-tint: #edf3fc;
+    --info-soft: #cfe0f5;
+    --info-text: #0d3f80;
+
+    --overlay: rgba(15, 32, 40, 0.55);
+    --knob: #ffffff;
+
+    --radius-sm: 8px;
+    --radius: 12px;
+    --radius-lg: 16px;
+
+    --shadow-sm: 0 1px 2px rgba(12, 24, 32, 0.05);
+    --shadow-md: 0 6px 16px -4px rgba(12, 24, 32, 0.1), 0 0 0 1px rgba(12, 24, 32, 0.045);
+    --shadow-pop: 0 16px 36px -12px rgba(12, 24, 32, 0.16);
+
+    /* Geist para cada palabra (ya cargada para allok); Instrument Serif es la
+       voz editorial (misma fuente de Vocero, bajo su propio nombre de
+       variable para no autorreferenciarse); Geist Mono para cifras y horas. */
+    --font-sans: var(--font-grotesk);
+    --font-serif: var(--font-instrument-serif);
+    --font-mono: var(--font-geist-mono);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+    /* Botones con esquina, nunca píldora (sistema rei); la presión es la
+       respuesta táctil, igual que `.rei-press`. */
+    --btn-radius: 10px;
+    --btn-lift: 0px;
+    --btn-press: 0.975;
+  }
+
+  :root[data-theme="dark"][data-brand="rei"] {
+    color-scheme: dark;
+
+    --rei-brand-500: #2e9c74;
+    --rei-brand-700: #6dbe9e;
+
+    --bg: #10201a;
+    --bg-subtle: var(--rei-noir);
+    --bg-panel: #142822;
+    --bg-hover: #1a332b;
+    --bg-active: #204036;
+    --text: var(--rei-on-noir);
+    --text-2: #b3c0ba;
+    --text-3: #7d8a85;
+    --text-4: #5c6864;
+    --border: rgba(242, 246, 244, 0.1);
+    --border-strong: rgba(242, 246, 244, 0.18);
+
+    --chat-bg: var(--rei-noir);
+    --bubble-in: #142822;
+    --bubble-in-border: rgba(242, 246, 244, 0.08);
+    --bubble-out: var(--accent-tint);
+    --bubble-out-border: var(--accent-soft);
+    --bubble-out-text: var(--text);
+
+    --success-tint: rgba(46, 156, 116, 0.14);
+    --success-soft: rgba(46, 156, 116, 0.32);
+
+    --warning: #d79b1a;
+    --warning-tint: rgba(215, 155, 26, 0.14);
+    --warning-soft: rgba(215, 155, 26, 0.32);
+    --warning-text: #e6c169;
+
+    --danger: #e0574a;
+    --danger-tint: rgba(194, 50, 31, 0.16);
+    --danger-soft: rgba(194, 50, 31, 0.34);
+    --danger-text: #f0897d;
+    --danger-fg: #1b0d0a;
+
+    --info: #4f8fd6;
+    --info-tint: rgba(18, 86, 168, 0.16);
+    --info-soft: rgba(18, 86, 168, 0.34);
+    --info-text: #9dc3ec;
+
+    --overlay: rgba(2, 8, 6, 0.74);
+    --knob: #e8efec;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.4),
+      0 12px 32px -16px rgba(0, 0, 0, 0.7);
+    --shadow-pop: 0 1px 3px rgba(0, 0, 0, 0.5),
+      0 32px 72px -24px rgba(0, 0, 0, 0.8);
+  }
 }
 
 /*
@@ -959,9 +1116,11 @@
   :root[data-saas="true"] .thread-bg {
     background-image: none;
   }
-  /* La serif itálica es de Vocero. En allok la voz de display es la misma
-     grotesca, por peso y tracking (allok.fun: `.display-sm`). */
-  :root[data-saas="true"] .font-serif {
+  /* La serif itálica es de Vocero y de Rei (su voz editorial, Instrument
+     Serif — ver design/rei.md). En allok la voz de display es la misma
+     grotesca, por peso y tracking (allok.fun: `.display-sm`): por eso este
+     reseteo excluye a Rei, aunque los dos compartan `[data-saas="true"]`. */
+  :root[data-saas="true"]:not([data-brand="rei"]) .font-serif {
     font-style: normal;
     font-weight: 600;
     letter-spacing: -0.025em;

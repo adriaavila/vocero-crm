@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { DEFAULT_BRANDING, resolveAccentSet } from "@/lib/branding";
-import { ALLOK_MARK, faviconInitial } from "@/lib/favicon";
+import { brand } from "@/lib/brand";
+import { ALLOK_MARK, faviconInitial, REI_MARK_ACCENT } from "@/lib/favicon";
 import { getBranding } from "@/server/branding";
 import { headers } from "next/headers";
 import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
@@ -17,11 +18,12 @@ export default async function Image() {
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : undefined;
   const branding = await (isAllokSaaSMode() && !organizationId
-    ? Promise.resolve(DEFAULT_BRANDING)
+    ? Promise.resolve({ ...DEFAULT_BRANDING, name: brand().name })
     : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
   const { accent, fg } = resolveAccentSet(branding.accent);
-  // Con la marca allok firma su símbolo, como el favicon; en Vocero, la inicial.
+  // Con marca (allok o Rei) firma su símbolo, como el favicon; en Vocero, la inicial.
   const saas = isAllokBrand();
+  const rei = saas && brand().id === "rei";
 
   return new ImageResponse(
     <div
@@ -31,14 +33,19 @@ export default async function Image() {
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
-        background: saas ? "#0b0d0e" : "#08090a",
-        color: saas ? "#f7f8f8" : "#f5f5f4",
+        background: rei ? "#08110e" : saas ? "#0b0d0e" : "#08090a",
+        color: rei ? "#f2f6f4" : saas ? "#f7f8f8" : "#f5f5f4",
         padding: "68px 80px",
         fontFamily: "sans-serif",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        {saas ? (
+        {rei ? (
+          <svg width={52} height={52} viewBox="0 0 64 64">
+            <rect width="64" height="64" rx="14" fill={REI_MARK_ACCENT} />
+            <text x="32" y="36" fill="#ffffff" fontFamily="Georgia,serif" fontSize={30} fontWeight={600} textAnchor="middle">R</text>
+          </svg>
+        ) : saas ? (
           <svg width={52} height={52} viewBox="0 0 64 64">
             <rect width="64" height="64" rx="17" fill="#0b0d0e" stroke="#f7f8f8" strokeOpacity="0.15" />
             <path d={ALLOK_MARK.ring} fill="none" stroke="#f7f8f8" strokeWidth={ALLOK_MARK.stroke} strokeLinecap="round" />

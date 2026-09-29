@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { DEFAULT_BRANDING } from "@/lib/branding";
+import { brand } from "@/lib/brand";
 import { ALLOK_ICON_VERSION } from "@/lib/favicon";
 import { getBranding } from "@/server/branding";
 import { headers } from "next/headers";
@@ -17,7 +18,10 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     ? await resolveOrganizationIdForHost(host) ?? (isLegacyAppHost(host) ? await resolveLegacyOrganizationId() : null)
     : undefined;
   const branding = await (isAllokSaaSMode() && !organizationId
-    ? Promise.resolve(DEFAULT_BRANDING)
+    // Nombre de la marca activa; el acento se queda como está (ver el mismo
+    // comentario en opengraph-image.tsx) para no tocar el resultado de allok
+    // en este respaldo de borde (host de alta sin organización resuelta).
+    ? Promise.resolve({ ...DEFAULT_BRANDING, name: brand().name })
     : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
   return {
     name: `${branding.name} — CRM de WhatsApp`,
