@@ -6,6 +6,10 @@ const DEFAULT_ROOT_DOMAIN = "allok.fun";
  * se comparte en toda la raíz: si un negocio pudiera llamarse `agent` o
  * `inmox`, se quedaría con el hostname de otro producto. Van aquí todos los que
  * están en uso, no solo los de este repo.
+ *
+ * `ALLOK_RESERVED_SUBDOMAINS` (coma) suma más sin tocar código: Rei, por
+ * ejemplo, reserva además `inmo,portal,smtp,dev,test` para reiprop.tech. `demo`
+ * NO va acá a propósito: sigue disponible como slug de negocio.
  */
 const RESERVED_SUBDOMAINS = new Set([
   "www",
@@ -29,13 +33,31 @@ const RESERVED_SUBDOMAINS = new Set([
   "medidor",
 ]);
 
+function extraReservedSubdomains(): string[] {
+  return (process.env.ALLOK_RESERVED_SUBDOMAINS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 /**
- * Prefijo estable del aviso "regístrate en el host correcto". La pantalla de
- * registro lo reconoce por aquí para mostrarlo tal cual: el hostname cambia con
- * la configuración, la frase no. Vive en este módulo (puro, sin servidor) para
- * que el cliente pueda importarlo sin arrastrar la capa de autenticación.
+ * `ALLOK_ROOT_DOMAIN` limpio, tratando vacío/solo-espacios como no configurado.
+ *
+ * Gotcha real: `docker-compose.yml` pasa `ALLOK_ROOT_DOMAIN: ${ALLOK_ROOT_DOMAIN:-}`
+ * (cadena vacía cuando no se define en el shell), y `??` solo cae al default
+ * con `null`/`undefined` — una cadena vacía lo atraviesa tal cual y deja
+ * `app.` o un dominio de cookie de un solo punto. Todo lo de este módulo (y
+ * `lib/auth`) pasa por acá en vez de leer la variable de entorno directo.
  */
-export const SIGNUP_HOST_HINT = "El registro de Allok empieza en";
+function envRootDomain(): string | undefined {
+  const trimmed = process.env.ALLOK_ROOT_DOMAIN?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+/** El dominio raíz configurado, ya limpio (sin puntos sueltos ni mayúsculas). */
+export function resolvedRootDomain(): string {
+  return cleanRootDomain(envRootDomain() ?? DEFAULT_ROOT_DOMAIN);
+}
 
 /** Admins de allok: `ALLOK_ADMIN_EMAILS`, separados por coma. */
 export function isSaaSAdminEmail(email: string | null | undefined): boolean {
@@ -64,7 +86,8 @@ export function isAllokBrand(): boolean {
 }
 
 export function isReservedSubdomain(value: string): boolean {
-  return RESERVED_SUBDOMAINS.has(value.trim().toLowerCase());
+  const normalized = value.trim().toLowerCase();
+  return RESERVED_SUBDOMAINS.has(normalized) || extraReservedSubdomains().includes(normalized);
 }
 
 /**
@@ -73,7 +96,7 @@ export function isReservedSubdomain(value: string): boolean {
  * puede dejar a nadie leyendo una dirección que ya no existe.
  */
 export function saasAppHost(
-  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+  rootDomain = envRootDomain() ?? DEFAULT_ROOT_DOMAIN,
 ): string {
   const configured = process.env.ALLOK_SAAS_APP_URL?.trim();
   if (configured) {
@@ -96,7 +119,7 @@ function cleanRootDomain(rootDomain: string): string {
 
 export function isSaaSAppHost(
   host: string | null | undefined,
-  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+  rootDomain = envRootDomain() ?? DEFAULT_ROOT_DOMAIN,
 ): boolean {
   const normalizedHost = cleanHost(host ?? "");
   if (normalizedHost === "localhost" || normalizedHost === "app.localhost") return true;
@@ -113,7 +136,7 @@ export function isSaaSAppHost(
 
 export function isSaaSAdminHost(
   host: string | null | undefined,
-  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+  rootDomain = envRootDomain() ?? DEFAULT_ROOT_DOMAIN,
 ): boolean {
   const normalizedHost = cleanHost(host ?? "");
   return normalizedHost === "admin.localhost" || normalizedHost === `admin.${cleanRootDomain(rootDomain)}`;
@@ -121,11 +144,15 @@ export function isSaaSAdminHost(
 
 export function isLegacyAppHost(
   host: string | null | undefined,
-  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+  rootDomain = envRootDomain() ?? DEFAULT_ROOT_DOMAIN,
 ): boolean {
   const normalizedHost = cleanHost(host ?? "");
   if (!normalizedHost) return false;
   const configured = process.env.ALLOK_LEGACY_HOST?.trim();
+  // Rei no tiene organización heredada: `ALLOK_LEGACY_HOST=none` apaga el
+  // mapeo entero (sin esto, `crm.<root>` quedaría atado a un org legacy que
+  // no existe en este despliegue).
+  if (configured?.toLowerCase() === "none") return false;
   if (configured) {
     try {
       return normalizedHost === cleanHost(new URL(configured).hostname);
@@ -138,7 +165,7 @@ export function isLegacyAppHost(
 
 export function isKnownAllokHost(
   host: string | null | undefined,
-  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+  rootDomain = envRootDomain() ?? DEFAULT_ROOT_DOMAIN,
 ): boolean {
   const normalizedHost = cleanHost(host ?? "");
   const normalizedRoot = cleanRootDomain(rootDomain);
@@ -203,7 +230,7 @@ export function trustedOriginForRequest(
 
 export function tenantSlugFromHost(
   host: string | null | undefined,
-  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+  rootDomain = envRootDomain() ?? DEFAULT_ROOT_DOMAIN,
 ): string | null {
   if (!host) return null;
   const normalizedHost = cleanHost(host);
