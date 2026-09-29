@@ -176,6 +176,13 @@
       "when": 1790820154167,
       "tag": "9012_whatsapp_onboarding",
       "breakpoints": true
+    },
+    {
+      "idx": 9013,
+      "version": "7",
+      "when": 1790820155167,
+      "tag": "9013_vertical_inmobiliario",
+      "breakpoints": true
     }
   ]
 }

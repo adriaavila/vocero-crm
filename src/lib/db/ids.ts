@@ -38,6 +38,12 @@ const prefixes = {
   dispatch: "dsp",
   // Fork — gasto de anuncios cargado a mano (Cloud lo tiene, upstream no).
   adSpend: "asp",
+  // Vertical inmobiliario (parte 1) — org_catalog_version y booking_property
+  // usan organization_id/booking_id como PK, sin id propio.
+  property: "prop",
+  propertyPhoto: "pph",
+  requirement: "req",
+  propertyMatch: "pma",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
