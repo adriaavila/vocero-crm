@@ -4,7 +4,13 @@ import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isAllokSaaSMode, isSaaSAdminEmail, isSaaSAdminHost } from "@/lib/tenant-host";
-import { billingFromMetadata, type SaaSBillingState } from "@/server/saas/billing";
+import {
+  billingFromMetadata,
+  getOrganizationForBilling,
+  saveOrganizationBilling,
+  type SaaSBillingState,
+  type SaaSPlan,
+} from "@/server/saas/billing";
 
 export class SaaSAdminUnauthorized extends Error {
   constructor() {
@@ -21,7 +27,10 @@ export type SaaSAdminIdentity = {
 
 export { isSaaSAdminEmail } from "@/lib/tenant-host";
 
-export async function requireSaaSAdmin(action = "view_tenants"): Promise<SaaSAdminIdentity> {
+export async function requireSaaSAdmin(
+  action = "view_tenants",
+  organizationId?: string,
+): Promise<SaaSAdminIdentity> {
   if (!isAllokSaaSMode()) throw new SaaSAdminUnauthorized();
   const requestHeaders = await headers();
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
@@ -34,6 +43,7 @@ export async function requireSaaSAdmin(action = "view_tenants"): Promise<SaaSAdm
     id: newId("saasAdminAudit"),
     userId: session.user.id,
     action,
+    organizationId: organizationId ?? null,
   });
   return { userId: session.user.id, email: email!, name: session.user.name };
 }
@@ -46,7 +56,7 @@ export type SaaSTenantStatus = {
   members: number;
   whatsapp: "connected" | "reconnect_required" | "not_connected";
   agentEnabled: boolean;
-  billing: Pick<SaaSBillingState, "plan" | "status">;
+  billing: Pick<SaaSBillingState, "plan" | "status" | "source" | "subscriptionId">;
 };
 
 export async function listSaaSTenantStatus(): Promise<SaaSTenantStatus[]> {
@@ -74,6 +84,79 @@ export async function listSaaSTenantStatus(): Promise<SaaSTenantStatus[]> {
     members: memberCount.get(organization.id) ?? 0,
     whatsapp: credentialStatus.get(organization.id) ?? "not_connected",
     agentEnabled: agentStatus.get(organization.id) === true,
-    billing: (({ plan, status }) => ({ plan, status }))(billingFromMetadata(organization.metadata)),
+    billing: (({ plan, status, source, subscriptionId }) => ({ plan, status, source, subscriptionId }))(
+      billingFromMetadata(organization.metadata)
+    ),
   }));
+}
+
+/**
+ * ¿Esta organización depende hoy de una suscripción de Stripe viva? Una
+ * concesión manual nunca debe pisarla en silencio: si existe, el llamador
+ * necesita `confirmOverrideStripe` a propósito. `canceled`/`inactive` no
+ * cuentan — ahí ya no hay nada vigente que romper.
+ */
+function hasLiveStripeSubscription(billing: SaaSBillingState): boolean {
+  return billing.subscriptionId !== null && billing.status !== "canceled" && billing.status !== "inactive";
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export type PlanGrantOutcome =
+  | { ok: true; billing: SaaSBillingState }
+  | { ok: false; reason: "stripe_subscription_active" }
+  | { ok: false; reason: "not_found" };
+
+/**
+ * Alta manual de plan: el respaldo de "paga por link o transferencia" a la
+ * concesión que hoy se hace con SQL a mano en producción (specs/018). Repetir
+ * la llamada con el mismo plan es idempotente — vuelve a confirmar el mismo
+ * estado, no crea historial nuevo. El resto queda auditado por
+ * `requireSaaSAdmin` (acción + organización + admin), que el llamador debe
+ * invocar antes de esto.
+ */
+export async function grantSaaSPlan(params: {
+  organizationId: string;
+  plan: SaaSPlan;
+  adminEmail: string;
+  confirmOverrideStripe: boolean;
+}): Promise<PlanGrantOutcome> {
+  const organization = await getOrganizationForBilling(params.organizationId);
+  if (!organization) return { ok: false, reason: "not_found" };
+  const current = billingFromMetadata(organization.metadata);
+  if (hasLiveStripeSubscription(current) && !params.confirmOverrideStripe) {
+    return { ok: false, reason: "stripe_subscription_active" };
+  }
+  const billing = await saveOrganizationBilling(params.organizationId, {
+    plan: params.plan,
+    status: "active",
+    source: `manual_${todayIsoDate()}`,
+    grantedBy: params.adminEmail,
+    grantedAt: new Date().toISOString(),
+  });
+  return { ok: true, billing };
+}
+
+/**
+ * Quita el acceso pagado sin borrar el historial: plan, fuente y quién lo
+ * concedió se conservan a propósito (`grantedBy`/`grantedAt`/`source`), solo
+ * cambia el estado a `canceled`. Repetirlo sobre un plan ya quitado es un
+ * no-op seguro.
+ */
+export async function revokeSaaSPlan(params: {
+  organizationId: string;
+  confirmOverrideStripe: boolean;
+}): Promise<PlanGrantOutcome> {
+  const organization = await getOrganizationForBilling(params.organizationId);
+  if (!organization) return { ok: false, reason: "not_found" };
+  const current = billingFromMetadata(organization.metadata);
+  if (hasLiveStripeSubscription(current) && !params.confirmOverrideStripe) {
+    return { ok: false, reason: "stripe_subscription_active" };
+  }
+  const billing = await saveOrganizationBilling(params.organizationId, {
+    status: "canceled",
+  });
+  return { ok: true, billing };
 }

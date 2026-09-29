@@ -16,6 +16,7 @@ import {
 import type { ConversationDto } from "@/lib/types";
 import type { ReadinessResponse } from "@/server/readiness";
 import type { SaaSBillingState } from "@/server/saas/billing";
+import { planMeetsTier } from "@/lib/saas-plans";
 import { ContactAvatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 
@@ -29,7 +30,7 @@ type OverviewData = {
 
 export function OverviewDashboard({ data, readiness, billing, billingNotice, userName, owner }: { data: OverviewData; readiness: ReadinessResponse | null; billing: SaaSBillingState | null; billingNotice?: string | null; userName: string; owner: boolean }) {
   const billingActive = !billing || billing.status === "active" || billing.status === "trialing";
-  const proEnabled = !billing || (billing.plan === "pro" && (billing.status === "active" || billing.status === "trialing"));
+  const proEnabled = !billing || (planMeetsTier(billing.plan, "pro") && (billing.status === "active" || billing.status === "trialing"));
   const automationActive = data.summary.agentEnabled && billingActive;
   const firstPending = readiness?.steps.find((step) => step.status === "pending" || step.status === "stale");
   const completeSteps = readiness?.steps.filter((step) => step.status === "complete").length ?? 0;

@@ -3,6 +3,7 @@ import {
   billingFromMetadata,
   mergeBillingState,
   planForPriceId,
+  priceIdForPlan,
   statusFromStripe,
   tenantOrigin,
   trialDaysForPlan,
@@ -22,12 +23,40 @@ describe("Allok SaaS billing", () => {
     ).toMatchObject({ plan: "pro", status: "active" });
   });
 
-  it("solo reconoce los Price IDs configurados para Basic y Pro", () => {
+  it("reconoce Agencia (inmobiliaria) como plan válido, con su historial de concesión manual", () => {
+    const raw = JSON.stringify({
+      allok: {
+        billing: {
+          plan: "inmobiliaria",
+          status: "active",
+          source: "manual_2026-09-29",
+          grantedBy: "admin@allok.fun",
+          grantedAt: "2026-09-29T10:00:00.000Z",
+        },
+      },
+    });
+    expect(billingFromMetadata(raw)).toMatchObject({
+      plan: "inmobiliaria",
+      status: "active",
+      source: "manual_2026-09-29",
+      grantedBy: "admin@allok.fun",
+      grantedAt: "2026-09-29T10:00:00.000Z",
+    });
+  });
+
+  it("solo reconoce los Price IDs configurados para Basic, Pro y Agencia", () => {
     vi.stubEnv("ALLOK_SAAS_STRIPE_BASIC_PRICE_ID", "price_basic_test");
     vi.stubEnv("ALLOK_SAAS_STRIPE_PRO_PRICE_ID", "price_pro_test");
+    vi.stubEnv("ALLOK_SAAS_STRIPE_INMO_PRICE_ID", "price_inmo_test");
     expect(planForPriceId("price_basic_test")).toBe("basic");
     expect(planForPriceId("price_pro_test")).toBe("pro");
+    expect(planForPriceId("price_inmo_test")).toBe("inmobiliaria");
     expect(planForPriceId("price_inventado")).toBeNull();
+  });
+
+  it("priceIdForPlan lee la variable de Agencia (ALLOK_SAAS_STRIPE_INMO_PRICE_ID)", () => {
+    vi.stubEnv("ALLOK_SAAS_STRIPE_INMO_PRICE_ID", "price_inmo_test");
+    expect(priceIdForPlan("inmobiliaria")).toBe("price_inmo_test");
   });
 
   it("pausa estados que no deben automatizar", () => {
@@ -63,9 +92,10 @@ describe("Allok SaaS billing", () => {
     expect(tenantOrigin("alpha", request)).toBe("http://alpha.localhost:3000");
   });
 
-  it("sólo Pro lleva prueba gratis, y son 7 días", () => {
+  it("sólo Pro lleva prueba gratis, y son 7 días — Agencia cobra desde el día 1", () => {
     expect(trialDaysForPlan("pro")).toBe(7);
     expect(trialDaysForPlan("basic")).toBeUndefined();
+    expect(trialDaysForPlan("inmobiliaria")).toBeUndefined();
   });
 
   it("la prueba es una sola vez por negocio", () => {

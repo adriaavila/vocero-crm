@@ -6,6 +6,7 @@ import { getOverview } from "@/server/overview";
 import { listConversations } from "@/server/inbox/queries";
 import { getReadiness } from "@/server/readiness";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { planMeetsTier } from "@/lib/saas-plans";
 import { getOrganizationBilling } from "@/server/saas/billing";
 import { getBranding } from "@/server/branding";
 import { getCentro } from "@/server/agencia/estado";
@@ -43,7 +44,7 @@ export default async function OverviewPage({
       getCentro(session.organizationId, conversations ?? []),
       getBranding(session.organizationId),
     ]);
-    const pro = billing?.plan === "pro" && (billing.status === "active" || billing.status === "trialing");
+    const pro = planMeetsTier(billing?.plan, "pro") && (billing?.status === "active" || billing?.status === "trialing");
     return (
       <ControlCenter
         centro={centro}

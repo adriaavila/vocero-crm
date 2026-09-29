@@ -3,8 +3,9 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { isSaaSPlan } from "@/lib/saas-plans";
 
-export type SaaSPlan = "basic" | "pro";
+export type SaaSPlan = "basic" | "pro" | "inmobiliaria";
 export type SaaSBillingStatus =
   | "incomplete"
   | "trialing"
@@ -23,6 +24,12 @@ export type SaaSBillingState = {
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
   updatedAt: string | null;
+  /** Origen de la concesión manual (`manual_<YYYY-MM-DD>`) — null si nunca se concedió a mano. */
+  source: string | null;
+  /** Email del admin de allok que concedió el plan a mano por última vez. */
+  grantedBy: string | null;
+  /** Cuándo se concedió a mano por última vez. */
+  grantedAt: string | null;
 };
 
 type Metadata = Record<string, unknown>;
@@ -53,7 +60,7 @@ function billingMetadata(metadata: Metadata): Metadata {
 }
 
 function asPlan(value: unknown): SaaSPlan | null {
-  return value === "basic" || value === "pro" ? value : null;
+  return isSaaSPlan(value) ? value : null;
 }
 
 function asStatus(value: unknown): SaaSBillingStatus {
@@ -74,6 +81,9 @@ export function billingFromMetadata(raw: string | null | undefined): SaaSBilling
     currentPeriodEnd: typeof billing.currentPeriodEnd === "string" ? billing.currentPeriodEnd : null,
     cancelAtPeriodEnd: billing.cancelAtPeriodEnd === true,
     updatedAt: typeof billing.updatedAt === "string" ? billing.updatedAt : null,
+    source: typeof billing.source === "string" ? billing.source : null,
+    grantedBy: typeof billing.grantedBy === "string" ? billing.grantedBy : null,
+    grantedAt: typeof billing.grantedAt === "string" ? billing.grantedAt : null,
   };
 }
 
@@ -90,7 +100,9 @@ export function webhookSecretForSaaS(): string | null {
 export function priceIdForPlan(plan: SaaSPlan): string | null {
   const value = plan === "basic"
     ? process.env.ALLOK_SAAS_STRIPE_BASIC_PRICE_ID
-    : process.env.ALLOK_SAAS_STRIPE_PRO_PRICE_ID;
+    : plan === "pro"
+      ? process.env.ALLOK_SAAS_STRIPE_PRO_PRICE_ID
+      : process.env.ALLOK_SAAS_STRIPE_INMO_PRICE_ID;
   return value?.trim() || null;
 }
 
@@ -98,13 +110,14 @@ export function planForPriceId(priceId: string | null | undefined): SaaSPlan | n
   if (!priceId) return null;
   if (priceId === process.env.ALLOK_SAAS_STRIPE_BASIC_PRICE_ID) return "basic";
   if (priceId === process.env.ALLOK_SAAS_STRIPE_PRO_PRICE_ID) return "pro";
+  if (priceId === process.env.ALLOK_SAAS_STRIPE_INMO_PRICE_ID) return "inmobiliaria";
   return null;
 }
 
 /**
- * Completo tienta con 7 días de prueba; Esencial cobra desde el día 1.
- * Una sola prueba por negocio: quien ya tuvo suscripción (aunque la cancelara
- * durante la prueba) vuelve pagando.
+ * Completo tienta con 7 días de prueba; Esencial y Agencia cobran desde el
+ * día 1. Una sola prueba por negocio: quien ya tuvo suscripción (aunque la
+ * cancelara durante la prueba) vuelve pagando.
  */
 export function trialDaysForPlan(plan: SaaSPlan, hadSubscription = false): number | undefined {
   return plan === "pro" && !hadSubscription ? 7 : undefined;

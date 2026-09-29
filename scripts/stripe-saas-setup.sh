@@ -29,6 +29,7 @@ price() { # lookup_key nombre centavos
 }
 BASIC=$(price allok_saas_basic_monthly "allok · Esencial" 4900)
 PRO=$(price allok_saas_pro_monthly "allok · Completo" 9900)
+INMO=$(price allok_saas_inmobiliaria_monthly "allok · Agencia" 29900)
 
 HOOK=$(api "webhook_endpoints?limit=100" | field "next((w['id'] for w in d['data'] if w['url']=='$WEBHOOK_URL'), '')")
 if [ -z "$HOOK" ]; then
@@ -49,5 +50,6 @@ Variables para Coolify (vocero-crm):
 ALLOK_SAAS_STRIPE_SECRET_KEY=<la misma clave que usaste aquí>
 ALLOK_SAAS_STRIPE_BASIC_PRICE_ID=$BASIC
 ALLOK_SAAS_STRIPE_PRO_PRICE_ID=$PRO
+ALLOK_SAAS_STRIPE_INMO_PRICE_ID=$INMO
 ALLOK_SAAS_STRIPE_WEBHOOK_SECRET=$SECRET
 EOF

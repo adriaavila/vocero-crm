@@ -1,4 +1,5 @@
 import { requireOwnerSession } from "@/lib/auth/session";
+import { soldSaaSPlans } from "@/lib/saas-plans";
 import { getOrganizationBilling } from "@/server/saas/billing";
 import { BillingClient } from "@/components/settings/billing-client";
 
@@ -13,6 +14,7 @@ export default async function BillingPage({
   return (
     <BillingClient
       billing={await getOrganizationBilling(session.organizationId)}
+      soldPlans={soldSaaSPlans(process.env.SAAS_PLANS)}
       // El registro manda aquí cuando el checkout no abrió: la cuenta existe y
       // el pago no, así que la pantalla tiene que decirlo antes que nada.
       notice={params.checkout === "failed"

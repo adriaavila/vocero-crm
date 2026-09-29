@@ -10,6 +10,7 @@ import {
   webhookSecretForSaaS,
 } from "@/server/saas/billing";
 import { apiError } from "@/lib/api";
+import { isSaaSPlan } from "@/lib/saas-plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,9 +81,7 @@ export async function POST(request: Request) {
         ? checkout.subscription
         : checkout.subscription?.id ?? current.subscriptionId;
       await saveOrganizationBilling(organizationId, {
-        plan: checkout.metadata?.plan === "basic" || checkout.metadata?.plan === "pro"
-          ? checkout.metadata.plan
-          : current.plan,
+        plan: isSaaSPlan(checkout.metadata?.plan) ? checkout.metadata.plan : current.plan,
         customerId,
         subscriptionId,
         // El checkout confirma la sesión, no el estado vigente de la suscripción.

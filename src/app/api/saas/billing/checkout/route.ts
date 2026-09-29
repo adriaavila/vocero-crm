@@ -1,5 +1,5 @@
-import { z } from "zod";
 import { apiError, parseBody, withOwner } from "@/lib/api";
+import { soldSaaSPlans } from "@/lib/saas-plans";
 import {
   appOrigin,
   getOrganizationBilling,
@@ -12,15 +12,17 @@ import {
   trialDaysForPlan,
   type SaaSPlan,
 } from "@/server/saas/billing";
+import { checkoutBodySchema } from "@/server/saas/checkout";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const bodySchema = z.object({ plan: z.enum(["basic", "pro"]) });
-
 export const POST = withOwner<[Request]>(async (session, request: Request) => {
-  const parsed = await parseBody(request, bodySchema);
+  const parsed = await parseBody(request, checkoutBodySchema);
   if (!parsed.ok) return parsed.response;
+  if (!soldSaaSPlans(process.env.SAAS_PLANS).includes(parsed.data.plan)) {
+    return apiError(422, "plan_not_offered", "Este plan no está disponible en este momento.");
+  }
   const stripe = stripeForSaaS();
   const price = priceIdForPlan(parsed.data.plan);
   if (!stripe || !price) {

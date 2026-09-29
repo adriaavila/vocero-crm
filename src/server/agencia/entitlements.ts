@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { isSaaSPlan, planMeetsTier } from "@/lib/saas-plans";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 export type AutomationBillingStatus =
@@ -13,6 +14,13 @@ export type AutomationBillingStatus =
 
 type Metadata = Record<string, unknown>;
 
+/**
+ * Por nivel: "pro" lo cumplen Completo Y Agencia (inmobiliaria), porque cada
+ * plan incluye todo lo del anterior (ver `planMeetsTier`). El parámetro se
+ * deja en el literal `"pro"` porque es el único umbral que pide hoy el
+ * producto — nada impide ampliarlo a `SaaSPlan` si algún día hace falta
+ * gatear específicamente por Agencia.
+ */
 export function hasPaidSaaSPlanFromMetadata(
   raw: string | null | undefined,
   plan: "pro",
@@ -25,7 +33,11 @@ export function hasPaidSaaSPlanFromMetadata(
       allok?: { billing?: { plan?: string; status?: string } };
     };
     const billing = parsed.allok?.billing;
-    return billing?.plan === plan && (billing.status === "active" || billing.status === "trialing");
+    const currentPlan = isSaaSPlan(billing?.plan) ? billing.plan : null;
+    return (
+      planMeetsTier(currentPlan, plan) &&
+      (billing?.status === "active" || billing?.status === "trialing")
+    );
   } catch {
     return false;
   }
