@@ -166,11 +166,16 @@ export function trialDaysForPlan(plan: SaaSPlan, hadSubscription = false): numbe
   return plan === "pro" && !hadSubscription ? 7 : undefined;
 }
 
-export function appOrigin(request: Request): string {
+/**
+ * `request` es opcional: en un Server Component no hay `Request` a mano, y las
+ * dos variables de entorno ya deciden en casi todo caso real (el header solo
+ * importa como último respaldo dentro de un route handler).
+ */
+export function appOrigin(request?: Request): string {
   return (
     process.env.ALLOK_SAAS_APP_URL?.trim() ||
     process.env.APP_BASE_URL?.trim() ||
-    request.headers.get("origin") ||
+    request?.headers.get("origin") ||
     "http://localhost:3000"
   ).replace(/\/$/, "");
 }

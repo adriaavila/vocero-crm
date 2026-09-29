@@ -45,11 +45,31 @@ export type CapiMockEvent = {
   at: string;
 };
 
+/** Fork — Embedded Signup en la app: override de webhook guardado por WABA. */
+export type MockSubscribedApp = { overrideCallbackUri: string; verifyToken: string };
+
+/**
+ * Fork — Embedded Signup en la app: cada `POST {phone}/smb_app_data`. Meta no
+ * tiene un GET para releer esto, así que el self-test lo verifica por aquí
+ * (mismo patrón que `capiEvents`/`outbox`).
+ */
+export type MockSmbAppDataRequest = {
+  n: number;
+  phoneNumberId: string;
+  syncType: "history" | "smb_app_state_sync";
+  requestId: string;
+  at: string;
+};
+
 type WaMockState = {
   outbox: OutboxEntry[];
   templates: MockTemplate[];
   capiEvents: CapiMockEvent[];
   counter: number;
+  // Fork — Embedded Signup en la app.
+  subscribedApps: Record<string, MockSubscribedApp>;
+  registeredPhones: Set<string>;
+  smbAppDataRequests: MockSmbAppDataRequest[];
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
@@ -61,6 +81,9 @@ export function getWaMockState(): WaMockState {
       templates: [],
       capiEvents: [],
       counter: 0,
+      subscribedApps: {},
+      registeredPhones: new Set(),
+      smbAppDataRequests: [],
     };
   }
   return globalForMock.__waMockState;
@@ -78,6 +101,9 @@ export function resetWaMockState(): void {
     templates: [],
     capiEvents: [],
     counter,
+    subscribedApps: {},
+    registeredPhones: new Set(),
+    smbAppDataRequests: [],
   };
 }
 

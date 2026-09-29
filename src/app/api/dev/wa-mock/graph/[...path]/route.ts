@@ -63,6 +63,94 @@ export async function GET(req: Request, ctx: Params) {
   const path = normalizePath((await ctx.params).path);
   const token = bearerToken(req);
   if (token.endsWith("-invalid")) return invalidTokenResponse();
+  const query = new URL(req.url).searchParams;
+
+  // Fork — Embedded Signup en la app: GET oauth/access_token → intercambio
+  // del code (30s de vida en la vida real; el mock no lo expira). El código
+  // lleva su propio sufijo de comportamiento (como el resto del mock: "-fail",
+  // "-invalid") para que el mismo endpoint sirva todos los caminos felices e
+  // infelices sin estado adicional.
+  if (path.length === 2 && path[0] === "oauth" && path[1] === "access_token") {
+    const code = query.get("code") ?? "";
+    if (!code || code.endsWith("-expired")) {
+      return Response.json(
+        {
+          error: {
+            message: "This authorization code has expired.",
+            type: "OAuthException",
+            code: 100,
+            fbtrace_id: "mock-es-expired",
+          },
+        },
+        { status: 400 }
+      );
+    }
+    return Response.json({
+      access_token: `mtok_${code}_${nextN()}`,
+      token_type: "bearer",
+      expires_in: 5184000,
+    });
+  }
+
+  // Fork — Embedded Signup en la app: GET debug_token con token DE APP
+  // (access_token=APP_ID|APP_SECRET, no Bearer). El token que emite el mock de
+  // arriba lleva el `code` incrustado, así que aquí se lee ESE sufijo para
+  // decidir permisos/validez — "-noperm" y "-invalid" son del harness E2E.
+  if (path.length === 1 && path[0] === "debug_token") {
+    const inputToken = query.get("input_token") ?? "";
+    const isValid = inputToken.startsWith("mtok_") && !inputToken.includes("-invalid");
+    const hasPerms = !inputToken.includes("-noperm");
+    return Response.json({
+      data: {
+        is_valid: isValid,
+        app_id: process.env.META_APP_ID ?? "app-id-de-mentira",
+        scopes: hasPerms ? ["whatsapp_business_management", "whatsapp_business_messaging"] : [],
+        granular_scopes: hasPerms
+          ? [
+              { scope: "whatsapp_business_management", target_ids: ["*"] },
+              { scope: "whatsapp_business_messaging", target_ids: ["*"] },
+            ]
+          : [],
+        issued_at: Math.floor(Date.now() / 1000),
+      },
+    });
+  }
+
+  // Fork — Embedded Signup en la app: GET {wabaId}/phone_numbers → descubrir
+  // el número. El id es determinista a partir del wabaId (sin tabla nueva) así
+  // que un WABA aleatorio por corrida sigue siendo re-ejecutable.
+  if (path.length === 2 && path[1] === "phone_numbers") {
+    return Response.json({
+      data: [
+        {
+          id: `esphone_${path[0]}`,
+          display_phone_number: "+52 55 1234 5678",
+          verified_name: "Negocio de prueba",
+          quality_rating: "GREEN",
+          name_status: "APPROVED",
+        },
+      ],
+    });
+  }
+
+  // Fork — Embedded Signup en la app: GET {wabaId}/subscribed_apps → relee el
+  // override que dejó el POST de abajo (o vacío si nunca se llamó).
+  if (path.length === 2 && path[1] === "subscribed_apps") {
+    const state = getWaMockState();
+    const override = state.subscribedApps[path[0]!];
+    return Response.json({
+      data: override
+        ? [
+            {
+              id: process.env.META_APP_ID ?? "app-id-de-mentira",
+              name: "mock-app",
+              override_callback_uri: override.overrideCallbackUri,
+              subscribed_fields: ["messages"],
+            },
+          ]
+        : [],
+    });
+  }
 
   // GET {wabaId}/message_templates → lista para el sync
   if (path.length === 2 && path[1] === "message_templates") {
@@ -106,12 +194,16 @@ export async function GET(req: Request, ctx: Params) {
     return Response.json({ id: path[0], name: "Página de prueba" });
   }
 
-  // GET {phoneNumberId}?fields=... → validación del wizard
+  // GET {phoneNumberId}?fields=... → validación del wizard; también sirve
+  // `is_on_biz_app,platform_type` (estado de coexistencia): son campos extra
+  // que no estorban a quien solo pidió los de siempre.
   if (path.length === 1) {
     return Response.json({
       display_phone_number: "+52 55 0000 0000",
       verified_name: "Número de prueba",
       id: path[0],
+      is_on_biz_app: true,
+      platform_type: "CLOUD_API",
     });
   }
 
@@ -310,9 +402,60 @@ export async function POST(req: Request, ctx: Params) {
     return Response.json({ id: tpl.id, status: "PENDING", category: tpl.category });
   }
 
-  // POST {wabaId}/subscribed_apps → suscripción (con o sin override)
+  // POST {wabaId}/subscribed_apps → suscripción (con o sin override). Fork:
+  // con `override_callback_uri` se guarda para que el GET de arriba lo relea
+  // (verificación de Embedded Signup); sin él es la suscripción simple de
+  // siempre (modo directo, `connect.ts`) y no toca lo ya guardado.
   if (path.length === 2 && path[1] === "subscribed_apps") {
+    const overrideCallbackUri = typeof body.override_callback_uri === "string" ? body.override_callback_uri : null;
+    if (overrideCallbackUri) {
+      const state = getWaMockState();
+      state.subscribedApps[path[0]!] = {
+        overrideCallbackUri,
+        verifyToken: typeof body.verify_token === "string" ? body.verify_token : "",
+      };
+    }
     return Response.json({ success: true });
+  }
+
+  // Fork — Embedded Signup en la app: POST {phoneNumberId}/register (solo
+  // Cloud API). Segunda vez con el MISMO número → 133016 ("ya registrado"),
+  // igual que Meta: el harness E2E es re-ejecutable y debe ver eso como éxito.
+  if (path.length === 2 && path[1] === "register") {
+    const state = getWaMockState();
+    if (state.registeredPhones.has(path[0]!)) {
+      return Response.json(
+        {
+          error: {
+            message: "This phone number is already registered.",
+            type: "OAuthException",
+            code: 133016,
+            fbtrace_id: "mock-es-already-registered",
+          },
+        },
+        { status: 400 }
+      );
+    }
+    state.registeredPhones.add(path[0]!);
+    return Response.json({ success: true });
+  }
+
+  // Fork — Embedded Signup en la app: POST {phoneNumberId}/smb_app_data
+  // (sync de coexistencia: `smb_app_state_sync` / `history`). El guard de "una
+  // vez por tipo" es responsabilidad del CRM (organization.metadata); el mock
+  // solo confirma la solicitud y la anota para que el self-test la verifique
+  // (Meta no tiene un GET para releerla).
+  if (path.length === 2 && path[1] === "smb_app_data") {
+    const state = getWaMockState();
+    const requestId = `req_${nextN()}`;
+    state.smbAppDataRequests.push({
+      n: state.smbAppDataRequests.length + 1,
+      phoneNumberId: path[0]!,
+      syncType: body.sync_type === "history" ? "history" : "smb_app_state_sync",
+      requestId,
+      at: new Date().toISOString(),
+    });
+    return Response.json({ success: true, request_id: requestId });
   }
 
   return Response.json({});

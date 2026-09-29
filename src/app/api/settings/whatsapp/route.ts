@@ -7,6 +7,9 @@ import {
 } from "@/server/whatsapp/credentials";
 import { subscribeAppToWaba, testConnection } from "@/server/whatsapp/connect";
 import { canAutomate } from "@/server/agencia/entitlements";
+// Fork: el índice `meta_credentials_phone_uq` es de instancia — sin esto, un
+// número ya conectado a otra organización revienta aquí con un 500 mudo.
+import { isDuplicatePhoneNumberError } from "@/server/agencia/whatsapp-signup/payload";
 
 export const dynamic = "force-dynamic";
 
@@ -48,14 +51,21 @@ export const PUT = withOwner(async (session, req: Request) => {
     return apiError(status, check.code, check.message);
   }
 
-  await saveCredentials({
-    organizationId: session.organizationId,
-    wabaId: body.data.wabaId,
-    phoneNumberId: body.data.phoneNumberId,
-    token: body.data.token,
-    displayPhoneNumber: check.displayPhoneNumber,
-    verifiedName: check.verifiedName,
-  });
+  try {
+    await saveCredentials({
+      organizationId: session.organizationId,
+      wabaId: body.data.wabaId,
+      phoneNumberId: body.data.phoneNumberId,
+      token: body.data.token,
+      displayPhoneNumber: check.displayPhoneNumber,
+      verifiedName: check.verifiedName,
+    });
+  } catch (err) {
+    if (isDuplicatePhoneNumberError(err)) {
+      return apiError(409, "phone_in_use", "Ese número de WhatsApp ya está conectado a otro negocio.");
+    }
+    throw err;
+  }
 
   // Best-effort: necesaria en modo directo; el modo agencia usa su override.
   await subscribeAppToWaba(body.data.wabaId, body.data.token);

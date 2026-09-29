@@ -49,12 +49,21 @@ export async function graphRequest<T>(
   path: string,
   opts: {
     method?: "GET" | "POST" | "DELETE";
-    token: string;
+    /** Ausente cuando la autenticación va en `query` (p. ej. debug_token con app token). */
+    token?: string;
     body?: unknown;
+    /**
+     * Query params extra (p. ej. `oauth/access_token` pide client_id/client_secret/code
+     * ahí, no en un header — Embedded Signup, sin token de la conexión todavía).
+     */
+    query?: Record<string, string>;
   }
 ): Promise<T> {
   const env = getEnv();
-  const url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${path}`;
+  let url = `${env.META_GRAPH_BASE_URL}/${env.META_GRAPH_API_VERSION}/${path}`;
+  if (opts.query) {
+    url += `?${new URLSearchParams(opts.query).toString()}`;
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GRAPH_TIMEOUT_MS);
   let res: Response;
@@ -62,7 +71,7 @@ export async function graphRequest<T>(
     res = await fetch(url, {
       method: opts.method ?? "GET",
       headers: {
-        Authorization: `Bearer ${opts.token}`,
+        ...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
         ...(opts.body !== undefined
           ? { "Content-Type": "application/json" }
           : {}),
