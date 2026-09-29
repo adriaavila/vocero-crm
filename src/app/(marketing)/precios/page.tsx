@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { contactHref, plans, productName } from "@/lib/marketing";
 
 export const metadata: Metadata = {
-  title: `Precios — ${productName()}`,
+  title: `Precios de ${productName()}`,
   description: "Un plan de autoservicio en dólares, o una instancia dedicada a convenir.",
 };
 
@@ -21,7 +21,7 @@ const FAQ = [
   },
   {
     q: "¿Hay prueba gratis o permanencia?",
-    a: "No hay prueba gratis: el plan Agencia empieza a cobrarse desde el primer mes. Tampoco hay permanencia — es mes a mes, y tus datos son tuyos: te los llevas cuando quieras.",
+    a: "No hay prueba gratis: el plan Agencia empieza a cobrarse desde el primer mes. Tampoco hay permanencia: es mes a mes, y tus datos son tuyos, te los llevas cuando quieras.",
   },
 ];
 
@@ -33,7 +33,7 @@ export default function PricingPage() {
       <h1 className="mt-4 text-4xl font-semibold tracking-tight">En dólares, mes a mes</h1>
       <p className="mt-4 max-w-xl text-lg leading-relaxed text-text-2">
         Sin prueba gratis y sin costo de alta: el plan empieza a trabajar desde
-        el primer día. Sin permanencia — si no te sirve, te vas y te llevas tus
+        el primer día. Sin permanencia: si no te sirve, te vas y te llevas tus
         datos.
       </p>
 

@@ -3,7 +3,7 @@ import { productName } from "@/lib/marketing";
 import { LegalContact, LegalEntity, LegalPage } from "../legal-page";
 
 export const metadata: Metadata = {
-  title: `Términos del servicio — ${productName()}`,
+  title: `Términos del servicio de ${productName()}`,
   description: "Condiciones de uso de Rei CRM: qué incluye, qué se espera de quien lo contrata, cobro y baja.",
 };
 
@@ -33,7 +33,7 @@ export default function TermsPage() {
           cumplir las políticas de WhatsApp Business de Meta.
         </li>
         <li>
-          El contenido que cargues —propiedades, precios, fotos, textos— es
+          El contenido que cargues (propiedades, precios, fotos, textos) es
           tuyo y respondes por su veracidad.
         </li>
       </ul>
@@ -78,9 +78,9 @@ export default function TermsPage() {
       <h2>Baja</h2>
       <p>
         Puedes darte de baja cuando quieras, sin permanencia. El servicio sigue
-        activo hasta el final del período pagado. Puedes pedir una exportación
-        de tus datos antes de irte; después de la baja se eliminan según lo que
-        dice la <a href="/privacidad">política de privacidad</a>.
+        activo hasta el final del período pagado. Después de la baja, tus
+        datos se eliminan según lo que dice la{" "}
+        <a href="/privacidad">política de privacidad</a>.
       </p>
 
       <h2>Responsabilidad</h2>

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { productName } from "@/lib/marketing";
-import { LegalContact, LegalEntity, LegalPage } from "../legal-page";
+import { LegalAddress, LegalContact, LegalEntity, LegalPage } from "../legal-page";
 
 export const metadata: Metadata = {
-  title: `Política de privacidad — ${productName()}`,
+  title: `Política de privacidad de ${productName()}`,
   description: "Qué datos trata Rei CRM, con qué fin, cuánto los guarda y cómo pedir que se borren.",
 };
 
@@ -12,9 +12,10 @@ export default function PrivacyPage() {
   return (
     <LegalPage title="Política de privacidad" updated="29 de septiembre de 2026">
       <p>
-        <LegalEntity /> desarrolla y opera {name}, un sistema que permite a una
-        inmobiliaria atender su WhatsApp con ayuda de un agente automático.
-        Esta política explica qué datos se tratan y por qué.
+        <LegalEntity /> (<LegalAddress />) desarrolla y opera {name}, un
+        sistema que permite a una inmobiliaria atender su WhatsApp con ayuda
+        de un agente automático. Esta política explica qué datos se tratan y
+        por qué.
       </p>
 
       <h2>Quién responde por tus datos</h2>
@@ -54,7 +55,7 @@ export default function PrivacyPage() {
       <h2>Para qué</h2>
       <ul>
         <li>Responder tus consultas y mostrarte propiedades del catálogo.</li>
-        <li>Agendar visitas y recordarlas.</li>
+        <li>Agendar tus visitas.</li>
         <li>Que el equipo de la inmobiliaria retome la conversación donde quedó.</li>
         <li>
           Medir y mejorar la calidad de las respuestas del agente, sobre
@@ -91,9 +92,8 @@ export default function PrivacyPage() {
       <h2>Cuánto tiempo</h2>
       <p>
         Las conversaciones se conservan mientras la inmobiliaria sea cliente, y
-        se eliminan dentro de los 90 días de terminado el servicio o de
-        recibido un pedido de borrado. Las credenciales de acceso a WhatsApp se
-        guardan cifradas.
+        se eliminan al terminar el servicio o al recibir un pedido de borrado.
+        Las credenciales de acceso a WhatsApp se guardan cifradas.
       </p>
 
       <h2>Tus derechos</h2>

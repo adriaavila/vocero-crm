@@ -380,7 +380,10 @@
     --rei-silver-100: #f1f5f6;
     --rei-ink: #0f1417;
     --rei-ink-3: #55606a;
-    --rei-ink-4: #6e7a84;
+    /* Portado como #6e7a84; oscurecido a #5c6670 (5.85:1 sobre blanco, 5.68:1
+       sobre --bg-subtle) para pasar AA en --text-3, que sí lleva texto de
+       lectura (no solo decorativo). */
+    --rei-ink-4: #5c6670;
     --rei-ink-5: #97a2aa;
     --rei-line: rgba(15, 32, 40, 0.1);
     --rei-line-soft: rgba(15, 32, 40, 0.055);

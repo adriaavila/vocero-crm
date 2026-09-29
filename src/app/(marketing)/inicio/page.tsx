@@ -4,7 +4,7 @@ import { ArrowRight, CalendarCheck, KanbanSquare, MessagesSquare } from "lucide-
 import { contactHref, productName } from "@/lib/marketing";
 
 export const metadata: Metadata = {
-  title: `${productName()} — Tu WhatsApp responde aunque estés en una visita`,
+  title: `${productName()}: tu WhatsApp responde aunque estés en una visita`,
   description:
     "Rei CRM conecta tu WhatsApp con tu catálogo: venta, alquiler y anticrético. El agente responde, agenda visitas y avisa a tu equipo.",
 };
@@ -76,10 +76,10 @@ export default function InicioPage() {
           <p className="kicker">Cómo funciona</p>
           <h2 className="mt-3 text-3xl font-semibold tracking-tight">Tres pasos, no siete</h2>
           <div className="rei-stagger-auto mt-10 grid gap-6 sm:grid-cols-3">
-            {STEPS.map((step, i) => (
+            {STEPS.map((step) => (
               <div key={step.title} className="rei-reveal">
-                <span className="font-mono text-sm text-brand-text">{String(i + 1).padStart(2, "0")}</span>
-                <h3 className="mt-2 text-lg font-semibold">{step.title}</h3>
+                <span aria-hidden className="block h-1.5 w-1.5 rounded-full bg-brand" />
+                <h3 className="mt-3 text-lg font-semibold">{step.title}</h3>
                 <p className="mt-2 text-[15px] leading-relaxed text-text-2">{step.detail}</p>
               </div>
             ))}

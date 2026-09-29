@@ -3,7 +3,7 @@ import { productName } from "@/lib/marketing";
 import { LegalContact, LegalPage } from "../legal-page";
 
 export const metadata: Metadata = {
-  title: `Eliminar mis datos — ${productName()}`,
+  title: `Eliminar mis datos de ${productName()}`,
   description: "Cómo pedir que se borren tus datos de Rei CRM, qué se borra y en cuánto tiempo.",
 };
 
@@ -34,7 +34,7 @@ export default function DataDeletionPage() {
       <p>
         Pídelo desde el correo del titular de la cuenta. Se elimina la
         organización entera: conversaciones, contactos, catálogo, visitas y
-        credenciales de WhatsApp. Antes del borrado se te ofrece una exportación.
+        credenciales de WhatsApp.
       </p>
 
       <h2>Qué se borra</h2>
@@ -47,8 +47,8 @@ export default function DataDeletionPage() {
 
       <h2>Qué puede quedar</h2>
       <p>
-        Registros técnicos sin contenido de conversación —fecha, código de
-        respuesta— que se rotan solos, y lo que haya que conservar por una
+        Registros técnicos sin contenido de conversación (fecha, código de
+        respuesta) que se rotan solos, y lo que haya que conservar por una
         obligación legal, como comprobantes de facturación de una inmobiliaria
         cliente. Meta conserva sus propios registros de entrega según sus
         políticas, fuera de nuestro alcance.
@@ -56,9 +56,9 @@ export default function DataDeletionPage() {
 
       <h2>Cuánto tarda</h2>
       <p>
-        Se confirma la recepción dentro de las 72 horas y se completa el
-        borrado dentro de los 30 días. Si el pedido se rechaza —por ejemplo, si
-        no se puede verificar quién lo pide— se explica el motivo.
+        Se confirma la recepción y se avisa cuando el borrado queda
+        completo. Si el pedido se rechaza, por ejemplo si no se puede
+        verificar quién lo pide, se explica el motivo.
       </p>
     </LegalPage>
   );

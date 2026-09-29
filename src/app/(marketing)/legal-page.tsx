@@ -34,6 +34,14 @@ export function LegalEntity(): React.ReactElement {
   return <strong>{legalName}</strong>;
 }
 
+export function LegalAddress(): React.ReactElement {
+  const { legalAddress } = contact();
+  if (!legalAddress) {
+    return <strong className="text-warning-text">[pendiente: configurar LEGAL_ADDRESS]</strong>;
+  }
+  return <span>{legalAddress}</span>;
+}
+
 export function LegalContact(): React.ReactElement {
   const { email, whatsapp } = contact();
   if (email) {

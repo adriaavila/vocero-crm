@@ -28,9 +28,9 @@ Rei es un CRM de WhatsApp para inmobiliarias: el catálogo (venta, alquiler,
 anticrético) es el centro, y el agente de IA califica y agenda visitas sobre
 ese catálogo, nunca inventa un precio ni una propiedad que no existe. La
 identidad es **esmeralda sobre blanco**, con un filete dorado como único
-acento editorial (nunca un botón), y Instrument Serif itálica para la voz de
-autor — algo más cálido y menos "operación en vivo" que allok: acá el punto de
-apoyo es el catálogo, no un estado que cambia minuto a minuto.
+acento editorial (nunca un botón). Es algo más cálido y menos "operación en
+vivo" que allok: acá el punto de apoyo es el catálogo, no un estado que
+cambia minuto a minuto.
 
 ## Color
 
@@ -58,9 +58,9 @@ Tres voces, no negociable:
 - **Geist** (`--font-sans`, ya cargada para allok: `--font-grotesk`) — la
   interfaz, cada palabra.
 - **Instrument Serif** (`--font-serif` → `--font-instrument-serif`, misma
-  fuente de Vocero bajo su propio nombre de variable) — la voz editorial:
-  títulos largos, una palabra de énfasis en itálica. A diferencia de allok
-  (que la apaga), Rei SÍ usa la itálica: es su acento de autor.
+  fuente de Vocero bajo su propio nombre de variable, sin apagar a normal
+  como hace allok) — reservada para un título largo puntual; no es un
+  adorno obligatorio en cada pantalla.
 - **Geist Mono** (`--font-mono` → `--font-geist-mono`, nueva) — cifras,
   horas, `.kicker` (etiquetas en mayúscula).
 
@@ -107,10 +107,9 @@ esquina de 10px (`--btn-radius`), nunca píldora — `--btn-press: 0.975`,
 
 ## Sí / No
 
-- **Sí**: tokens por nombre, nunca hex en un componente; Instrument Serif
-  itálica como acento de autor; el dorado solo como filete o sello; catálogo y
-  agenda primero; español, segunda persona (tú), Bolivia como mercado de
-  referencia (venta, alquiler, **anticrético**).
+- **Sí**: tokens por nombre, nunca hex en un componente; el dorado solo como
+  filete o sello; catálogo y agenda primero; español, segunda persona (tú),
+  Bolivia como mercado de referencia (venta, alquiler, **anticrético**).
 - **No**: degradados, emoji en la interfaz, botones en píldora, un precio
   inventado cuando el plan real dice «a convenir», el «all ● k» ni el punto de
   estado de allok, hipérbole de venta.

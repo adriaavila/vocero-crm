@@ -34,12 +34,15 @@ export default async function AuthLayout({
   // usan la entrada llana de abajo, ya blanca de marca por su cuenta.
   if (isAllokBrand() && brand().id === "allok") return <AllokAuthFrame>{children}</AllokAuthFrame>;
   const branding = await getBranding(organizationId).catch(() => DEFAULT_BRANDING);
+  // El resplandor degradado es voz de allok/Vocero; el sistema rei no usa
+  // degradados (design/rei.md).
+  const showGlow = brand().id !== "rei";
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-subtle p-4">
       <div className="brand-grid absolute inset-0" aria-hidden />
-      <div className="brand-glow brand-glow-a" aria-hidden />
-      <div className="brand-glow brand-glow-b" aria-hidden />
+      {showGlow && <div className="brand-glow brand-glow-a" aria-hidden />}
+      {showGlow && <div className="brand-glow brand-glow-b" aria-hidden />}
 
       <div className="relative w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-4 text-center">
