@@ -153,6 +153,35 @@ export function isKnownAllokHost(
   return !prefix.includes(".") && (isReservedSubdomain(prefix) || Boolean(tenantSlugFromHost(normalizedHost, normalizedRoot)));
 }
 
+/**
+ * Origen del navegador que Better Auth debe aceptar en el SaaS. Sin esto solo
+ * `APP_BASE_URL` pasa el chequeo de origen y el login falla con
+ * `INVALID_ORIGIN` en `<negocio>.<raíz>`, en el host de alta y en admin.
+ * Solo hosts propios del despliegue: app, admin, legado y negocios; nunca la
+ * raíz, `www` ni otros subdominios reservados.
+ */
+export function trustedSaaSOrigin(
+  origin: string | null | undefined,
+  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+): string | null {
+  if (!origin) return null;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return null;
+  }
+  const host = cleanHost(url.hostname);
+  const local = host === "localhost" || host.endsWith(".localhost");
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) return null;
+  const known =
+    isSaaSAppHost(host, rootDomain) ||
+    isSaaSAdminHost(host, rootDomain) ||
+    isLegacyAppHost(host, rootDomain) ||
+    Boolean(tenantSlugFromHost(host, rootDomain));
+  return known ? url.origin : null;
+}
+
 export function tenantSlugFromHost(
   host: string | null | undefined,
   rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
