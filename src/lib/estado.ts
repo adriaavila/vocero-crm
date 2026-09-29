@@ -26,6 +26,19 @@ export const STATE_LABEL: Record<SystemState, string> = {
 };
 
 /**
+ * Los mismos rótulos, para superficies que se comparten con Rei (control
+ * center, la leyenda de estados): "all ok" es el juego de palabras de la
+ * marca allok, no un estado genérico. Toma el id de marca por prop (nunca
+ * `brand()` desde un componente cliente — ver setup-contact.ts) porque estos
+ * componentes SÍ renderizan para Rei (a diferencia de `AllokWordmark`/
+ * `AllokNavHead`, que solo existen bajo allok).
+ */
+export function stateLabelFor(state: SystemState, brandId: "allok" | "rei"): string {
+  if (state === "activo" && brandId !== "allok") return "Todo en orden";
+  return STATE_LABEL[state];
+}
+
+/**
  * El color del punto, para donde no llega el CSS (el icono de la pestaña). En
  * la página se pinta con `data-state` y los --st-* de globals.css.
  */

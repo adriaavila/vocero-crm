@@ -56,6 +56,8 @@ export default async function OverviewPage({
         businessName={branding.name}
         userName={authSession?.user.name ?? ""}
         owner={session.role === "owner"}
+        brandId={brand().id}
+        productLabel={brand().name}
       />
     );
   }

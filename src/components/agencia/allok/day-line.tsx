@@ -18,12 +18,15 @@ const PITCH = 11;
 /** Altura de la base de los puntos, sobre la vía. */
 const BASE = 40;
 
-const NOTE: Record<SystemState, string> = {
-  activo: "Respondida",
-  atendiendo: "allok está respondiendo",
-  atencion: "Espera por ti",
-  pausado: "Quieta",
-};
+function noteFor(state: SystemState, productLabel: string): string {
+  const NOTE: Record<SystemState, string> = {
+    activo: "Respondida",
+    atendiendo: `${productLabel} está respondiendo`,
+    atencion: "Espera por ti",
+    pausado: "Quieta",
+  };
+  return NOTE[state];
+}
 
 /** Qué dice la línea, en una frase, según quién está de turno ahora. */
 function sentence(day: Day, now: number | null): string {
@@ -57,7 +60,7 @@ function split([a, b]: Span, now: number | null): [Span | null, Span | null] {
  * mueve solo es el turno del agente que corre ahora: fluye hacia adelante y
  * dice «está trabajando». Lo que falta del día queda tenue.
  */
-export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; owner: boolean }) {
+export function DayLine({ day, timezone, owner, productLabel = "allok" }: { day: Day; timezone: string; owner: boolean; productLabel?: string }) {
   // La hora vive en el cliente: el servidor no sabe cuándo se mira la pantalla.
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
@@ -201,7 +204,7 @@ export function DayLine({ day, timezone, owner }: { day: Day; timezone: string; 
               key={d.id}
               href={`/inbox?contact=${d.contactId}`}
               tabIndex={-1}
-              title={`${d.name} · ${NOTE[d.state]} · ${hhmm(d.minute)}`}
+              title={`${d.name} · ${noteFor(d.state, productLabel)} · ${hhmm(d.minute)}`}
               className="ak-drop group absolute grid place-items-center [@media(pointer:coarse)]:pointer-events-none"
               style={{
                 left: `calc(${at((d.column + 0.5) * (slot ?? 30))} - ${DOT / 2 + 3}px)`,
