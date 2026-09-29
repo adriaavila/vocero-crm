@@ -482,9 +482,16 @@ export const message = pgTable(
      * 008 — Origen del saliente: IA (bot), operador del CRM, manual desde la
      * app de WhatsApp Business del teléfono (echo), o plantilla. En entrantes
      * queda el default y la UI lo ignora.
+     *
+     * Fork — "history": mensaje importado por Embedded Signup
+     * (server/agencia/whatsapp-signup/history-sync.ts), en cualquier
+     * dirección. Columna `text` sin CHECK: agregar un valor es aditivo y no
+     * pide migración (mismo patrón que `ai_credentials.last_validation_status`
+     * más abajo). `server/ai/worker.ts` lo excluye del chequeo de "hay algo
+     * nuevo, reprograma el turno".
      */
     origin: text("origin", {
-      enum: ["ai", "operator", "manual", "template"],
+      enum: ["ai", "operator", "manual", "template", "history"],
     })
       .notNull()
       .default("operator"),

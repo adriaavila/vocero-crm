@@ -8,9 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 /**
  * Bridge de Embedded Signup EN la app (fork). Puerto de
  * `allok-fun/src/components/whatsapp/EmbeddedSignupClient.tsx`: mismo SDK,
- * mismos parámetros de `FB.login`, mismo listener de `postMessage` — el
- * intercambio de código y todo lo demás vive en el servidor
- * (`/api/whatsapp/embedded-signup/complete`), nunca en el navegador.
+ * mismos parámetros de `FB.login`, mismo listener de `postMessage`, y el
+ * mismo `exchangeWhenReady` (code + ids del evento, o descubrimiento del
+ * servidor a los 2.5s si los ids nunca llegan) — el intercambio de código y
+ * todo lo demás vive en el servidor (`/api/whatsapp/embedded-signup/complete`),
+ * nunca en el navegador.
+ *
+ * "Éxito" se muestra SOLO tras un /complete que devolvió ok:true en ESTA
+ * sesión de la pestaña — nunca por el solo hecho de que `/config` reporte una
+ * fila de credenciales existente (esa fila puede tener el webhook sin
+ * confirmar). Con una conexión existente, el botón dice "Reconectar" y, si
+ * hace falta, se muestra el aviso de qué quedó pendiente.
  */
 
 declare global {
@@ -47,6 +55,14 @@ type SignupEvent = {
 
 type Mode = "coexistence" | "cloud_api";
 
+type ExistingConnection = {
+  displayPhoneNumber: string | null;
+  verifiedName: string | null;
+  status: string;
+  needsAttention: boolean;
+  needsAttentionMessage: string | null;
+};
+
 type Config = {
   appId: string;
   configId?: string;
@@ -55,7 +71,7 @@ type Config = {
   mode: Mode;
   state: string;
   cloudApiAvailable: boolean;
-  connection: { displayPhoneNumber: string | null; verifiedName: string | null; status: string } | null;
+  connection: ExistingConnection | null;
 };
 
 type Status = "loading" | "choose_mode" | "opening" | "processing" | "success" | "error";
@@ -70,6 +86,14 @@ type ErrorKind =
   | "generic";
 
 type SuccessDetails = { displayPhoneNumber: string | null; verifiedName: string | null; mode: Mode };
+
+type Pending = {
+  code?: string;
+  wabaId?: string;
+  phoneNumberId?: string;
+  businessId?: string;
+  event?: SignupEvent;
+};
 
 /** Solo Meta puede mandar el evento de Embedded Signup — nunca la propia página. */
 function isMetaMessageOrigin(origin: string): boolean {
@@ -105,9 +129,11 @@ export function EmbeddedSignupBridge({
   const [success, setSuccess] = useState<SuccessDetails | null>(null);
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
-  const pendingRef = useRef<{ code?: string; wabaId?: string; phoneNumberId?: string; businessId?: string; event?: SignupEvent }>({});
+  const pendingRef = useRef<Pending>({});
   const exchangeStartedRef = useRef(false);
   const stateRef = useRef<string>("");
+  const configRef = useRef<Config | null>(null);
+  const modeRef = useRef<Mode>("coexistence");
 
   const loadConfig = useCallback(async (nextMode: Mode) => {
     setStatus("loading");
@@ -133,16 +159,8 @@ export function EmbeddedSignupBridge({
         return;
       }
       setConfig(data);
+      configRef.current = data;
       stateRef.current = data.state;
-      if (data.connection) {
-        setSuccess({
-          displayPhoneNumber: data.connection.displayPhoneNumber,
-          verifiedName: data.connection.verifiedName,
-          mode: nextMode,
-        });
-        setStatus("success");
-        return;
-      }
       setStatus("choose_mode");
       loadFbSdk(data);
     } catch {
@@ -176,9 +194,23 @@ export function EmbeddedSignupBridge({
     document.body.appendChild(script);
   }
 
-  const complete = useCallback(async () => {
+  /**
+   * Puerto de `exchangeWhenReady` (allok-fun): dispara con code + ids del
+   * evento del SDK; si el código llegó por `FB.login` pero los ids nunca
+   * aparecieron por `postMessage`, un timeout de 2.5s la vuelve a llamar con
+   * `allowServerDiscovery=true` para que el servidor los descubra solo.
+   */
+  const exchangeWhenReady = useCallback(async (allowServerDiscovery = false) => {
     const pending = pendingRef.current;
-    if (exchangeStartedRef.current || !pending.code || !config) return;
+    const cfg = configRef.current;
+    if (
+      exchangeStartedRef.current ||
+      !pending.code ||
+      !cfg ||
+      (!allowServerDiscovery && (!pending.wabaId || !pending.phoneNumberId))
+    ) {
+      return;
+    }
     exchangeStartedRef.current = true;
     setStatus("processing");
     setErrorMessage(null);
@@ -192,7 +224,7 @@ export function EmbeddedSignupBridge({
         wabaId: pending.wabaId,
         phoneNumberId: pending.phoneNumberId,
         businessId: pending.businessId,
-        mode,
+        mode: modeRef.current,
         event: pending.event,
       }),
     }).catch(() => null);
@@ -222,7 +254,7 @@ export function EmbeddedSignupBridge({
     setSuccess({ displayPhoneNumber: data.displayPhoneNumber, verifiedName: data.verifiedName, mode: data.mode });
     setRedirectTo(data.redirectTo ?? null);
     setStatus("success");
-  }, [config, mode]);
+  }, []);
 
   useEffect(() => {
     void loadConfig(mode);
@@ -252,15 +284,16 @@ export function EmbeddedSignupBridge({
         businessId: signupEvent.data?.business_id,
         event: signupEvent,
       };
-      void complete();
+      void exchangeWhenReady();
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [complete]);
+  }, [exchangeWhenReady]);
 
   function onModeChange(next: Mode) {
     if (status === "processing" || status === "opening") return;
     setMode(next);
+    modeRef.current = next;
     void loadConfig(next);
   }
 
@@ -284,8 +317,11 @@ export function EmbeddedSignupBridge({
           return;
         }
         pendingRef.current = { ...pendingRef.current, code };
-        setStatus("processing");
-        void complete();
+        void exchangeWhenReady();
+        // Los ids del evento pueden no llegar nunca (Meta a veces solo manda
+        // el code): a los 2.5s se intenta igual, dejando que el servidor los
+        // descubra por los scopes granulares del token.
+        window.setTimeout(() => void exchangeWhenReady(true), 2500);
       },
       {
         config_id: cloudApi ? config.cloudApiConfigId : config.configId,
@@ -304,11 +340,20 @@ export function EmbeddedSignupBridge({
     );
   }
 
+  const existing = config?.connection ?? null;
+  const isReconnect = Boolean(existing);
+  const statusAnnouncement = statusAnnouncementFor(status, errorKind, success);
+
   return (
     <div className="mx-auto w-full max-w-md">
       <div className="mb-6 text-center">
         <p className="kicker text-text-3">Conexión de WhatsApp</p>
         <h1 className="mt-1 text-xl font-[680] tracking-tight">{organizationName}</h1>
+      </div>
+
+      {/* Región viva única: cada estado anuncia su titular a quien usa lector de pantalla. */}
+      <div aria-live="polite" className="sr-only">
+        {statusAnnouncement}
       </div>
 
       <Card>
@@ -322,26 +367,41 @@ export function EmbeddedSignupBridge({
         {(status === "choose_mode" || status === "opening") && config && (
           <>
             <CardHeader>
-              <CardTitle>Conecta tu WhatsApp</CardTitle>
-              <CardDescription>Elige cómo quieres conectar tu número.</CardDescription>
+              <CardTitle>{isReconnect ? "Reconecta tu WhatsApp" : "Conecta tu WhatsApp"}</CardTitle>
+              <CardDescription>
+                {isReconnect
+                  ? "Ya hay un número guardado para este negocio. Elige el modo y vuelve a conectar."
+                  : "Elige cómo quieres conectar tu número."}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <ModeOption
-                icon={Smartphone}
-                title="Ya uso WhatsApp Business en mi teléfono"
-                description="Recomendado. Conservas la app en tu celular; Vocero recibe los mensajes en paralelo."
-                selected={mode === "coexistence"}
-                onSelect={() => onModeChange("coexistence")}
-              />
-              {config.cloudApiAvailable && (
-                <ModeOption
-                  icon={MessageCircle}
-                  title="Número nuevo"
-                  description="Para un número que todavía no usas en WhatsApp Business."
-                  selected={mode === "cloud_api"}
-                  onSelect={() => onModeChange("cloud_api")}
-                />
+              {existing?.needsAttention && (
+                <div className="flex items-start gap-2 rounded-lg border border-warning-soft bg-warning-tint p-3 text-sm text-warning-text">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                  <p>
+                    {existing.needsAttentionMessage ?? "Falta activar la recepción de mensajes."} Vuelve a
+                    conectar para terminarlo.
+                  </p>
+                </div>
               )}
+              <div role="radiogroup" aria-label="Modo de conexión" className="space-y-3">
+                <ModeOption
+                  icon={Smartphone}
+                  title="Ya uso WhatsApp Business en mi teléfono"
+                  description="Recomendado. Conservas la app en tu celular; Vocero recibe los mensajes en paralelo."
+                  selected={mode === "coexistence"}
+                  onSelect={() => onModeChange("coexistence")}
+                />
+                {config.cloudApiAvailable && (
+                  <ModeOption
+                    icon={MessageCircle}
+                    title="Número nuevo"
+                    description="Para un número que todavía no usas en WhatsApp Business."
+                    selected={mode === "cloud_api"}
+                    onSelect={() => onModeChange("cloud_api")}
+                  />
+                )}
+              </div>
               <Button
                 type="button"
                 className="mt-2 w-full min-h-11"
@@ -357,7 +417,7 @@ export function EmbeddedSignupBridge({
                   "Cargando Meta…"
                 ) : (
                   <>
-                    Conectar WhatsApp <ArrowRight className="ml-2 h-4 w-4" />
+                    {isReconnect ? "Reconectar" : "Conectar WhatsApp"} <ArrowRight className="ml-2 h-4 w-4" />
                   </>
                 )}
               </Button>
@@ -416,6 +476,25 @@ export function EmbeddedSignupBridge({
   );
 }
 
+function statusAnnouncementFor(status: Status, errorKind: ErrorKind, success: SuccessDetails | null): string {
+  switch (status) {
+    case "loading":
+      return "Cargando la conexión segura de Meta.";
+    case "choose_mode":
+      return "Elige cómo conectar tu WhatsApp.";
+    case "opening":
+      return "Abriendo Meta.";
+    case "processing":
+      return "Conectando tu número.";
+    case "success":
+      return success ? `WhatsApp conectado: ${success.displayPhoneNumber ?? ""}` : "WhatsApp conectado.";
+    case "error":
+      return errorTitle(errorKind);
+    default:
+      return "";
+  }
+}
+
 function errorTitle(kind: ErrorKind): string {
   switch (kind) {
     case "cancelled":
@@ -449,8 +528,9 @@ function ModeOption({
   return (
     <button
       type="button"
+      role="radio"
+      aria-checked={selected}
       onClick={onSelect}
-      aria-pressed={selected}
       className={`flex w-full min-h-11 items-start gap-3 rounded-lg border p-3 text-left transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
         selected ? "border-brand bg-brand-tint" : "border-border-strong hover:border-foreground"
       }`}
