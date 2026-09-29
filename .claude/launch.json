@@ -18,6 +18,17 @@
       "env": {
         "NODE_OPTIONS": "--max-old-space-size=8192"
       }
+    },
+    {
+      "name": "vocero-dev-3312",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "--port", "3312"],
+      "port": 3312,
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=8192",
+        "ALLOK_SAAS_MODE": "true",
+        "ALLOK_ADMIN_EMAILS": "admin@allok.fun"
+      }
     }
   ]
 }

@@ -21,6 +21,16 @@ function planLabel(plan: SaaSPlan | null): string {
   return plan ? PLAN_CATALOG[plan].name : "—";
 }
 
+function whatsappLabel(status: SaaSTenantStatus["whatsapp"]): string {
+  return status === "connected" ? "Conectado" : status === "reconnect_required" ? "Reconectar" : "Pendiente";
+}
+
+/**
+ * Fila por negocio, no tabla: con el selector de plan y dos botones por
+ * fila, una tabla obliga a scroll horizontal en 375px para llegar a la
+ * única acción que importa aquí. Este patrón (bloque que se apila en
+ * móvil) ya lo usa `team-client.tsx` para listas con acciones por fila.
+ */
 export function AdminTenantsTable({
   tenants: initialTenants,
   soldPlans,
@@ -97,103 +107,94 @@ export function AdminTenantsTable({
     applyBilling(tenantId, payload.billing);
   }
 
+  if (!tenants.length) {
+    return <p className="px-5 py-12 text-center text-sm text-text-3">No hay negocios registrados.</p>;
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[980px] text-left text-sm">
-        <thead className="border-b text-[11px] font-semibold uppercase tracking-[0.12em] text-text-3">
-          <tr>
-            <th className="px-5 py-3 font-semibold">Negocio</th>
-            <th className="px-5 py-3 font-semibold">Plan</th>
-            <th className="px-5 py-3 font-semibold">WhatsApp</th>
-            <th className="px-5 py-3 font-semibold">Agente</th>
-            <th className="px-5 py-3 font-semibold">Usuarios</th>
-            <th className="px-5 py-3 font-semibold">Plan a mano</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tenants.length ? tenants.map((tenant) => (
-            <tr key={tenant.id} className="border-b align-top last:border-0">
-              <td className="px-5 py-4">
-                <p className="truncate font-semibold">{tenant.name}</p>
-                <p className="mt-1 truncate font-mono text-xs text-text-3">{tenant.slug ?? tenant.id}</p>
-              </td>
-              <td className="px-5 py-4 text-text-2">
-                {planLabel(tenant.billing.plan)}
-                <span className="block text-xs text-text-3">{tenant.billing.status}</span>
-                {tenant.billing.source && (
-                  <span className="block text-[11px] text-text-4">{tenant.billing.source}</span>
-                )}
-              </td>
-              <td className={tenant.whatsapp === "connected" ? "px-5 py-4 text-success-text" : "px-5 py-4 text-text-3"}>
-                {tenant.whatsapp === "connected" ? "Conectado" : tenant.whatsapp === "reconnect_required" ? "Reconectar" : "Pendiente"}
-              </td>
-              <td className="px-5 py-4">
-                <span className="flex items-center gap-1.5 text-text-2">
-                  <Activity className={tenant.agentEnabled ? "h-3.5 w-3.5 text-success" : "h-3.5 w-3.5 text-text-4"} aria-hidden="true" />
-                  {tenant.agentEnabled ? "Activo" : "Pausa"}
-                </span>
-              </td>
-              <td className="px-5 py-4 text-text-2">{tenant.members}</td>
-              <td className="px-5 py-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Select value={planFor(tenant.id)} onValueChange={(value) => setChoice((state) => ({ ...state, [tenant.id]: value as SaaSPlan }))}>
-                    <SelectTrigger className="h-8 w-[140px] text-xs" aria-label={`Plan a conceder a ${tenant.name}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {soldPlans.map((id) => (
-                        <SelectItem key={id} value={id}>{PLAN_CATALOG[id].name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={pending[tenant.id] === "grant"}
-                    onClick={() => void grant(tenant.id)}
-                  >
-                    {pending[tenant.id] === "grant" ? "Activando…" : "Activar plan"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={pending[tenant.id] === "revoke" || !tenant.billing.plan}
-                    onClick={() => void revoke(tenant.id)}
-                  >
-                    {pending[tenant.id] === "revoke" ? "Quitando…" : "Quitar plan"}
-                  </Button>
-                </div>
-                {needsConfirm[tenant.id] && (
-                  <div className="mt-2 max-w-sm rounded-md border border-warning-soft bg-warning-tint px-2.5 py-2 text-xs text-warning-text">
-                    <p>
-                      Este negocio ya tiene una suscripción de Stripe vigente.{" "}
-                      {needsConfirm[tenant.id] === "grant"
-                        ? "Cambiar el plan a mano no la cancela en Stripe."
-                        : "Quitar el plan a mano no la cancela en Stripe."}{" "}
-                      ¿Confirmas de todos modos?
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => void (needsConfirm[tenant.id] === "grant" ? grant(tenant.id, true) : revoke(tenant.id, true))}
-                      >
-                        Sí, continuar
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => clearConfirm(tenant.id)}>
-                        Cancelar
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                {error[tenant.id] && <p className="mt-1 max-w-sm text-xs text-danger-text">{error[tenant.id]}</p>}
-              </td>
-            </tr>
-          )) : (
-            <tr><td colSpan={6} className="px-5 py-12 text-center text-sm text-text-3">No hay negocios registrados.</td></tr>
+    <div className="divide-y">
+      {tenants.map((tenant) => (
+        <div key={tenant.id} className="p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-semibold">{tenant.name}</p>
+              <p className="mt-1 truncate font-mono text-xs text-text-3">{tenant.slug ?? tenant.id}</p>
+            </div>
+            <div className="text-right text-sm text-text-2">
+              {planLabel(tenant.billing.plan)}
+              <span className="block text-xs text-text-3">{tenant.billing.status}</span>
+              {tenant.billing.source && (
+                <span className="block text-[11px] text-text-4">{tenant.billing.source}</span>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-3">
+            <span className={tenant.whatsapp === "connected" ? "text-success-text" : undefined}>
+              WhatsApp: {whatsappLabel(tenant.whatsapp)}
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Activity className={tenant.agentEnabled ? "h-3.5 w-3.5 text-success" : "h-3.5 w-3.5 text-text-4"} aria-hidden="true" />
+              Agente {tenant.agentEnabled ? "activo" : "en pausa"}
+            </span>
+            <span>{tenant.members} usuario{tenant.members === 1 ? "" : "s"}</span>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Select value={planFor(tenant.id)} onValueChange={(value) => setChoice((state) => ({ ...state, [tenant.id]: value as SaaSPlan }))}>
+              <SelectTrigger className="h-9 w-[150px] text-xs" aria-label={`Plan a conceder a ${tenant.name}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {soldPlans.map((id) => (
+                  <SelectItem key={id} value={id}>{PLAN_CATALOG[id].name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending[tenant.id] === "grant"}
+              onClick={() => void grant(tenant.id)}
+            >
+              {pending[tenant.id] === "grant" ? "Activando…" : "Activar plan"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={pending[tenant.id] === "revoke" || !tenant.billing.plan}
+              onClick={() => void revoke(tenant.id)}
+            >
+              {pending[tenant.id] === "revoke" ? "Quitando…" : "Quitar plan"}
+            </Button>
+          </div>
+
+          {needsConfirm[tenant.id] && (
+            <div className="mt-3 rounded-md border border-warning-soft bg-warning-tint px-3 py-2.5 text-xs text-warning-text">
+              <p>
+                Este negocio ya tiene una suscripción de Stripe vigente.{" "}
+                {needsConfirm[tenant.id] === "grant"
+                  ? "Cambiar el plan a mano no la cancela en Stripe."
+                  : "Quitar el plan a mano no la cancela en Stripe."}{" "}
+                ¿Confirmas de todos modos?
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => void (needsConfirm[tenant.id] === "grant" ? grant(tenant.id, true) : revoke(tenant.id, true))}
+                >
+                  Sí, continuar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => clearConfirm(tenant.id)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
           )}
-        </tbody>
-      </table>
+          {error[tenant.id] && <p className="mt-2 text-xs text-danger-text">{error[tenant.id]}</p>}
+        </div>
+      ))}
     </div>
   );
 }
