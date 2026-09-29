@@ -9,6 +9,7 @@ import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { planMeetsTier } from "@/lib/saas-plans";
 import { getOrganizationBilling } from "@/server/saas/billing";
 import { getBranding } from "@/server/branding";
+import { brand } from "@/lib/brand";
 import { getCentro } from "@/server/agencia/estado";
 import { ControlCenter } from "@/components/agencia/allok/control-center";
 
@@ -36,7 +37,7 @@ export default async function OverviewPage({
       : params.upgrade === "pro"
         ? "Ventas, Agenda, Equipo y Resultados están incluidos en Completo. Puedes comparar los planes y activar el upgrade desde Facturación."
       : params.billing === "unavailable" && isAllokSaaSMode()
-        ? "Tu espacio está listo, pero Facturación todavía no está configurada. Puedes continuar preparando Allok y volver a intentarlo desde Facturación."
+        ? `Tu espacio está listo, pero Facturación todavía no está configurada. Puedes continuar preparando ${brand().Name} y volver a intentarlo desde Facturación.`
       : null;
   if (isAllokSaaSMode()) {
     // Capa de agencia: en el SaaS, Inicio es el centro de control de allok.fun.

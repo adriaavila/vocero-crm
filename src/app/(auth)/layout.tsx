@@ -1,4 +1,5 @@
 import { DEFAULT_BRANDING } from "@/lib/branding";
+import { brand } from "@/lib/brand";
 import { getBranding } from "@/server/branding";
 import { BrandLogo } from "@/components/brand-mark";
 import { AllokAuthFrame } from "@/components/agencia/allok/auth-frame";
@@ -28,8 +29,10 @@ export default async function AuthLayout({
     : undefined;
   if (tenantSlug && !organizationId) notFound();
   // Capa de agencia: la entrada es la portada de allok.fun, en el SaaS y en
-  // una dedicada.
-  if (isAllokBrand()) return <AllokAuthFrame>{children}</AllokAuthFrame>;
+  // una dedicada. Es la identidad "all ok" en sí misma (el punto, el juego de
+  // palabras): no se generaliza a otra marca. Rei (y una instancia sin marca)
+  // usan la entrada llana de abajo, ya blanca de marca por su cuenta.
+  if (isAllokBrand() && brand().id === "allok") return <AllokAuthFrame>{children}</AllokAuthFrame>;
   const branding = await getBranding(organizationId).catch(() => DEFAULT_BRANDING);
 
   return (

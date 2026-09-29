@@ -36,6 +36,7 @@ export function AppShell({
   saasMode = false,
   saasPlan = null,
   systemState = null,
+  productLabel = "allok",
   children,
 }: {
   branding: Branding;
@@ -53,6 +54,8 @@ export function AppShell({
   saasPlan?: SaaSPlan | null;
   /** Capa de agencia: el estado resuelto en el servidor; null sin la marca allok. */
   systemState?: SystemSnapshot | null;
+  /** Nombre del producto ("allok" / "Rei"), resuelto en el servidor. */
+  productLabel?: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -87,10 +90,10 @@ export function AppShell({
               : pathname.startsWith("/settings")
                 ? "Configuración"
                 : pathname.startsWith("/lab")
-                  ? "Probar allok"
+                  ? `Probar ${productLabel}`
                   : pathname.startsWith("/agent")
                     ? "Tu agente"
-                    : "allok";
+                    : productLabel;
 
   const shell = (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -119,6 +122,7 @@ export function AppShell({
         realty={realty}
         saasMode={saasMode}
         allokBrand={Boolean(systemState)}
+        productLabel={productLabel}
         saasPlan={saasPlan}
         open={navOpen}
         onClose={() => setNavOpen(false)}

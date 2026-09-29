@@ -1,5 +1,6 @@
 import { AgentClient } from "@/components/agent/agent-client";
 import { requireOwnerSession } from "@/lib/auth/session";
+import { brand } from "@/lib/brand";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
 
@@ -14,6 +15,11 @@ export default async function AgentPage() {
   // respondiendo de verdad.
   const externalBrainAlwaysOn = await cerebroExternoLegadoSiempreOn(session.organizationId);
   return (
-    <AgentClient saasMode={isAllokSaaSMode()} externalBrainAlwaysOn={externalBrainAlwaysOn} />
+    <AgentClient
+      saasMode={isAllokSaaSMode()}
+      externalBrainAlwaysOn={externalBrainAlwaysOn}
+      brandName={brand().Name}
+      brandNameLower={brand().name}
+    />
   );
 }

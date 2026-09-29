@@ -4,13 +4,23 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "@/lib/auth/client";
-import { ALLOK_HELP_URL, ALLOK_START_URL } from "@/components/agencia/allok/setup-contact";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function LoginForm({ saasClosed }: { saasClosed: boolean }) {
+export default function LoginForm({
+  saasClosed,
+  brandName,
+  startUrl,
+  helpUrl,
+}: {
+  saasClosed: boolean;
+  /** Resueltos en el servidor: ver el comentario en register-form.tsx. */
+  brandName: string;
+  startUrl: string;
+  helpUrl: string;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -79,13 +89,13 @@ export default function LoginForm({ saasClosed }: { saasClosed: boolean }) {
             <>
               <p className="text-center text-xs text-muted-foreground">
                 ¿Olvidaste tu contraseña?{" "}
-                <a href={ALLOK_HELP_URL} className="text-primary hover:underline">
+                <a href={helpUrl} className="text-primary hover:underline">
                   Escríbenos por WhatsApp
                 </a>
               </p>
               <p className="text-center text-sm text-muted-foreground">
-                ¿Aún no tienes allok?{" "}
-                <a href={ALLOK_START_URL} className="text-primary hover:underline">
+                ¿Aún no tienes {brandName}?{" "}
+                <a href={startUrl} className="text-primary hover:underline">
                   Te lo dejamos andando
                 </a>
               </p>

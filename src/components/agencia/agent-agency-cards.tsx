@@ -65,11 +65,14 @@ export function AgencyAgentCards({
   onSave,
   credentials,
   onCredentialsChanged,
+  brandName = "allok",
 }: {
   profile: AgencyProfile;
   onSave: Save;
   credentials: AgencyAiCredentials | null;
   onCredentialsChanged: () => void;
+  /** "allok" / "Rei", en minúscula acá (mención dentro de una oración). Resuelto en el servidor. */
+  brandName?: string;
 }) {
   return (
     <>
@@ -79,6 +82,7 @@ export function AgencyAgentCards({
       <AiCredentialsSection
         credentials={credentials}
         onChanged={onCredentialsChanged}
+        brandName={brandName}
       />
     </>
   );
@@ -87,9 +91,11 @@ export function AgencyAgentCards({
 function AiCredentialsSection({
   credentials,
   onChanged,
+  brandName,
 }: {
   credentials: AgencyAiCredentials | null;
   onChanged: () => void;
+  brandName: string;
 }) {
   const [provider, setProvider] = useState<AiCredentialStatus["provider"]>("openrouter");
   const [apiKey, setApiKey] = useState("");
@@ -151,7 +157,7 @@ function AiCredentialsSection({
         <CardTitle>Tu token de OpenRouter (opcional)</CardTitle>
         <CardDescription>
           Si pones tu token, el consumo de IA corre por tu cuenta. Si no,
-          respondemos con el de allok.
+          respondemos con el de {brandName}.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -183,8 +189,8 @@ function AiCredentialsSection({
             // no le dice al dueño si tiene que cambiar la clave o recargar.
             <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
               {status.lastValidationStatus === "no_credits"
-                ? `Tu token de ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} se quedó sin créditos. Respondemos con el de allok mientras recargas.`
-                : `Tu token de ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} fue rechazado. Respondemos con el de allok mientras lo cambias.`}
+                ? `Tu token de ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} se quedó sin créditos. Respondemos con el de ${brandName} mientras recargas.`
+                : `Tu token de ${provider === "openrouter" ? "OpenRouter" : "OpenAI"} fue rechazado. Respondemos con el de ${brandName} mientras lo cambias.`}
             </p>
           )}
         <div className="space-y-1.5">

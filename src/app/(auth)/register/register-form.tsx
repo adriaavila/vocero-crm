@@ -8,6 +8,7 @@ import { signUp } from "@/lib/auth/client";
 import { SIGNUP_HOST_HINT } from "@/lib/tenant-host";
 import { isSaaSPlan, PLAN_CATALOG } from "@/lib/saas-plans";
 import type { SaaSPlan } from "@/server/saas/billing";
+import type { Brand } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,11 +18,21 @@ export default function RegisterForm({
   adminMode = false,
   soldPlans,
   selfServe = false,
+  brand,
+  exampleHost,
 }: {
   adminMode?: boolean;
   soldPlans: SaaSPlan[];
   /** Alta de autoservicio: 7 días gratis, sin checkout; lo siguiente es conectar WhatsApp. */
   selfServe?: boolean;
+  /**
+   * Resuelta en el servidor (`brand()` lee `process.env.BRAND`, que no es
+   * `NEXT_PUBLIC_`): un componente cliente no puede leerla directo, siempre
+   * baja por prop.
+   */
+  brand: Pick<Brand, "Name" | "pricingHref">;
+  /** `clinica-perez.<dominio-raíz>`, también resuelto en el servidor. */
+  exampleHost: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -68,7 +79,10 @@ export default function RegisterForm({
     if (err) {
       setLoading(false);
       if (err.status === 403) {
-        setError(err.message?.startsWith(SIGNUP_HOST_HINT)
+        // El prefijo es estable entre marcas (ver lib/auth/index.ts): el
+        // nombre de marca va DESPUÉS, y el cliente no puede leer `BRAND`
+        // (no es NEXT_PUBLIC_) para reconstruirlo él mismo.
+        setError(err.message?.startsWith("El registro de ")
           ? err.message
           : "El registro está cerrado: esta instancia ya tiene su organización. Pide acceso al propietario.");
       } else if (err.status === 429) {
@@ -142,7 +156,7 @@ export default function RegisterForm({
         <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] text-brand-fg">1</span> Tu espacio</span><span className="normal-case tracking-normal text-text-4">1 de 6</span></div>
         <CardTitle>Empieza con tu negocio</CardTitle>
         <CardDescription>
-          En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar Allok.
+          En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar {brand.Name}.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -152,7 +166,7 @@ export default function RegisterForm({
             <span className="block text-xs text-text-3">Conecta tu WhatsApp y prueba el agente. Eliges plan cuando termine la prueba.</span>
           </div>
         ) : (
-          <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {PLAN_CATALOG[plan].name}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">{brand.Name} {PLAN_CATALOG[plan].name}</span></span><Link href={brand.pricingHref} className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
         )}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
@@ -166,7 +180,7 @@ export default function RegisterForm({
               onChange={(e) => setName(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              Se usará para sugerir tu subdominio, por ejemplo clinica-perez.allok.fun.
+              Se usará para sugerir tu subdominio, por ejemplo {exampleHost}.
             </p>
           </div>
           <div className="space-y-1.5">

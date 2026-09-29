@@ -68,14 +68,16 @@ const NAV: NavItem[] = [
   { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
 ];
 
-const ALLOK_NAV: NavItem[] = [
-  { href: "/overview", label: "Inicio", icon: Gauge },
-  { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
-  // 019 §4: "Tu agente" contesta "¿qué sabe y cómo contesta?" (conocimiento y
-  // horario). Sin esta entrada, /agent solo se alcanzaba escribiendo la URL.
-  { href: "/agent", label: "Tu agente", icon: Sparkles, owner: true },
-  { href: "/lab", label: "Probar allok", icon: FlaskConical, owner: true },
-];
+function allokNavItems(productLabel: string): NavItem[] {
+  return [
+    { href: "/overview", label: "Inicio", icon: Gauge },
+    { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
+    // 019 §4: "Tu agente" contesta "¿qué sabe y cómo contesta?" (conocimiento
+    // y horario). Sin esta entrada, /agent solo se alcanzaba con la URL.
+    { href: "/agent", label: "Tu agente", icon: Sparkles, owner: true },
+    { href: "/lab", label: `Probar ${productLabel}`, icon: FlaskConical, owner: true },
+  ];
+}
 
 // Decisión de Adrian: Configuración va AL FINAL de todo, después de lo Pro
 // (Ventas, Resultados, Agenda, Equipo) — es ajustes, no el destino de nadie.
@@ -119,10 +121,11 @@ const ALLOK_PRO_NAV: NavItem[] = [
 export function buildAllokNav(
   pro: boolean,
   agenda: boolean,
-  realty: boolean = false
+  realty: boolean = false,
+  productLabel = "allok"
 ): NavItem[] {
   return [
-    ...ALLOK_NAV,
+    ...allokNavItems(productLabel),
     ...(pro
       ? ALLOK_PRO_NAV.filter(
           (item) =>
@@ -171,6 +174,7 @@ export function AppNav({
   realty = false,
   saasMode = false,
   allokBrand = false,
+  productLabel = "allok",
   saasPlan = null,
   open = false,
   onClose,
@@ -198,8 +202,10 @@ export function AppNav({
    */
   realty?: boolean;
   saasMode?: boolean;
-  /** El diseño allok (barra de tinta, all ● k con el estado). También en una dedicada. */
+  /** El diseño allok (barra de tinta, all ● k con el estado). Solo la marca allok. */
   allokBrand?: boolean;
+  /** Nombre del producto para el nav ("Probar allok" / "Probar Rei"). Resuelto en el servidor. */
+  productLabel?: string;
   saasPlan?: SaaSPlan | null;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */
   open?: boolean;
@@ -233,7 +239,7 @@ export function AppNav({
   // sección aparte.
   const esPropietario = role === "owner";
   const sourceNav = saasMode
-    ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda, realty)
+    ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda, realty, productLabel)
     : NAV;
   // Legacy (sin saasMode): Citas y Propiedades se insertan a mano en el mismo
   // lugar (justo después de Bandeja) en vez de vivir en `ALLOK_PRO_NAV`, que

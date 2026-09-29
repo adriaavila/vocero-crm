@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { MessageCircle, ShieldCheck } from "lucide-react";
+import { brand } from "@/lib/brand";
 import { AdminTenantsTable } from "@/components/admin/tenants-table";
 import { listSaaSTenantStatus, requireSaaSAdmin, SaaSAdminUnauthorized } from "@/server/saas/admin";
 
@@ -18,7 +19,7 @@ export default async function AdminPage() {
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-wrap items-end justify-between gap-4 border-b pb-6">
           <div>
-            <p className="font-mono text-xs uppercase tracking-[0.16em] text-brand-text">Allok interno</p>
+            <p className="font-mono text-xs uppercase tracking-[0.16em] text-brand-text">{brand().Name} interno</p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight">Estado de clientes</h1>
             <p className="mt-2 text-sm text-text-2">Cambiar un plan a mano queda auditado. Nunca pisa una suscripción de Stripe vigente sin confirmarlo.</p>
           </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { brand } from "@/lib/brand";
 import {
   Activity,
   ArrowRight,
@@ -69,7 +70,7 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
                 {data.summary.pendingHandoffs > 0 && <Badge variant="warning">{data.summary.pendingHandoffs} requiere atención</Badge>}
               </div>
               <p className="mt-5 text-3xl font-[720] tracking-[-0.04em] md:text-4xl">Hola{userName ? `, ${userName.split(" ")[0]}` : ""}.</p>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">Mira qué está pasando y deja listo el siguiente paso. Allok responde cuando tu equipo no está disponible.</p>
+              <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">Mira qué está pasando y deja listo el siguiente paso. {brand().Name} responde cuando tu equipo no está disponible.</p>
               <div className="mt-6 flex flex-wrap gap-2">
                 <Link href={primaryAction.href} className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-brand px-4 text-sm font-semibold text-brand-fg transition-colors hover:bg-brand-hover"><WandSparkles className="h-4 w-4" /> {primaryAction.label}</Link>
                 {primaryAction.href !== "/inbox" && <Link href="/inbox" className="inline-flex h-10 items-center justify-center gap-2 rounded-md border bg-background px-4 text-sm font-semibold transition-colors hover:bg-accent">Abrir bandeja <ArrowUpRight className="h-4 w-4" /></Link>}
@@ -153,7 +154,7 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
         <section className="grid gap-4 rounded-lg border bg-background p-4 shadow-sm md:grid-cols-3 md:p-5">
           <QuickAction href="/inbox" icon={Inbox} title="Ver conversaciones" detail="Responde o toma el control cuando haga falta." />
           {owner && <>
-            <QuickAction href="/lab" icon={WandSparkles} title="Probar Allok" detail="Comprueba cómo responderá antes de activarlo." />
+            <QuickAction href="/lab" icon={WandSparkles} title={`Probar ${brand().Name}`} detail="Comprueba cómo responderá antes de activarlo." />
             <QuickAction href="/agent" icon={Activity} title="Ajustar el agente" detail="Actualiza horarios, tono e información del negocio." />
           </>}
         </section>
