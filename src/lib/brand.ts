@@ -113,6 +113,9 @@ export function brandById(id: BrandId): Brand {
 export function missingReiConfigVars(saasMode: boolean): string[] {
   if (!saasMode || activeBrandId() !== "rei") return [];
   const missing: string[] = [];
+  // Sin dominio propio Rei cae en silencio a allok.fun y ningún host matchea.
+  const root = process.env.ALLOK_ROOT_DOMAIN?.trim();
+  if (!root || root === ".") missing.push("ALLOK_ROOT_DOMAIN");
   if (!nonEmpty(process.env.CONTACT_WHATSAPP) && !nonEmpty(process.env.CONTACT_EMAIL)) {
     missing.push("CONTACT_WHATSAPP", "CONTACT_EMAIL");
   }
