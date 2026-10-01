@@ -32,7 +32,7 @@ import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
-import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
+import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAgentRespondNow } from "@/server/business-hours";
 
@@ -569,6 +569,7 @@ async function loadNeaGateState(conversationId: string): Promise<NeaGateState | 
   // recibiendo turnos despachados a Nea (que sí sabe cómo responder, así que
   // el guard tiene que estar ANTES del despacho, no después).
   if (!conversation.isTest && !(await canAutomate(organizationId))) return null;
+  if (!conversation.isTest && (await trialAiQuotaReached(organizationId))) return null;
   if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
     return null;
   }

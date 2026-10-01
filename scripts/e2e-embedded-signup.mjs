@@ -144,7 +144,7 @@ async function main() {
   ok("Meta ve el override guardado", Boolean(override?.override_callback_uri), JSON.stringify(sub.json));
   ok(
     "apunta al webhook de ESTA instancia (mismo que /api/provision)",
-    (override?.override_callback_uri ?? "").endsWith("/api/webhooks/wa/verify-de-mentira"),
+    (override?.override_callback_uri ?? "").endsWith(`/api/webhooks/wa/${process.env.META_WEBHOOK_VERIFY_TOKEN}`),
     override?.override_callback_uri
   );
 

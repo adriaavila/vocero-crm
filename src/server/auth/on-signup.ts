@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isAllokSaaSMode, isLegacyAppHost, isSaaSAppHost, slugifyTenantName, tenantSlugFromHost } from "@/lib/tenant-host";
 import { defaultAgentProfile, defaultResponseSchedule } from "@/server/agent/default-profile";
+import { ensureOnboarding } from "@/server/onboarding/whatsapp-onboarding";
+import { startSelfServeTrial } from "@/server/saas/billing";
 
 /** Etapas sembradas del pipeline (US2). */
 const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
@@ -24,11 +26,21 @@ const SEED_STAGES: { name: string; kind: "open" | "won" | "lost" }[] = [
 export async function onUserCreated(
   userId: string,
   userName: string,
-  options?: { skipOrganization?: boolean; timezone?: string | null },
+  options?: {
+    skipOrganization?: boolean;
+    timezone?: string | null;
+    /**
+     * Alta de autoservicio: 7 días de prueba sin Stripe, onboarding de
+     * WhatsApp en `pendiente` y el agente apagado hasta que el dueño lo active
+     * (con un número real conectado, contestaría a sus clientes sin saber nada
+     * del negocio).
+     */
+    selfServeTrial?: boolean;
+  },
 ) {
   if (options?.skipOrganization) return;
   const db = getDb();
-  await db.transaction(async (tx) => {
+  const createdOrgId = await db.transaction(async (tx): Promise<string | null> => {
     // Legacy necesita un lock global para el primer arranque. SaaS solo debe
     // serializar organizaciones con el mismo slug; clientes distintos pueden
     // registrarse en paralelo.
@@ -44,12 +56,12 @@ export async function onUserCreated(
         .from(schema.member)
         .where(eq(schema.member.userId, userId))
         .limit(1);
-      if (existingMembership[0]) return;
+      if (existingMembership[0]) return null;
     } else {
       const [orgs] = await tx
         .select({ n: count() })
         .from(schema.organization);
-      if ((orgs?.n ?? 0) > 0) return;
+      if ((orgs?.n ?? 0) > 0) return null;
     }
 
     const orgId = newId("organization");
@@ -88,8 +100,15 @@ export async function onUserCreated(
       ...defaultAgentProfile(),
       // SaaS calla sin horario de respuesta; legacy no lo usa y nace igual.
       ...(isAllokSaaSMode() ? defaultResponseSchedule(options?.timezone) : {}),
+      ...(options?.selfServeTrial ? { enabled: false } : {}),
     });
+    return orgId;
   });
+
+  if (createdOrgId && options?.selfServeTrial) {
+    await startSelfServeTrial(createdOrgId);
+    await ensureOnboarding(createdOrgId);
+  }
 }
 
 /** Organización activa de un usuario (su primera membresía). */

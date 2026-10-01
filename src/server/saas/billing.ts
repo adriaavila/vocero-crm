@@ -282,7 +282,50 @@ export function mergeBillingState(
  * gratis a quien pagó por link/transferencia y ahora pasa por checkout.
  */
 export function hadPriorSubscription(current: SaaSBillingState): boolean {
-  return current.subscriptionId !== null || current.grantedAt !== null;
+  return (
+    current.subscriptionId !== null ||
+    current.grantedAt !== null ||
+    current.source === SELF_SERVE_TRIAL_SOURCE
+  );
+}
+
+/**
+ * Prueba de autoservicio (decisión de Adrian, 2026-09-30): quien se registra
+ * solo conecta WhatsApp gratis y tiene 7 días de Completo, con tope de 300
+ * respuestas de IA. Sin Stripe: termina sola por fecha (`currentPeriodEnd`).
+ * Deja de ser "prueba de autoservicio" en cuanto existe una suscripción.
+ */
+export const SELF_SERVE_TRIAL_SOURCE = "self_serve_trial";
+export const SELF_SERVE_TRIAL_DAYS = 7;
+export const SELF_SERVE_TRIAL_AI_REPLIES = 300;
+
+export function isSelfServeTrial(
+  billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,
+): boolean {
+  return (
+    billing.source === SELF_SERVE_TRIAL_SOURCE &&
+    billing.subscriptionId === null &&
+    billing.status === "trialing"
+  );
+}
+
+export async function startSelfServeTrial(
+  organizationId: string,
+  now = new Date(),
+  db: DbOrTx = getDb(),
+): Promise<SaaSBillingState> {
+  const ends = new Date(now.getTime() + SELF_SERVE_TRIAL_DAYS * 24 * 60 * 60 * 1000);
+  return saveOrganizationBilling(
+    organizationId,
+    {
+      plan: "pro",
+      status: "trialing",
+      source: SELF_SERVE_TRIAL_SOURCE,
+      currentPeriodEnd: ends.toISOString(),
+      updatedAt: now.toISOString(),
+    },
+    db,
+  );
 }
 
 /**

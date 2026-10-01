@@ -169,6 +169,13 @@
       "when": 1790704601407,
       "tag": "9011_auditoria_detalle",
       "breakpoints": true
+    },
+    {
+      "idx": 9012,
+      "version": "7",
+      "when": 1790820154167,
+      "tag": "9012_whatsapp_onboarding",
+      "breakpoints": true
     }
   ]
 }
