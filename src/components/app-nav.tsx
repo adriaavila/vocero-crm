@@ -20,6 +20,7 @@ import {
 import type { Branding } from "@/lib/branding";
 import type { ThemePreference } from "@/lib/theme";
 import type { SaaSPlan } from "@/server/saas/billing";
+import { planMeetsTier } from "@/lib/saas-plans";
 import { cn, initials } from "@/lib/utils";
 import { signOut } from "@/lib/auth/client";
 import { useEvents } from "@/components/use-events";
@@ -91,8 +92,8 @@ const ALLOK_PRO_NAV: NavItem[] = [
   // 019 (upstream) — "primero se atiende y se organiza [Ventas], luego se
   // mide": no hay una entrada "Contactos" en el nav allok (va dentro de
   // Ventas), así que Resultados va justo después de Ventas y antes de la
-  // logística (Agenda, Equipo). Solo dueño, y solo Pro: ya lo filtra
-  // `saasPlan === "pro"` más abajo.
+  // logística (Agenda, Equipo). Solo dueño, y solo Pro (o superior, Agencia
+  // incluida): ya lo filtra `planMeetsTier(saasPlan, "pro")` más abajo.
   { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
   { href: "/bookings", label: "Agenda", icon: CalendarDays },
   { href: "/settings/team", label: "Equipo", icon: Users, owner: true },
@@ -195,7 +196,7 @@ export function AppNav({
   // Citas va después de Pipeline: es el paso siguiente de un trato, no una
   // sección aparte.
   const esPropietario = role === "owner";
-  const sourceNav = saasMode ? buildAllokNav(saasPlan === "pro", agenda) : NAV;
+  const sourceNav = saasMode ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda) : NAV;
   const items = (agenda && !saasMode
     ? [...sourceNav.slice(0, 2), AGENDA_ITEM, ...sourceNav.slice(2)]
     : sourceNav

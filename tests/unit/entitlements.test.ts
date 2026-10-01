@@ -32,4 +32,19 @@ describe("Allok automation entitlements", () => {
     expect(hasPaidSaaSPlanFromMetadata(paid, "pro", true)).toBe(true);
     expect(hasPaidSaaSPlanFromMetadata(failed, "pro", true)).toBe(false);
   });
+
+  it("por nivel: Agencia (inmobiliaria) también cumple el umbral 'pro', porque lo incluye", () => {
+    const agencia = JSON.stringify({ allok: { billing: { plan: "inmobiliaria", status: "active" } } });
+    expect(hasPaidSaaSPlanFromMetadata(agencia, "pro", true)).toBe(true);
+  });
+
+  it("por nivel: Esencial (basic) NO cumple el umbral 'pro'", () => {
+    const esencial = JSON.stringify({ allok: { billing: { plan: "basic", status: "active" } } });
+    expect(hasPaidSaaSPlanFromMetadata(esencial, "pro", true)).toBe(false);
+  });
+
+  it("un plan desconocido en la metadata nunca cumple ningún umbral", () => {
+    const raro = JSON.stringify({ allok: { billing: { plan: "enterprise", status: "active" } } });
+    expect(hasPaidSaaSPlanFromMetadata(raro, "pro", true)).toBe(false);
+  });
 });

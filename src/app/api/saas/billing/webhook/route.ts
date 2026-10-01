@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import {
   getOrganizationBilling,
   hasRememberedBillingEvent,
+  isCurrentOrFirstSubscriptionEvent,
   planForPriceId,
   rememberBillingEvent,
   saveOrganizationBilling,
@@ -10,6 +11,7 @@ import {
   webhookSecretForSaaS,
 } from "@/server/saas/billing";
 import { apiError } from "@/lib/api";
+import { isSaaSPlan } from "@/lib/saas-plans";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,9 +82,7 @@ export async function POST(request: Request) {
         ? checkout.subscription
         : checkout.subscription?.id ?? current.subscriptionId;
       await saveOrganizationBilling(organizationId, {
-        plan: checkout.metadata?.plan === "basic" || checkout.metadata?.plan === "pro"
-          ? checkout.metadata.plan
-          : current.plan,
+        plan: isSaaSPlan(checkout.metadata?.plan) ? checkout.metadata.plan : current.plan,
         customerId,
         subscriptionId,
         // El checkout confirma la sesión, no el estado vigente de la suscripción.
@@ -95,6 +95,9 @@ export async function POST(request: Request) {
     const subscription = event.data.object as Stripe.Subscription;
     const priceId = subscription.items.data[0]?.price.id ?? null;
     const current = await getOrganizationBilling(organizationId);
+    if (!isCurrentOrFirstSubscriptionEvent(current, subscription.id)) {
+      return Response.json({ received: true, ignored: true, stale_subscription: true });
+    }
     await saveOrganizationBilling(organizationId, {
       plan: planForPriceId(priceId) ?? current.plan,
       status: statusFromStripe(subscription.status),

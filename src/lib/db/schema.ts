@@ -102,6 +102,8 @@ export const saasAdminAudit = pgTable(
     userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     action: text("action").notNull(),
     organizationId: text("organization_id").references(() => organization.id, { onDelete: "set null" }),
+    /** JSON con el detalle de la acción (plan, confirmOverrideStripe, result…). Null en acciones sin detalle (p. ej. view_tenants). */
+    detail: text("detail"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [index("saas_admin_audit_created_idx").on(t.createdAt)]

@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 import { getAuth } from "@/lib/auth";
 import { isAllokSaaSMode, isSaaSAdminEmail } from "@/lib/tenant-host";
+import { soldSaaSPlans } from "@/lib/saas-plans";
 import { SAAS_SELF_SERVE } from "@/server/auth/registration";
 import { ALLOK_START_URL } from "@/components/agencia/allok/setup-contact";
 import { buttonVariants } from "@/components/ui/button";
@@ -18,12 +19,13 @@ export const dynamic = "force-dynamic";
  * `/sign-up/email`: esto es la cara, no la cerradura.
  */
 export default async function RegisterPage() {
+  const soldPlans = soldSaaSPlans(process.env.SAAS_PLANS);
   if (isAllokSaaSMode() && !SAAS_SELF_SERVE) {
     const session = await getAuth().api.getSession({ headers: await headers() }).catch(() => null);
     if (!isSaaSAdminEmail(session?.user.email)) return <SetupWithUs />;
-    return <RegisterForm adminMode />;
+    return <RegisterForm adminMode soldPlans={soldPlans} />;
   }
-  return <RegisterForm />;
+  return <RegisterForm soldPlans={soldPlans} />;
 }
 
 function SetupWithUs() {

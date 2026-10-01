@@ -6,25 +6,34 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Check, ShieldCheck } from "lucide-react";
 import { signUp } from "@/lib/auth/client";
 import { SIGNUP_HOST_HINT } from "@/lib/tenant-host";
+import { isSaaSPlan, PLAN_CATALOG } from "@/lib/saas-plans";
+import type { SaaSPlan } from "@/server/saas/billing";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export default function RegisterForm({ adminMode = false }: { adminMode?: boolean }) {
+export default function RegisterForm({
+  adminMode = false,
+  soldPlans,
+}: {
+  adminMode?: boolean;
+  soldPlans: SaaSPlan[];
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [plan, setPlan] = useState<"basic" | "pro">("basic");
+  const defaultPlan = soldPlans[0] ?? "basic";
+  const [plan, setPlan] = useState<SaaSPlan>(defaultPlan);
   const [created, setCreated] = useState<{ email: string; url: string | null } | null>(null);
 
   useEffect(() => {
     const requestedPlan = new URLSearchParams(window.location.search).get("plan");
-    setPlan(requestedPlan === "pro" ? "pro" : "basic");
-  }, []);
+    setPlan(requestedPlan && isSaaSPlan(requestedPlan) && soldPlans.includes(requestedPlan) ? requestedPlan : defaultPlan);
+  }, [soldPlans, defaultPlan]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -124,7 +133,7 @@ export default function RegisterForm({ adminMode = false }: { adminMode?: boolea
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {plan === "pro" ? "Completo" : "Esencial"}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {PLAN_CATALOG[plan].name}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="name">Nombre del negocio</Label>
