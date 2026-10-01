@@ -47,4 +47,10 @@ describe("tope de 300 respuestas de IA en la prueba", () => {
     aiReplies = 5000;
     expect(await trialAiQuotaReached("org_1")).toBe(false);
   });
+
+  it("con tarjeta puesta durante la prueba (trial de Stripe) no hay tope", async () => {
+    metadata = trial({ subscriptionId: "sub_1", status: "trialing" });
+    aiReplies = 5000;
+    expect(await trialAiQuotaReached("org_1")).toBe(false);
+  });
 });
