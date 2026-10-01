@@ -33,8 +33,11 @@ import {
 } from "@/components/realty/shared";
 import { MAX_PHOTOS_PER_PROPERTY, preparePhoto } from "@/components/realty/resize-image";
 
+const UNDO_MS = 5000;
+const commitRemoveStub = async (_id: string) => {};
+
 const SELECT_CLASS =
-  "h-9 rounded-md border border-input bg-card px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  "h-9 max-sm:h-11 rounded-md border border-input bg-card px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 /**
  * Detalle DENTRO del listado (no navega a otra página): así el asesor puede
@@ -61,6 +64,11 @@ export function PropertyDetailPanel({
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [uploading, setUploading] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const [brokenPhotos, setBrokenPhotos] = useState<Set<string>>(new Set());
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const pending = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const commitRemoveRef = useRef(commitRemoveStub);
+  const visiblePhotos = photos.filter((p) => p.id !== pendingId);
 
   const refetch = useCallback(async () => {
     const res = await fetch(`/api/properties/${propertyId}`).catch(() => null);
@@ -78,6 +86,19 @@ export function PropertyDetailPanel({
   useEffect(() => {
     void refetch();
   }, [refetch, refreshKey]);
+
+  commitRemoveRef.current = commitRemove;
+
+  // Al cerrar el panel, un borrado pendiente se confirma en vez de perderse.
+  useEffect(() => {
+    return () => {
+      if (pending.current) {
+        clearTimeout(pending.current.timer);
+        void commitRemoveRef.current(pending.current.id);
+        pending.current = null;
+      }
+    };
+  }, []);
 
   async function changeStatus(status: PropertyStatus) {
     const res = await fetch(`/api/properties/${propertyId}`, {
@@ -168,7 +189,8 @@ export function PropertyDetailPanel({
     onChanged();
   }
 
-  async function removePhoto(photoId: string) {
+  /** Borra de verdad (DELETE) una foto ya oculta. */
+  async function commitRemove(photoId: string) {
     const res = await fetch(
       `/api/properties/${propertyId}/photos/${photoId}`,
       { method: "DELETE" }
@@ -182,6 +204,28 @@ export function PropertyDetailPanel({
     const data = (await res.json()) as { photos: PropertyPhotoDto[] };
     setPhotos(data.photos);
     onChanged();
+  }
+
+  /** Oculta la foto y da 5 s para deshacer antes de llamar al DELETE. */
+  function scheduleRemove(photoId: string) {
+    // Un borrado nuevo confirma el anterior pendiente.
+    if (pending.current) {
+      clearTimeout(pending.current.timer);
+      void commitRemoveRef.current(pending.current.id);
+    }
+    const timer = setTimeout(() => {
+      pending.current = null;
+      setPendingId(null);
+      void commitRemoveRef.current(photoId);
+    }, UNDO_MS);
+    pending.current = { id: photoId, timer };
+    setPendingId(photoId);
+  }
+
+  function undoRemove() {
+    if (pending.current) clearTimeout(pending.current.timer);
+    pending.current = null;
+    setPendingId(null);
   }
 
   if (loading) {
@@ -230,6 +274,7 @@ export function PropertyDetailPanel({
             <Button
               size="sm"
               variant="outline"
+              className="max-sm:h-11"
               disabled={
                 uploading !== null || photos.length >= MAX_PHOTOS_PER_PROPERTY
               }
@@ -251,6 +296,21 @@ export function PropertyDetailPanel({
             />
           </div>
 
+          <p role="status" aria-live="polite" className="empty:hidden">
+            {pendingId && (
+              <span className="mb-2 flex items-center justify-between gap-2 rounded-md border bg-subtle px-3 py-1.5 text-xs">
+                Foto eliminada
+                <button
+                  type="button"
+                  onClick={undoRemove}
+                  className="flex min-h-9 items-center px-2 font-semibold text-brand-text max-sm:min-h-11"
+                >
+                  Deshacer
+                </button>
+              </span>
+            )}
+          </p>
+
           {uploading && <p className="mb-2 text-xs text-text-3">{uploading}</p>}
           {uploadErrors.length > 0 && (
             <ul className="mb-2 space-y-1">
@@ -262,7 +322,7 @@ export function PropertyDetailPanel({
             </ul>
           )}
 
-          {photos.length === 0 ? (
+          {visiblePhotos.length === 0 ? (
             <div
               className={`flex h-24 items-center justify-center rounded-md bg-gradient-to-br text-xs text-text-2 ${placeholderGradient(
                 property.id
@@ -272,17 +332,30 @@ export function PropertyDetailPanel({
             </div>
           ) : (
             <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {photos.map((photo, index) => (
+              {visiblePhotos.map((photo, index) => (
                 <li
                   key={photo.id}
                   className="overflow-hidden rounded-md border bg-subtle"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={photo.url}
-                    alt={`Foto ${index + 1} de ${property.title}`}
-                    className="h-20 w-full object-cover"
-                  />
+                  {brokenPhotos.has(photo.id) ? (
+                    <div
+                      role="img"
+                      aria-label={`Foto ${index + 1} no disponible`}
+                      className={`h-20 w-full bg-gradient-to-br ${placeholderGradient(
+                        photo.id
+                      )}`}
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={photo.url}
+                      alt=""
+                      onError={() =>
+                        setBrokenPhotos((prev) => new Set(prev).add(photo.id))
+                      }
+                      className="h-20 w-full object-cover"
+                    />
+                  )}
                   <div className="flex items-center justify-between px-0.5 py-0.5">
                     {photo.isCover ? (
                       <span className="px-1 text-[9px] font-semibold uppercase text-brand-text">
@@ -293,7 +366,7 @@ export function PropertyDetailPanel({
                         type="button"
                         aria-label="Marcar como portada"
                         title="Marcar como portada"
-                        className="flex h-9 w-9 items-center justify-center rounded text-text-3 hover:text-foreground"
+                        className="flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded text-text-3 hover:text-foreground"
                         onClick={() => void movePhoto(photo.id, 0)}
                       >
                         <Star className="h-3.5 w-3.5" />
@@ -304,7 +377,7 @@ export function PropertyDetailPanel({
                         type="button"
                         aria-label="Mover a la izquierda"
                         disabled={index === 0}
-                        className="flex h-9 w-9 items-center justify-center rounded text-text-3 hover:text-foreground disabled:opacity-30"
+                        className="flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded text-text-3 hover:text-foreground disabled:opacity-30"
                         onClick={() => void movePhoto(photo.id, index - 1)}
                       >
                         <ArrowLeft className="h-3.5 w-3.5" />
@@ -312,8 +385,8 @@ export function PropertyDetailPanel({
                       <button
                         type="button"
                         aria-label="Mover a la derecha"
-                        disabled={index === photos.length - 1}
-                        className="flex h-9 w-9 items-center justify-center rounded text-text-3 hover:text-foreground disabled:opacity-30"
+                        disabled={index === visiblePhotos.length - 1}
+                        className="flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded text-text-3 hover:text-foreground disabled:opacity-30"
                         onClick={() => void movePhoto(photo.id, index + 1)}
                       >
                         <ArrowRight className="h-3.5 w-3.5" />
@@ -321,8 +394,8 @@ export function PropertyDetailPanel({
                       <button
                         type="button"
                         aria-label="Eliminar foto"
-                        className="flex h-9 w-9 items-center justify-center rounded text-text-3 hover:text-destructive"
-                        onClick={() => void removePhoto(photo.id)}
+                        className="flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded text-text-3 hover:text-destructive"
+                        onClick={() => scheduleRemove(photo.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -333,8 +406,7 @@ export function PropertyDetailPanel({
             </ul>
           )}
           <p className="mt-2 text-[11px] text-text-3">
-            JPEG, PNG o WebP. Se reescalan en tu navegador antes de subirse,
-            así que casi nunca vas a toparte con el tope de 3 MB.
+            JPEG, PNG o WebP, hasta 3 MB.
           </p>
         </section>
 
@@ -352,12 +424,13 @@ export function PropertyDetailPanel({
               </option>
             ))}
           </select>
-          <Button size="sm" variant="outline" onClick={() => onEdit(property)}>
+          <Button size="sm" variant="outline" className="max-sm:h-11" onClick={() => onEdit(property)}>
             <Pencil className="h-3.5 w-3.5" /> Editar
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            className="max-sm:h-11"
             onClick={() => void toggleArchived(!archived)}
           >
             {archived ? (
@@ -459,7 +532,7 @@ function PanelHeader({
         type="button"
         onClick={onClose}
         aria-label="Cerrar detalle"
-        className="flex h-9 w-9 items-center justify-center rounded text-text-3 hover:bg-accent hover:text-foreground"
+        className="flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded text-text-3 hover:bg-accent hover:text-foreground"
       >
         <X className="h-4 w-4" strokeWidth={1.7} />
       </button>

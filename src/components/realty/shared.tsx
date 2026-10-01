@@ -76,7 +76,7 @@ export function FilterPill({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex min-h-8 items-center rounded-full border px-2.5 text-xs transition-colors",
+        "flex min-h-8 max-sm:min-h-11 items-center rounded-full border px-2.5 text-xs transition-colors",
         active
           ? "border-brand-soft bg-brand-tint font-semibold text-brand-text"
           : "border-border-strong text-text-2 hover:bg-accent"

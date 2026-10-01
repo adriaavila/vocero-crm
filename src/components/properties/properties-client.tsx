@@ -28,7 +28,7 @@ import { PropertyForm } from "./property-form";
 const PAGE_SIZE = 24;
 
 const SELECT_CLASS =
-  "h-9 min-w-0 rounded-md border border-input bg-card px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  "h-9 max-sm:h-11 min-w-0 rounded-md border border-input bg-card px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 export function PropertiesClient() {
   const [query, setQuery] = useState("");
@@ -132,7 +132,7 @@ export function PropertiesClient() {
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-text-3" />
               <Input
-                placeholder="Buscar por título, zona, ciudad o dirección…"
+                placeholder="Buscar propiedad…"
                 value={query}
                 onChange={(e) => withReset(() => setQuery(e.target.value))}
                 className="w-full pl-8 sm:w-72"
@@ -140,6 +140,7 @@ export function PropertiesClient() {
             </div>
             <Button
               size="sm"
+              className="max-sm:h-11"
               onClick={() => {
                 setEditing(null);
                 setFormOpen(true);
@@ -261,6 +262,7 @@ export function PropertiesClient() {
             <span className="flex items-center gap-2">
               <Button
                 size="sm"
+                className="max-sm:h-11"
                 variant="outline"
                 disabled={(data?.page ?? 1) <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -269,6 +271,7 @@ export function PropertiesClient() {
               </Button>
               <Button
                 size="sm"
+                className="max-sm:h-11"
                 variant="outline"
                 disabled={(data?.page ?? 1) >= pageCount}
                 onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
@@ -334,6 +337,7 @@ function PropertyCard({
   onStatus: (next: PropertyStatus) => void;
   onArchive: () => void;
 }) {
+  const [imgFailed, setImgFailed] = useState(false);
   return (
     <li
       className={cn(
@@ -347,11 +351,12 @@ function PropertyCard({
         className="relative block h-36 w-full text-left"
         aria-label={`Ver ${property.title}`}
       >
-        {property.coverPhotoUrl ? (
+        {property.coverPhotoUrl && !imgFailed ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={property.coverPhotoUrl}
-            alt={property.title}
+            alt=""
+            onError={() => setImgFailed(true)}
             className="h-36 w-full object-cover"
           />
         ) : (
@@ -399,13 +404,13 @@ function PropertyCard({
             ))}
           </select>
           <span className="flex items-center gap-1 text-[11px] text-text-3">
-            {property.photoCount} fotos
+            {property.photoCount} {property.photoCount === 1 ? "foto" : "fotos"}
             <button
               type="button"
               aria-label={property.archivedAt ? "Desarchivar" : "Archivar"}
               title={property.archivedAt ? "Desarchivar" : "Archivar"}
               onClick={onArchive}
-              className="flex h-9 w-9 items-center justify-center rounded text-text-3 hover:bg-accent hover:text-foreground"
+              className="flex h-9 w-9 max-sm:h-11 max-sm:w-11 items-center justify-center rounded text-text-3 hover:bg-accent hover:text-foreground"
             >
               {property.archivedAt ? (
                 <ArchiveRestore className="h-3.5 w-3.5" />
@@ -453,7 +458,7 @@ function EmptyState({
           : "Da de alta tu inventario para que tu agente pueda recomendarlo y mandar fichas por WhatsApp."}
       </p>
       {!filtered && (
-        <Button size="sm" className="mt-1" onClick={onCreate}>
+        <Button size="sm" className="mt-1 max-sm:h-11" onClick={onCreate}>
           <Plus className="h-4 w-4" /> Nueva propiedad
         </Button>
       )}

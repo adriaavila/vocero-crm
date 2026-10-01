@@ -30,7 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiErrorMessage } from "@/components/realty/shared";
 
 const SELECT_CLASS =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+  "flex h-9 max-sm:h-11 w-full rounded-md border border-input bg-card px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 /** Texto → número, o null si el asesor dejó el campo vacío. */
 function toNumber(value: string): number | null {
@@ -99,6 +99,7 @@ export function PropertyForm({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   // Escape cierra, como cualquier hoja modal; el foco arranca en el primer
@@ -121,11 +122,13 @@ export function PropertyForm({
   async function save() {
     const priceValue = toNumber(price);
     if (priceValue === null || priceValue <= 0) {
-      setError("El precio es obligatorio y debe ser mayor que 0");
+      setPriceError("El precio es obligatorio y debe ser mayor que 0");
+      dialogRef.current?.querySelector<HTMLElement>("#prop-price")?.focus();
       return;
     }
     setSaving(true);
     setError(null);
+    setPriceError(null);
 
     const body = {
       operation,
@@ -248,9 +251,20 @@ export function PropertyForm({
               id="prop-price"
               inputMode="decimal"
               value={price}
-              placeholder="135000"
-              onChange={(e) => setPrice(e.target.value)}
+              placeholder="Ej. 135000"
+              aria-invalid={priceError ? true : undefined}
+              aria-describedby={priceError ? "prop-price-error" : undefined}
+              className={priceError ? "border-destructive" : undefined}
+              onChange={(e) => {
+                setPrice(e.target.value);
+                if (priceError) setPriceError(null);
+              }}
             />
+            {priceError && (
+              <p id="prop-price-error" className="text-xs text-destructive">
+                {priceError}
+              </p>
+            )}
           </Field>
 
           <Field label="Moneda" htmlFor="prop-currency">
@@ -281,7 +295,7 @@ export function PropertyForm({
             <Input
               id="prop-neighborhood"
               value={neighborhood}
-              placeholder="Equipetrol"
+              placeholder="Ej. Equipetrol"
               onChange={(e) => setNeighborhood(e.target.value)}
             />
           </Field>
@@ -290,7 +304,7 @@ export function PropertyForm({
             <Input
               id="prop-city"
               value={city}
-              placeholder="Santa Cruz"
+              placeholder="Ej. Santa Cruz"
               onChange={(e) => setCity(e.target.value)}
             />
           </Field>
@@ -317,7 +331,7 @@ export function PropertyForm({
               id="prop-bathrooms"
               inputMode="decimal"
               value={bathrooms}
-              placeholder="1.5"
+              placeholder="Ej. 1.5"
               onChange={(e) => setBathrooms(e.target.value)}
             />
           </Field>
@@ -377,11 +391,11 @@ export function PropertyForm({
 
         {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>
+        <div className="max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:-mx-5 max-sm:-mb-5 max-sm:rounded-b-lg max-sm:border-t max-sm:bg-card max-sm:px-5 max-sm:py-3 mt-4 flex justify-end gap-2">
+          <Button variant="ghost" className="max-sm:h-11" onClick={onClose}>
             Cancelar
           </Button>
-          <Button disabled={saving} onClick={() => void save()}>
+          <Button className="max-sm:h-11" disabled={saving} onClick={() => void save()}>
             {saving ? "Guardando…" : "Guardar"}
           </Button>
         </div>
