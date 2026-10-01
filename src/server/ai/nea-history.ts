@@ -235,6 +235,37 @@ async function fetchJoined(
 }
 
 /**
+ * El WHERE de `history` (últimos 20 desde `memory_reset_at`, sin outbound
+ * `failed` ni reservas vivas) — compartido por `buildHistoryAndPending` (un
+ * turno normal) y `buildFollowupHistory` (un seguimiento automático,
+ * `server/ai/followup.ts`): los dos necesitan EXACTAMENTE el mismo historial,
+ * solo que un seguimiento nunca tiene conjunto pendiente propio.
+ *
+ * Un entrante nunca se excluye por status — en particular jamás un `pending`
+ * (`sendText` inserta la fila del dueño/agente como `pending` ANTES de llamar
+ * a Graph; excluirlo borraría del historial un mensaje que el cliente ya
+ * recibió).
+ */
+async function fetchHistoryRows(
+  db: Db,
+  organizationId: string,
+  conversationId: string
+): Promise<JoinedRow[]> {
+  const sinceExpr = memoryResetAtExpr(conversationId);
+  return fetchJoined(
+    db,
+    organizationId,
+    conversationId,
+    and(
+      gt(schema.message.createdAt, sinceExpr),
+      not(and(eq(schema.message.direction, "out"), eq(schema.message.status, "failed"))!),
+      excludingLiveReservations()
+    )!,
+    HISTORY_LIMIT
+  );
+}
+
+/**
  * Arma `history` (últimos 20 desde `memory_reset_at`, sin los outbound
  * `failed`, con todo pendiente incluido aunque caiga fuera de esos 20) y el
  * conjunto pendiente (hasta 10 entrantes después del corte — los 10 MÁS
@@ -256,10 +287,8 @@ export async function buildHistoryAndPending(input: {
 }): Promise<{ history: NeaHistoryItem[]; pendingIds: string[] } | null> {
   const db = getDb();
   const { organizationId, conversationId, now } = input;
-  const notLiveReservation = excludingLiveReservations();
 
   const cutoffExpr = pendingCutoffExpr(db, organizationId, conversationId, now);
-  const sinceExpr = memoryResetAtExpr(conversationId);
 
   const pendingRows = await fetchJoined(
     db,
@@ -274,22 +303,7 @@ export async function buildHistoryAndPending(input: {
   const pendingIds = pendingRows.map((r) => r.message.id);
   const pendingIdSet = new Set(pendingIds);
 
-  // Se excluye un SALIENTE `failed` y una reserva viva sin wamid — ninguno es
-  // todavía un hecho consumado. Un entrante nunca se excluye por status — en
-  // particular jamás un `pending` (`sendText` inserta la fila del dueño/
-  // agente como `pending` ANTES de llamar a Graph; excluirlo borraría del
-  // historial un mensaje que el cliente ya recibió).
-  const historyRows = await fetchJoined(
-    db,
-    organizationId,
-    conversationId,
-    and(
-      gt(schema.message.createdAt, sinceExpr),
-      not(and(eq(schema.message.direction, "out"), eq(schema.message.status, "failed"))!),
-      notLiveReservation
-    )!,
-    HISTORY_LIMIT
-  );
+  const historyRows = await fetchHistoryRows(db, organizationId, conversationId);
 
   const presentIds = new Set(historyRows.map((r) => r.message.id));
   const merged = [...historyRows];
@@ -303,3 +317,25 @@ export async function buildHistoryAndPending(input: {
     pendingIds,
   };
 }
+
+/**
+ * Historial para un seguimiento automático (dispatch v2, `followup: true`,
+ * `server/ai/followup.ts`): el MISMO historial que un turno normal (últimos
+ * 20 desde `memory_reset_at`, sin outbound `failed` ni reservas vivas) pero
+ * SIN conjunto pendiente propio — un seguimiento no contesta ningún mensaje
+ * del lead, así que cada item va `pending:false` y, a diferencia de
+ * `buildHistoryAndPending`, nunca hay un "no hay nada pendiente" que
+ * devolver como `null`: si los demás gates lo permiten, siempre se despacha.
+ * Sin `now`: a diferencia del conjunto pendiente, este historial no depende
+ * de la hora actual, solo de `memory_reset_at` (leído fresco en SQL).
+ */
+export async function buildFollowupHistory(input: {
+  organizationId: string;
+  conversationId: string;
+}): Promise<{ history: NeaHistoryItem[] }> {
+  const db = getDb();
+  const rows = await fetchHistoryRows(db, input.organizationId, input.conversationId);
+  return { history: rows.map((row) => toHistoryItem(row, EMPTY_PENDING_SET)) };
+}
+
+const EMPTY_PENDING_SET = new Set<string>();

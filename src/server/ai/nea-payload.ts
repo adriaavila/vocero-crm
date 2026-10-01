@@ -2,7 +2,7 @@ import { buildBotContext } from "@/server/bot/context";
 import { buildBotProfile } from "@/server/bot/profile";
 import { getOffers } from "@/server/agenda/offers";
 import { getNeaLlmCredential } from "@/server/ai/credentials";
-import { buildHistoryAndPending } from "@/server/ai/nea-history";
+import { buildFollowupHistory, buildHistoryAndPending } from "@/server/ai/nea-history";
 import {
   buildNeaPayload,
   type NeaDispatchPayloadV2,
@@ -46,6 +46,12 @@ export type NeaTurnSnapshot = {
  * NO recibe `memoryResetAt`/`agentCursorAt`: se leen frescos en SQL dentro de
  * `buildHistoryAndPending` en cada llamada — nunca a través de un valor que
  * el llamador pudo haber leído hace uno o varios intentos.
+ *
+ * `followup: true` (seguimiento automático, `server/ai/followup.ts`): usa
+ * `buildFollowupHistory` en vez de `buildHistoryAndPending` (mismo historial,
+ * sin conjunto pendiente propio — nunca `null` por "nada pendiente"),
+ * congela `messages` en `[]` sin importar lo que traiga `v1Messages`, y
+ * marca `followup: true` en el payload — ver el contrato en `followup.ts`.
  */
 export async function buildNeaTurnSnapshot(input: {
   organizationId: string;
@@ -55,13 +61,22 @@ export async function buildNeaTurnSnapshot(input: {
   attempt: number;
   contact: { identity: string; name: string };
   v1Messages: NeaSourceMessage[];
+  followup?: boolean;
 }): Promise<NeaTurnSnapshot | null> {
   const now = new Date();
-  const historyResult = await buildHistoryAndPending({
-    organizationId: input.organizationId,
-    conversationId: input.conversationId,
-    now,
-  });
+  const historyResult = input.followup
+    ? {
+        ...(await buildFollowupHistory({
+          organizationId: input.organizationId,
+          conversationId: input.conversationId,
+        })),
+        pendingIds: [] as string[],
+      }
+    : await buildHistoryAndPending({
+        organizationId: input.organizationId,
+        conversationId: input.conversationId,
+        now,
+      });
   if (!historyResult) return null; // nada pendiente: no se despacha.
 
   const [context, profile, offersRaw, llmCredential] = await Promise.all([
@@ -84,7 +99,9 @@ export async function buildNeaTurnSnapshot(input: {
     conversationId: input.conversationId,
     isTest: input.isTest,
     contact: input.contact,
-    messages: input.v1Messages,
+    // `messages` (v1 CONGELADO) siempre vacío en un seguimiento — nunca
+    // contesta un mensaje del lead, así que no hay nada v1 que mandarle.
+    messages: input.followup ? [] : input.v1Messages,
   });
 
   const payload: NeaDispatchPayloadV2 = {
@@ -100,6 +117,9 @@ export async function buildNeaTurnSnapshot(input: {
     llm: llmCredential
       ? { provider: llmCredential.provider, model: llmCredential.model, apiKey: llmCredential.apiKey }
       : null,
+    // Ausente (no `false`) fuera de un seguimiento — ver el comentario del
+    // campo en `nea-dispatch.ts`.
+    ...(input.followup ? { followup: true as const } : {}),
   };
 
   return {

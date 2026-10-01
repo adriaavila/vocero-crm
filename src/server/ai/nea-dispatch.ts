@@ -98,6 +98,12 @@ export type NeaDispatchPayloadV2 = NeaDispatchPayload & {
   offers: NeaOffer[];
   /** null salvo que la organización tenga SU PROPIA clave — nunca la de plataforma. */
   llm: NeaLlm;
+  /**
+   * Seguimiento automático (`server/ai/followup.ts`): el CRM detectó que el
+   * agente habló y el lead quedó en silencio. Ausente (nunca `false`) en un
+   * turno normal — Nea nunca hace handoff en un despacho de seguimiento.
+   */
+  followup?: boolean;
 };
 
 export type NeaResponseBody = {
