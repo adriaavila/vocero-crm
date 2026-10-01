@@ -25,6 +25,8 @@ const RESERVED_SUBDOMAINS = new Set([
   "mail",
   "docs",
   "blog",
+  "deploy-hooks",
+  "medidor",
 ]);
 
 /**
@@ -151,6 +153,52 @@ export function isKnownAllokHost(
   if (!normalizedHost.endsWith(suffix)) return false;
   const prefix = normalizedHost.slice(0, -suffix.length);
   return !prefix.includes(".") && (isReservedSubdomain(prefix) || Boolean(tenantSlugFromHost(normalizedHost, normalizedRoot)));
+}
+
+/**
+ * Origen del navegador que Better Auth debe aceptar en el SaaS. Sin esto solo
+ * `APP_BASE_URL` pasa el chequeo de origen y el login falla con
+ * `INVALID_ORIGIN` en `<negocio>.<raíz>`, en el host de alta y en admin.
+ * Solo hosts propios del despliegue: app, admin, legado y negocios; nunca la
+ * raíz, `www` ni otros subdominios reservados.
+ */
+export function trustedSaaSOrigin(
+  origin: string | null | undefined,
+  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+): string | null {
+  if (!origin) return null;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return null;
+  }
+  const host = cleanHost(url.hostname);
+  const local = host === "localhost" || host.endsWith(".localhost");
+  if (url.protocol !== "https:" && !(local && url.protocol === "http:")) return null;
+  const known =
+    isSaaSAppHost(host, rootDomain) ||
+    isSaaSAdminHost(host, rootDomain) ||
+    isLegacyAppHost(host, rootDomain) ||
+    Boolean(tenantSlugFromHost(host, rootDomain));
+  return known ? url.origin : null;
+}
+
+/**
+ * The Origin to trust for one auth request: a known SaaS origin AND the same
+ * host the request was sent to. Every real flow is same-origin (the auth client
+ * has no baseURL), so a sibling subdomain this app doesn't serve, another port
+ * or a loopback origin never passes.
+ */
+export function trustedOriginForRequest(
+  origin: string | null | undefined,
+  requestHost: string | null | undefined,
+  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+): string | null {
+  const trusted = trustedSaaSOrigin(origin, rootDomain);
+  const host = requestHost?.split(",")[0]?.trim().toLowerCase().replace(/\.(?=:|$)/, "");
+  if (!trusted || !host) return null;
+  return new URL(trusted).host === host ? trusted : null;
 }
 
 export function tenantSlugFromHost(

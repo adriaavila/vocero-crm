@@ -20,6 +20,7 @@ import {
   saasAppHost,
   SIGNUP_HOST_HINT,
   tenantSlugFromHost,
+  trustedOriginForRequest,
 } from "@/lib/tenant-host";
 
 /**
@@ -70,6 +71,16 @@ function createAuth() {
   return betterAuth({
     baseURL: env.APP_BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
+    // En el SaaS el login ocurre en cada `<negocio>.<raíz>`, en el host de
+    // alta y en admin, no solo en APP_BASE_URL.
+    trustedOrigins: (request?: Request): string[] => {
+      if (!isAllokSaaSMode()) return [];
+      const origin = trustedOriginForRequest(
+        request?.headers.get("origin"),
+        request?.headers.get("x-forwarded-host") ?? request?.headers.get("host"),
+      );
+      return origin ? [origin] : [];
+    },
     advanced: {
       // The SaaS app host and negocio.allok.fun must share the same session,
       // but legacy deployments keep host-only cookies exactly as before.
