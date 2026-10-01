@@ -1354,7 +1354,7 @@ export const property = pgTable(
     lotArea: numeric("lot_area", { precision: 10, scale: 2 }),
     parking: integer("parking"),
     amenities: jsonb("amenities").$type<string[]>().notNull().default([]),
-    /** Formas de pago que acepta (Infonavit exige avalúo y papeleo propio). */
+    /** Formas de pago que acepta (un crédito exige avalúo y papeleo propio). */
     acceptedPayments: jsonb("accepted_payments")
       .$type<string[]>()
       .notNull()
@@ -1473,8 +1473,6 @@ export const requirement = pgTable(
         "contado",
         "credito_bancario",
         "credito_vis",
-        "infonavit",
-        "fovissste",
         "otro",
       ],
     }),

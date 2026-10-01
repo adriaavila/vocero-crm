@@ -143,26 +143,26 @@ describe("scoreProperty — amenidades y forma de pago", () => {
     expect(reasons[0]?.label).toBe("1 de 2 amenidades");
   });
 
-  it("Infonavit contra una propiedad que no lo acepta puntúa cero", () => {
+  it("Crédito de vivienda social contra una propiedad que no lo acepta puntúa cero", () => {
     const { score, reasons } = scoreProperty(
-      { paymentMethod: "infonavit" },
+      { paymentMethod: "credito_vis" },
       prop({ acceptedPayments: ["contado", "credito_bancario"] })
     );
     expect(score).toBe(0);
-    expect(reasons[0]?.label).toBe("No acepta Infonavit");
+    expect(reasons[0]?.label).toBe("No acepta Crédito de vivienda social");
   });
 
-  it("Infonavit contra una propiedad que sí lo acepta puntúa completo", () => {
+  it("Crédito de vivienda social contra una propiedad que sí lo acepta puntúa completo", () => {
     const { reasons } = scoreProperty(
-      { paymentMethod: "infonavit" },
-      prop({ acceptedPayments: ["infonavit"] })
+      { paymentMethod: "credito_vis" },
+      prop({ acceptedPayments: ["credito_vis"] })
     );
-    expect(reasons[0]).toMatchObject({ fit: "full", label: "Acepta Infonavit" });
+    expect(reasons[0]).toMatchObject({ fit: "full", label: "Acepta Crédito de vivienda social" });
   });
 
   it("si la propiedad no declara formas de pago, el criterio no aplica", () => {
     // No hay información: castigar escondería inventario válido.
-    const { score, reasons } = scoreProperty({ paymentMethod: "infonavit" }, prop());
+    const { score, reasons } = scoreProperty({ paymentMethod: "credito_vis" }, prop());
     expect(score).toBe(50);
     expect(reasons).toHaveLength(0);
   });

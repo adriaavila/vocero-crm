@@ -68,17 +68,11 @@ export type Amenity = (typeof AMENITIES)[number];
 /**
  * Forma de pago. Decide si un prospecto es viable: un comprador de contado y
  * uno con crédito de vivienda social no compiten por el mismo inventario.
- *
- * `infonavit` y `fovissste` son mexicanos y siguen en el catálogo por si una
- * instancia dedicada a México los necesita; no se ofrecen por defecto en
- * mercados donde no existen (la UI no los oculta condicionalmente en parte 1).
  */
 export const PAYMENT_METHODS = [
   "contado",
   "credito_bancario",
   "credito_vis",
-  "infonavit",
-  "fovissste",
   "otro",
 ] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -148,8 +142,6 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   contado: "Contado",
   credito_bancario: "Crédito bancario",
   credito_vis: "Crédito de vivienda social",
-  infonavit: "Infonavit",
-  fovissste: "Fovissste",
   otro: "Otro",
 };
 
