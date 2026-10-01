@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgTable,
   text,
   timestamp,
@@ -1285,5 +1286,325 @@ export const adSpend = pgTable(
   (t) => [
     index("ad_spend_org_period_idx").on(t.organizationId, t.periodStart),
     check("ad_spend_amount_cents_ck", sql`${t.amountCents} >= 0`),
+  ]
+);
+
+/* ============================================================
+ * Vertical inmobiliario — parte 1 (flag, catálogo, fotos)
+ *
+ * Activo SOLO para organizaciones con `organization.metadata.vertical ===
+ * "inmobiliario"` (`server/agencia/vertical.ts`). Mismo patrón que 015/016
+ * (ADR-001): las tablas existen SIEMPRE — vacías son inertes — y lo que
+ * decide si el vertical EXISTE para el usuario es la bandera por
+ * organización, no una rama aparte. `organization_id` NOT NULL, FK con
+ * cascade e índice org-first, como el resto del dominio; toda query pasa por
+ * `scoped()`.
+ *
+ * Los valores de cada enum viven, como texto, EN ESTE ARCHIVO (nunca se
+ * importa `lib/realty/catalog.ts` aquí, para no romper la regla de que
+ * `schema.ts` no depende de nada propio): ese módulo es la fuente de verdad
+ * legible (labels, formato, validadores Zod) y debe leerse igual a esta
+ * lista. Portado y adaptado de `vocero-inmobiliario-main` (spec 003): a
+ * diferencia de ese fork, aquí las fotos NO viven en Postgres (ver
+ * `server/storage/`) y las visitas son la `booking` de allok con
+ * `booking_property` al lado, no una tabla `viewing` propia.
+ * ============================================================ */
+
+/**
+ * Contador de versión del inventario POR organización. Cualquier escritura
+ * sobre `property` lo incrementa (`bumpCatalogVersion`), y eso invalida la
+ * caché de matches de TODOS los leads sin recorrerlos: una propiedad nueva
+ * aparece de inmediato en los paneles (parte 2).
+ */
+export const orgCatalogVersion = pgTable("org_catalog_version", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  version: integer("version").notNull().default(0),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const property = pgTable(
+  "property",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    operation: text("operation", {
+      enum: ["renta", "venta", "anticretico"],
+    }).notNull(),
+    kind: text("kind", {
+      enum: ["casa", "departamento", "local", "terreno", "oficina", "bodega"],
+    }).notNull(),
+    /** Si falta, se deriva `<Tipo> en <ciudad>` (`derivedTitle`): nunca vacío. */
+    title: text("title"),
+    price: numeric("price", { precision: 14, scale: 2 }).notNull(),
+    currency: text("currency", { enum: ["USD", "BOB", "MXN"] })
+      .notNull()
+      .default("USD"),
+    address: text("address"),
+    /** Colonia: campo de PRIMER nivel — es la unidad de zona que puntúa. */
+    neighborhood: text("neighborhood"),
+    city: text("city"),
+    bedrooms: integer("bedrooms"),
+    /** Admite medios baños (`1.5`), reales en el mercado. */
+    bathrooms: numeric("bathrooms", { precision: 3, scale: 1 }),
+    builtArea: numeric("built_area", { precision: 10, scale: 2 }),
+    lotArea: numeric("lot_area", { precision: 10, scale: 2 }),
+    parking: integer("parking"),
+    amenities: jsonb("amenities").$type<string[]>().notNull().default([]),
+    /** Formas de pago que acepta (un crédito exige avalúo y papeleo propio). */
+    acceptedPayments: jsonb("accepted_payments")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    /** Eje A — estatus COMERCIAL. Transiciones libres. */
+    status: text("status", { enum: ["disponible", "apartada", "cerrada"] })
+      .notNull()
+      .default("disponible"),
+    description: text("description"),
+    /**
+     * Eje B — visibilidad (soft-delete reversible), ORTOGONAL al estatus:
+     * archivar no toca `status` y desarchivar lo devuelve tal como estaba.
+     * No existe borrado duro.
+     */
+    archivedAt: timestamp("archived_at"),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("property_org_visible_idx").on(
+      t.organizationId,
+      t.archivedAt,
+      t.status
+    ),
+    index("property_org_operation_price_idx").on(
+      t.organizationId,
+      t.operation,
+      t.price
+    ),
+    index("property_org_created_idx").on(t.organizationId, t.createdAt),
+  ]
+);
+
+/**
+ * Fotos de propiedades. Constitución II (1.4.0): el binario vive en el
+ * conector opcional de almacenamiento (`server/storage/`, Cloudflare R2 del
+ * OPERADOR del despliegue) con un camino sin dependencia externa (disco local
+ * bajo `MEDIA_DIR`) cuando ese conector no está configurado — ver la
+ * enmienda de `.specify/memory/constitution.md`. Esta tabla solo guarda la
+ * llave (`storage_key`) y los metadatos; nunca el binario.
+ *
+ * La PORTADA es la foto en posición 0. No hay bandera "es portada": una sola
+ * fuente de verdad hace imposible tener dos portadas o ninguna.
+ */
+export const propertyPhoto = pgTable(
+  "property_photo",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    propertyId: text("property_id")
+      .notNull()
+      .references(() => property.id, { onDelete: "cascade" }),
+    /** `0..n-1` sin huecos. La posición 0 ES la portada. */
+    position: integer("position").notNull(),
+    /** Llave dentro del bucket/`MEDIA_DIR`: `org/<orgId>/properties/<propertyId>/<photoId>.<ext>`. */
+    storageKey: text("storage_key").notNull(),
+    mime: text("mime", {
+      enum: ["image/jpeg", "image/png", "image/webp"],
+    }).notNull(),
+    byteSize: integer("byte_size").notNull(),
+    /** Dimensiones reales del archivo guardado; null si no se pudieron leer. */
+    width: integer("width"),
+    height: integer("height"),
+    /** Media id de Graph, cacheado para no resubir la foto en cada envío (parte 2). */
+    waMediaId: text("wa_media_id"),
+    waMediaExpiresAt: timestamp("wa_media_expires_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("photo_property_position_uq").on(t.propertyId, t.position),
+    index("photo_org_property_idx").on(t.organizationId, t.propertyId),
+  ]
+);
+
+/** Qué busca un lead. 1:1 con `lead`, igual que `lead` es 1:1 con `contact`. */
+export const requirement = pgTable(
+  "requirement",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    leadId: text("lead_id")
+      .notNull()
+      .references(() => lead.id, { onDelete: "cascade" }),
+    operation: text("operation", {
+      enum: ["renta", "venta", "anticretico"],
+    }),
+    budgetMin: numeric("budget_min", { precision: 14, scale: 2 }),
+    budgetMax: numeric("budget_max", { precision: 14, scale: 2 }),
+    currency: text("currency", { enum: ["USD", "BOB", "MXN"] })
+      .notNull()
+      .default("USD"),
+    /**
+     * Lista de zonas ("Del Valle", "Narvarte"). `jsonb`, no `text`: el
+     * contrato de Nea (parte 2, `/api/bot/realty/*`) manda `zones: string[]`
+     * directo — `lib/realty/catalog.ts#parseZones` normaliza esto o una
+     * cadena "Del Valle, Narvarte" a la misma forma para quien la escriba
+     * como texto libre.
+     */
+    zones: jsonb("zones").$type<string[]>().notNull().default([]),
+    kind: text("kind", {
+      enum: ["casa", "departamento", "local", "terreno", "oficina", "bodega"],
+    }),
+    minBedrooms: integer("min_bedrooms"),
+    minBathrooms: numeric("min_bathrooms", { precision: 3, scale: 1 }),
+    amenities: jsonb("amenities").$type<string[]>().notNull().default([]),
+    /** En LATAM decide la viabilidad del prospecto, no es un extra. */
+    paymentMethod: text("payment_method", {
+      enum: [
+        "contado",
+        "credito_bancario",
+        "credito_vis",
+        "otro",
+      ],
+    }),
+    needsGuarantor: boolean("needs_guarantor"),
+    urgency: text("urgency", { enum: ["alta", "media", "baja"] }),
+    notes: text("notes"),
+    /**
+     * Campos fijados a mano por un asesor: la extracción del agente NO los
+     * pisa. Sin esto, la IA sobrescribe correcciones humanas.
+     */
+    manualFields: jsonb("manual_fields").$type<string[]>().notNull().default([]),
+    /** Sube solo si algún campo cambió de verdad (invalida la caché). */
+    version: integer("version").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("requirement_lead_uq").on(t.leadId),
+    index("requirement_org_updated_idx").on(t.organizationId, t.updatedAt),
+  ]
+);
+
+/**
+ * Caché del cruce lead↔propiedad con sus razones (parte 2). El `score` es
+ * SIEMPRE el determinista (`server/realty/matching.ts`, auditable); la IA
+ * solo añade `aiExplanation`.
+ *
+ * Válida únicamente si `requirementVersion` Y `catalogVersion` coinciden con
+ * los actuales — así una propiedad nueva invalida sin esperar al lead.
+ */
+export const propertyMatch = pgTable(
+  "property_match",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    leadId: text("lead_id")
+      .notNull()
+      .references(() => lead.id, { onDelete: "cascade" }),
+    propertyId: text("property_id")
+      .notNull()
+      .references(() => property.id, { onDelete: "cascade" }),
+    score: integer("score").notNull(),
+    reasons: jsonb("reasons").notNull(),
+    aiExplanation: text("ai_explanation"),
+    requirementVersion: integer("requirement_version").notNull(),
+    catalogVersion: integer("catalog_version").notNull(),
+    computedAt: timestamp("computed_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("match_lead_property_uq").on(t.leadId, t.propertyId),
+    index("match_org_lead_score_idx").on(t.organizationId, t.leadId, t.score),
+    index("match_org_property_score_idx").on(
+      t.organizationId,
+      t.propertyId,
+      t.score
+    ),
+    check(
+      "property_match_score_ck",
+      sql`${t.score} >= 0 AND ${t.score} <= 100`
+    ),
+  ]
+);
+
+/**
+ * Extensión lateral de UNA `booking` de allok cuando es la visita a una
+ * propiedad (parte 2). `booking_id` ES la clave primaria (no hay `id`
+ * propio): es 1:1 con la cita, nunca una entidad aparte — igual que
+ * `org_catalog_version` usa `organization_id` como PK.
+ *
+ * `restrict` en `property_id`: una propiedad con visitas no se borra (solo
+ * se archiva, `property.archived_at`).
+ */
+export const bookingProperty = pgTable(
+  "booking_property",
+  {
+    bookingId: text("booking_id")
+      .primaryKey()
+      .references(() => booking.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    propertyId: text("property_id")
+      .notNull()
+      .references(() => property.id, { onDelete: "restrict" }),
+    /** El feedback de la muestra es el dato más valioso del proceso. */
+    outcome: text("outcome", {
+      enum: ["interesado", "no_interesado", "quiere_negociar", "sin_definir"],
+    }),
+    /** Sello de idempotencia: exactamente un recordatorio por visita. */
+    reminderSentAt: timestamp("reminder_sent_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("booking_property_org_property_idx").on(
+      t.organizationId,
+      t.propertyId
+    ),
+  ]
+);
+
+/**
+ * El foco inmobiliario de UNA conversación (parte 2: qué propiedad está
+ * mostrando el agente ahora mismo). `conversation_id` ES la clave primaria:
+ * a lo más una propiedad enfocada por conversación. `set null` en
+ * `property_id`: borrar o archivar la propiedad no debe borrar la
+ * conversación, solo le apaga el foco.
+ *
+ * Antes vivía como columna en `conversation` (fork inmobiliario); en este
+ * repo `conversation` es una tabla de upstream y el CLAUDE.md del fork
+ * prohíbe agregarle columnas propias — de ahí la tabla lateral.
+ */
+export const conversationProperty = pgTable(
+  "conversation_property",
+  {
+    conversationId: text("conversation_id")
+      .primaryKey()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    propertyId: text("property_id").references(() => property.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("conversation_property_org_property_idx").on(
+      t.organizationId,
+      t.propertyId
+    ),
   ]
 );

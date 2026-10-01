@@ -101,6 +101,23 @@ const envSchema = z.object({
     .default(0),
   // 008: volumen local de adjuntos (constitución II: sin S3/R2).
   MEDIA_DIR: z.string().default("./.dev-media"),
+  // Vertical inmobiliario (parte 1): con qué vertical nace cada organización
+  // NUEVA de esta instancia (organization.metadata.vertical). Sin ella (el
+  // caso de allok), ninguna: el CRM se comporta exactamente como siempre.
+  // Único valor soportado hoy: DEFAULT_VERTICAL=inmobiliario (Rei CRM).
+  DEFAULT_VERTICAL: z.string().optional(),
+  // Fotos de propiedades: conector opcional de almacenamiento de objetos
+  // (Cloudflare R2, S3-compatible) del OPERADOR del despliegue — no de cada
+  // negocio (ver la enmienda de constitution.md, Principio VIII). Sin las 5
+  // variables, cae al camino sin dependencia externa: disco local bajo
+  // MEDIA_DIR (misma constitución II).
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  // Dominio público de lectura del bucket (para que WhatsApp/Meta descargue
+  // la portada por URL). P. ej.: https://fotos.reiprop.tech
+  R2_PUBLIC_BASE_URL: z.string().url().optional(),
   NODE_ENV: z.string().default("development"),
 });
 
@@ -220,6 +237,21 @@ export function isEmbeddedSignupConfigured(): boolean {
 
 export function isEmbeddedSignupCloudApiConfigured(): boolean {
   return Boolean(process.env.META_ES_CONFIG_ID_CLOUD_API?.trim());
+}
+
+/**
+ * true si el conector de fotos (R2) tiene sus 5 variables. Leída de
+ * `process.env` directo, como `isWahaConfigured()`: el storage adapter debe
+ * poder decidir su camino sin depender de que TODO el entorno valide.
+ */
+export function isR2Configured(): boolean {
+  return Boolean(
+    process.env.R2_ACCOUNT_ID?.trim() &&
+      process.env.R2_ACCESS_KEY_ID?.trim() &&
+      process.env.R2_SECRET_ACCESS_KEY?.trim() &&
+      process.env.R2_BUCKET?.trim() &&
+      process.env.R2_PUBLIC_BASE_URL?.trim()
+  );
 }
 
 export function calendarTimeZone(): string {

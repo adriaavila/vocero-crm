@@ -160,7 +160,11 @@ Ver [.specify/memory/constitution.md](.specify/memory/constitution.md).
   ADR-001), aislado tras adaptador con contrato público, con camino sin
   dependencia externa y degradación definida (su fallo jamás bloquea la
   operación core), credenciales del negocio cifradas, y CI que lo prueba
-  apagado y encendido. Auth y BD self-hosted.
+  apagado y encendido. Auth y BD self-hosted. Excepción acotada (VIII, 1.5.0):
+  un **módulo vertical** opcional por organización puede traer infraestructura
+  del OPERADOR (no de cada negocio) cuando la necesita — así las fotos del
+  vertical inmobiliario en un bucket R2 del operador, con disco local bajo
+  `MEDIA_DIR` cuando no está configurado.
 - **Seguridad (I)**: secretos cifrados en reposo (AES-256-GCM, `lib/crypto`);
   jamás al cliente ni a logs. El token de WhatsApp solo muestra sus últimos 4.
 - **Multi-tenancy (III)**: `organization_id` NOT NULL en toda tabla de dominio;

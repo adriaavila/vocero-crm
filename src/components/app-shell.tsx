@@ -32,6 +32,7 @@ export function AppShell({
   theme,
   commit,
   agenda = false,
+  realty = false,
   saasMode = false,
   saasPlan = null,
   systemState = null,
@@ -45,6 +46,8 @@ export function AppShell({
   commit?: string;
   /** 015 — ¿esta instancia tiene agenda? Lo decide el servidor. */
   agenda?: boolean;
+  /** Vertical inmobiliario (parte 1) — ¿esta ORGANIZACIÓN lo tiene activo? */
+  realty?: boolean;
   /** La navegación Allok reduce el CRM a las cuatro acciones principales. */
   saasMode?: boolean;
   saasPlan?: SaaSPlan | null;
@@ -77,15 +80,17 @@ export function AppShell({
         ? "Conversaciones"
         : pathname.startsWith("/pipeline")
           ? "Ventas"
-          : pathname.startsWith("/bookings")
-            ? "Agenda"
-            : pathname.startsWith("/settings")
-              ? "Configuración"
-              : pathname.startsWith("/lab")
-                ? "Probar allok"
-                : pathname.startsWith("/agent")
-                  ? "Tu agente"
-                  : "allok";
+          : pathname.startsWith("/properties")
+            ? "Propiedades"
+            : pathname.startsWith("/bookings")
+              ? "Agenda"
+              : pathname.startsWith("/settings")
+                ? "Configuración"
+                : pathname.startsWith("/lab")
+                  ? "Probar allok"
+                  : pathname.startsWith("/agent")
+                    ? "Tu agente"
+                    : "allok";
 
   const shell = (
     <div className="flex h-dvh overflow-hidden bg-background">
@@ -111,6 +116,7 @@ export function AppShell({
         role={role}
         theme={theme}
         agenda={agenda}
+        realty={realty}
         saasMode={saasMode}
         allokBrand={Boolean(systemState)}
         saasPlan={saasPlan}

@@ -8,6 +8,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@/lib/db/schema";
 import { seedDemo, isDomainEmpty } from "@/server/seed/demo";
+import { seedRealtyDemo } from "@/server/seed/realty-demo";
+import { defaultVerticalFromEnv, setOrgVertical } from "@/server/agencia/vertical";
 
 function loadEnvVar(name: string): string | undefined {
   if (process.env[name]) return process.env[name];
@@ -48,9 +50,18 @@ if (!force && !(await isDomainEmpty(db, org.id))) {
   process.exit(1);
 }
 
-const result = await seedDemo(db, org.id);
-console.log(
-  `[seed] Ferretería El Martillo cargada: ${result.contacts} contactos, ${result.kbEntries} entradas de KB, 1 corrida de ejemplo`
-);
+const vertical = defaultVerticalFromEnv();
+if (vertical === "inmobiliario") {
+  await setOrgVertical(org.id, vertical);
+  const result = await seedRealtyDemo(db, org.id);
+  console.log(
+    `[seed] Inmobiliaria Cordillera cargada: ${result.properties} propiedades`
+  );
+} else {
+  const result = await seedDemo(db, org.id);
+  console.log(
+    `[seed] Ferretería El Martillo cargada: ${result.contacts} contactos, ${result.kbEntries} entradas de KB, 1 corrida de ejemplo`
+  );
+}
 await sql.end();
 process.exit(0);

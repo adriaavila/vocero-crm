@@ -1,6 +1,68 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Versión: 1.4.0 → 1.5.0 (2026-09-29)
+
+Cambios:
+  - Principio VIII "Foco Vertical" → EXPANDIDO: admite módulos verticales
+    OPCIONALES POR ORGANIZACIÓN (`organization.metadata.vertical`), nunca de
+    instancia completa, mientras sigan sirviendo exactamente "atender,
+    organizar y convertir conversaciones de WhatsApp de UN negocio" para
+    quien los activa. Primer caso: el vertical inmobiliario (catálogo de
+    propiedades y su matching).
+  - Principio II "Soberanía" → nota de alcance, sin tocar sus cinco
+    condiciones de conector opcional (pensadas para credenciales POR
+    NEGOCIO, tipo Zoom/Google): un módulo vertical puede traer
+    infraestructura del OPERADOR del despliegue —no de cada negocio— cuando
+    el vertical la exige, igual que la base de datos ya es del operador,
+    mientras cada objeto quede aislado por `organization_id` (Principio I) y
+    exista un camino sin esa dependencia externa. Caso de uso: las fotos del
+    vertical inmobiliario viven en un bucket Cloudflare R2 del operador
+    (`server/storage/r2.ts`); sin sus 5 variables de entorno cae a disco
+    local bajo `MEDIA_DIR`, el mismo camino que ya usan los adjuntos de
+    WhatsApp.
+  - Principios I, III, IV, V, VI, VII y IX: íntegros (sin cambio).
+  - Governance: sin cambio.
+
+Bump: MINOR (1.4.0 → 1.5.0) — expansión material de un principio; una
+instancia sin `DEFAULT_VERTICAL` (el caso de allok) sigue cumpliendo
+exactamente la promesa vigente: ningún vertical aparece si nadie lo activa.
+
+Motivación:
+  Portar el vertical inmobiliario del fork `vocero-inmobiliario-main` (Rei
+  CRM, `reiprop.tech`) a este repo como módulo POR ORGANIZACIÓN, para que una
+  sola imagen sirva tanto a allok (WhatsApp genérico) como a agencias
+  inmobiliarias, sin bifurcar el producto ni la cadena de migraciones — mismo
+  argumento que ADR-001 ya probó para los canales opcionales. El catálogo de
+  propiedades es justo lo que Vocero ya hace (organizar lo que un negocio
+  vende, convertir sus conversaciones) para un vertical concreto, no una
+  plataforma de marketing ni un constructor genérico: cabe en el Principio
+  VIII con la condición de que sea opt-in por negocio. Las fotos, en cambio,
+  no encajaban en la forma del conector opcional del Principio II: el dueño
+  de Rei CRM decidió un bucket compartido para sus agencias, como ya lo es la
+  base de datos — de ahí la nota de alcance en vez de forzar el vertical
+  dentro de un molde que no es el suyo.
+  Ratificada por escrito (2026-09-29) como parte 1 de la feature (schema
+  completo, flag, fotos, catálogo); la parte 2 (requerimientos, matching,
+  fichas, `/api/bot/realty/*`) construye encima sin nueva migración.
+
+Plantillas dependientes:
+  - .specify/templates/spec-template.md — ✅ compatible (sin cambios).
+  - .specify/templates/plan-template.md — ✅ compatible; un módulo vertical
+    pasa el Constitution Check si cumple las condiciones de VIII y, cuando
+    trae infraestructura propia, la nota de alcance de II.
+  - .specify/templates/tasks-template.md — ✅ compatible.
+  - CLAUDE.md — actualizado en este mismo cambio (nota de alcance en
+    Soberanía).
+
+TODOs diferidos:
+  - Deuda documental heredada de 1.3.0/1.4.0 (features entre `003` y la app
+    1.2.0 sin spec): sigue igual; esta enmienda no la toca.
+-->
+
+<!--
+SYNC IMPACT REPORT (histórico — 1.3.0 → 1.4.0)
+==================
 Versión: 1.3.0 → 1.4.0
 
 Cambios:
@@ -233,9 +295,37 @@ conversaciones de WhatsApp de UN negocio* se rechaza.
 - Toda feature MUST servir a la agencia que despliega o al negocio que opera UNA
   instancia. Lo que solo sirva a una plataforma centralizada (billing, planes,
   multi-instancia) queda FUERA.
+- **Módulos verticales opcionales por organización (1.5.0)**: el dominio puede
+  extenderse con un módulo propio de un giro de negocio (p. ej. inmobiliario:
+  catálogo de propiedades y su matching) SI, y solo si, sigue sirviendo
+  exactamente este principio —atender, organizar y convertir conversaciones
+  de WhatsApp— para el negocio que lo activa. Condiciones, verificables en
+  revisión:
+  1. **Apagado por ORGANIZACIÓN**, nunca de instancia completa:
+     `organization.metadata.vertical` decide: sin él, ni superficie en el
+     nav, ni rutas (404), ni menciones — mismo criterio que un canal
+     apagado (ADR-001), pero por negocio y no por despliegue, porque un
+     mismo despliegue puede servir a agencias de giros distintos.
+  2. **Vive en su propio sitio**: `server/<vertical>/`, `components/
+     <vertical>/`, `lib/<vertical>/` — nunca mezclado con el núcleo de
+     conversaciones, leads o contactos.
+  3. **La migración se aplica siempre** (tablas vacías son inertes), igual
+     que el resto del dominio: `organization_id` NOT NULL y `scoped()`.
+  4. **Infraestructura propia, si la necesita**: sigue las cinco condiciones
+     de conector opcional del Principio II, CON una excepción explícita —
+     puede ser del OPERADOR del despliegue, no de cada negocio, cuando el
+     vertical lo exige (igual que la base de datos ya es del operador),
+     mientras cada objeto quede aislado por `organization_id` y exista un
+     camino sin esa dependencia externa. El vertical inmobiliario usa esto
+     para las fotos de propiedades: bucket Cloudflare R2 del operador; sin
+     sus variables de entorno, disco local bajo `MEDIA_DIR`.
 
 **Rationale**: Un foco vertical explícito mantiene el modelo de datos alineado con el
-negocio real y da un criterio claro para aceptar o rechazar alcance.
+negocio real y da un criterio claro para aceptar o rechazar alcance. Permitir módulos
+opcionales POR ORGANIZACIÓN —en vez de un fork por giro de negocio— es la misma
+lección de ADR-001 aplicada un nivel más abajo: la alternativa (una rama, o un
+despliegue distinto por vertical) vuelve a divergir la cadena de migraciones sin
+arreglo posible.
 
 ### IX. Verificación de Comportamiento en Vivo (NO NEGOCIABLE)
 
@@ -334,4 +424,4 @@ práctica, convención o preferencia; ante un conflicto, gana la constitución.
 - **Propagación**: al enmendar la constitución se revisan y, si procede, se actualizan
   las plantillas dependientes (plan, spec, tasks).
 
-**Version**: 1.4.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-08-26
+**Version**: 1.5.0 | **Ratified**: 2026-07-09 | **Last Amended**: 2026-09-29
