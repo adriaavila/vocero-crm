@@ -85,6 +85,7 @@ let su = await api("/api/auth/sign-up/email", {
   method: "POST",
   body: JSON.stringify({ email: OPERATOR_EMAIL, password: OPERATOR_PASSWORD, name: "Operador E2E" }),
 });
+const signedUp = su.res.ok;
 if (!su.res.ok) {
   su = await api("/api/auth/sign-in/email", {
     method: "POST",
@@ -107,11 +108,18 @@ let metadata = {};
 try {
   metadata = JSON.parse(orgRows[0]?.metadata ?? "{}");
 } catch {}
-ok(
-  "organization.metadata.vertical = inmobiliario",
-  metadata.vertical === "inmobiliario",
-  orgRows[0]?.metadata
-);
+// Solo se puede exigir si este guion creó la organización con la variable
+// puesta. En CI el servidor corre sin DEFAULT_VERTICAL y otro guion ya
+// registró al operador.
+if (signedUp && process.env.DEFAULT_VERTICAL?.trim() === "inmobiliario") {
+  ok(
+    "organization.metadata.vertical = inmobiliario",
+    metadata.vertical === "inmobiliario",
+    orgRows[0]?.metadata
+  );
+} else {
+  console.log("  --  sin DEFAULT_VERTICAL o con organización previa: se omite esta comprobación");
+}
 // Red de seguridad: si esta base ya traía una organización SIN el vertical
 // (de una corrida anterior sin DEFAULT_VERTICAL, o de otro guion E2E que
 // registra su propio operador), se fija aquí para que el resto del guion

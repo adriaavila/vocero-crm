@@ -239,6 +239,7 @@ export function isEmbeddedSignupCloudApiConfigured(): boolean {
   return Boolean(process.env.META_ES_CONFIG_ID_CLOUD_API?.trim());
 }
 
+/**
  * true si el conector de fotos (R2) tiene sus 5 variables. Leída de
  * `process.env` directo, como `isWahaConfigured()`: el storage adapter debe
  * poder decidir su camino sin depender de que TODO el entorno valide.
