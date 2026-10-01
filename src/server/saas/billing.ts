@@ -111,9 +111,17 @@ function asHistory(value: unknown): BillingHistoryEntry[] {
 
 export function billingFromMetadata(raw: string | null | undefined): SaaSBillingState {
   const billing = billingMetadata(parseMetadata(raw));
+  // La prueba de autoservicio no tiene Stripe que la cierre: vencida, se lee
+  // como "inactive" en todo el producto (Facturación ofrece los planes, el
+  // checkout la deja pagar, el menú deja de mostrar Completo).
+  const trialExpired =
+    billing.source === SELF_SERVE_TRIAL_SOURCE &&
+    typeof billing.subscriptionId !== "string" &&
+    billing.status === "trialing" &&
+    !(typeof billing.currentPeriodEnd === "string" && Date.parse(billing.currentPeriodEnd) > Date.now());
   return {
     plan: asPlan(billing.plan),
-    status: asStatus(billing.status),
+    status: trialExpired ? "inactive" : asStatus(billing.status),
     customerId: typeof billing.customerId === "string" ? billing.customerId : null,
     subscriptionId: typeof billing.subscriptionId === "string" ? billing.subscriptionId : null,
     priceId: typeof billing.priceId === "string" ? billing.priceId : null,
@@ -298,6 +306,14 @@ export function hadPriorSubscription(current: SaaSBillingState): boolean {
 export const SELF_SERVE_TRIAL_SOURCE = "self_serve_trial";
 export const SELF_SERVE_TRIAL_DAYS = 7;
 export const SELF_SERVE_TRIAL_AI_REPLIES = 300;
+
+/**
+ * Checkout se niega solo con una suscripción de Stripe viva. La prueba de
+ * autoservicio (vigente o vencida) siempre puede pagar.
+ */
+export function checkoutBlocked(billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">): boolean {
+  return (billing.status === "active" || billing.status === "trialing") && !isSelfServeTrial(billing);
+}
 
 export function isSelfServeTrial(
   billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,

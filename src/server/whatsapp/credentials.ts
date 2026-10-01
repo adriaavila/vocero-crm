@@ -79,8 +79,7 @@ export async function saveCredentials(input: {
   token: string;
   displayPhoneNumber?: string | null;
   verifiedName?: string | null;
-}): Promise<void> {
-  const db = getDb();
+}, db: Pick<ReturnType<typeof getDb>, "insert"> = getDb()): Promise<void> {
   const enc = encryptSecret(input.token);
   await db
     .insert(schema.metaCredentials)

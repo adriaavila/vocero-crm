@@ -1,4 +1,4 @@
-import { eq, or } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { MetaApiError } from "@/lib/meta/client";
@@ -162,34 +162,40 @@ async function completeSteps(
 
   // e) ni el número ni su WABA pueden estar atados a OTRA organización
   // (decisión de Adrian, 2026-09-30: se bloquea y soporte lo mueve; nunca se
-  // reasigna solo). La carrera real del número la cierra el catch de
-  // unique_violation más abajo.
-  const clashes = await getDb()
-    .select({
-      organizationId: schema.metaCredentials.organizationId,
-      phoneNumberId: schema.metaCredentials.phoneNumberId,
-    })
-    .from(schema.metaCredentials)
-    .where(
-      or(
-        eq(schema.metaCredentials.phoneNumberId, phoneNumberId),
-        eq(schema.metaCredentials.wabaId, wabaId)
-      )
-    );
-  const foreign = clashes.find((row) => row.organizationId !== organizationId);
-  if (foreign) {
-    return fail(409, foreign.phoneNumberId === phoneNumberId ? "phone_in_use" : "waba_in_use");
-  }
-
-  // f) CREDENCIALES PRIMERO.
+  // reasigna solo). El candado por WABA cierra la carrera de dos negocios
+  // guardando la misma WABA con números distintos; la del número la cierra
+  // además el unique_violation.
+  // f) CREDENCIALES PRIMERO, en la misma transacción que el chequeo.
+  let clash: "phone_in_use" | "waba_in_use" | null = null;
   try {
-    await saveCredentials({
-      organizationId,
-      wabaId,
-      phoneNumberId,
-      token,
-      displayPhoneNumber: phoneProfile.display_phone_number ?? null,
-      verifiedName: phoneProfile.verified_name ?? null,
+    clash = await getDb().transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"waba:" + wabaId}))`);
+      const clashes = await tx
+        .select({
+          organizationId: schema.metaCredentials.organizationId,
+          phoneNumberId: schema.metaCredentials.phoneNumberId,
+        })
+        .from(schema.metaCredentials)
+        .where(
+          or(
+            eq(schema.metaCredentials.phoneNumberId, phoneNumberId),
+            eq(schema.metaCredentials.wabaId, wabaId)
+          )
+        );
+      const foreign = clashes.find((row) => row.organizationId !== organizationId);
+      if (foreign) return foreign.phoneNumberId === phoneNumberId ? "phone_in_use" : "waba_in_use";
+      await saveCredentials(
+        {
+          organizationId,
+          wabaId,
+          phoneNumberId,
+          token,
+          displayPhoneNumber: phoneProfile.display_phone_number ?? null,
+          verifiedName: phoneProfile.verified_name ?? null,
+        },
+        tx,
+      );
+      return null;
     });
   } catch (err) {
     if (isDuplicatePhoneNumberError(err)) {
@@ -197,6 +203,7 @@ async function completeSteps(
     }
     throw err;
   }
+  if (clash) return fail(409, clash);
   await markConnected(organizationId, { mode, wabaId, phoneNumberId });
 
   // g + h) webhook y, en número nuevo, registro.
@@ -206,51 +213,7 @@ async function completeSteps(
     return activation;
   }
 
-  // i) Coexistencia: SYNC AL FINAL, con reserva atómica ANTES de llamar a
-  // Meta (cada tipo es de un solo uso — dos completions concurrentes del
-  // mismo número no pueden las dos ganar la reserva).
-  if (mode === "coexistence") {
-    try {
-      const claimed = await claimWhatsappSignupSync(organizationId, phoneNumberId, mode);
-      if (claimed) {
-        const [, contactSync, historySync] = await Promise.allSettled([
-          getPhoneCoexistenceStatus(phoneNumberId, token),
-          requestSmbAppDataSync({ phoneNumberId, token, syncType: "smb_app_state_sync" }),
-          requestSmbAppDataSync({ phoneNumberId, token, syncType: "history" }),
-        ]);
-        const bothFailed = contactSync.status === "rejected" && historySync.status === "rejected";
-        if (bothFailed) {
-          // Ninguno de los dos llegó a gastar su única oportunidad: libera la
-          // reserva para que un reintento pueda de verdad volver a pedirlos.
-          await releaseWhatsappSignupSync(organizationId, phoneNumberId);
-        } else {
-          await finalizeWhatsappSignupSync(organizationId, phoneNumberId, {
-            smb_app_state_sync:
-              contactSync.status === "fulfilled" ? contactSync.value.requestId : null,
-            history: historySync.status === "fulfilled" ? historySync.value.requestId : null,
-          });
-        }
-      }
-    } catch (err) {
-      console.warn(
-        "[whatsapp-signup] no se pudo pedir el sync de coexistencia (no bloquea el alta):",
-        err instanceof Error ? err.message : err
-      );
-    }
-  }
-
-  // j) plantillas, mejor esfuerzo.
-  try {
-    await syncTemplates(organizationId);
-  } catch (err) {
-    console.warn(
-      "[whatsapp-signup] sync de plantillas falló (no bloquea el alta):",
-      err instanceof Error ? err.message : err
-    );
-  }
-
-  // k) éxito completo: cualquier aviso de "falta activar" anterior ya no aplica.
-  await clearWhatsappSignupError(organizationId).catch(() => {});
+  await finishActivation({ organizationId, phoneNumberId, token, mode });
 
   return {
     ok: true,
@@ -338,4 +301,63 @@ export async function activateNumber(
 
   await markWebhookOk(organizationId);
   return { ok: true };
+}
+
+/**
+ * i-k) Lo que sigue a un número activo: sync de coexistencia (una sola vez),
+ * plantillas y limpiar el aviso de "falta activar". Mejor esfuerzo, nunca
+ * bloquea. Lo comparten el alta y "Terminar de activar".
+ */
+export async function finishActivation(input: {
+  organizationId: string;
+  phoneNumberId: string;
+  token: string;
+  mode: EmbeddedSignupMode;
+}): Promise<void> {
+  const { organizationId, phoneNumberId, token, mode } = input;
+  // i) Coexistencia: SYNC AL FINAL, con reserva atómica ANTES de llamar a
+  // Meta (cada tipo es de un solo uso — dos completions concurrentes del
+  // mismo número no pueden las dos ganar la reserva).
+  if (mode === "coexistence") {
+    try {
+      const claimed = await claimWhatsappSignupSync(organizationId, phoneNumberId, mode);
+      if (claimed) {
+        const [, contactSync, historySync] = await Promise.allSettled([
+          getPhoneCoexistenceStatus(phoneNumberId, token),
+          requestSmbAppDataSync({ phoneNumberId, token, syncType: "smb_app_state_sync" }),
+          requestSmbAppDataSync({ phoneNumberId, token, syncType: "history" }),
+        ]);
+        const bothFailed = contactSync.status === "rejected" && historySync.status === "rejected";
+        if (bothFailed) {
+          // Ninguno de los dos llegó a gastar su única oportunidad: libera la
+          // reserva para que un reintento pueda de verdad volver a pedirlos.
+          await releaseWhatsappSignupSync(organizationId, phoneNumberId);
+        } else {
+          await finalizeWhatsappSignupSync(organizationId, phoneNumberId, {
+            smb_app_state_sync:
+              contactSync.status === "fulfilled" ? contactSync.value.requestId : null,
+            history: historySync.status === "fulfilled" ? historySync.value.requestId : null,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "[whatsapp-signup] no se pudo pedir el sync de coexistencia (no bloquea el alta):",
+        err instanceof Error ? err.message : err
+      );
+    }
+}
+
+  // j) plantillas, mejor esfuerzo.
+  try {
+    await syncTemplates(organizationId);
+  } catch (err) {
+    console.warn(
+      "[whatsapp-signup] sync de plantillas falló (no bloquea el alta):",
+      err instanceof Error ? err.message : err
+    );
+}
+
+  // k) éxito completo: cualquier aviso de "falta activar" anterior ya no aplica.
+  await clearWhatsappSignupError(organizationId).catch(() => {});
 }

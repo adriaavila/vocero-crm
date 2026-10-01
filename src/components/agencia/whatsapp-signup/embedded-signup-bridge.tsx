@@ -319,6 +319,8 @@ export function EmbeddedSignupBridge({
     if (!window.FB || !config) return;
     setStatus("opening");
     setErrorMessage(null);
+    // Un error del intento anterior no se arrastra a este.
+    setErrorKind("generic");
     cancelReportedRef.current = false;
     const cloudApi = mode === "cloud_api";
     window.FB.login(
@@ -328,7 +330,9 @@ export function EmbeddedSignupBridge({
           // El popup se cerró sin terminar. Si Meta mandó su evento CANCEL ya
           // quedó anotado con más detalle; si no, se anota aquí.
           setStatus((current) => (current === "error" ? current : "error"));
-          setErrorKind((current) => (current && current !== "meta_unavailable" ? current : "cancelled"));
+          setErrorKind((current) =>
+            current && current !== "meta_unavailable" && current !== "generic" ? current : "cancelled"
+          );
           setErrorMessage(null);
           reportCancel();
           return;

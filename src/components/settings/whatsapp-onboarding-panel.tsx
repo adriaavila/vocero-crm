@@ -65,6 +65,8 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
 
   useEvents({
     onMessageNew: ({ message }) => {
+      // Solo mientras se espera el primer mensaje del número recién conectado.
+      if (!waiting) return;
       const m = message as { direction?: string; text?: string | null };
       if (m.direction !== "in") return;
       setFirstMessage((prev) => prev ?? { text: m.text ?? null });

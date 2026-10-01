@@ -2,6 +2,7 @@ import { apiError, parseBody, withOwner } from "@/lib/api";
 import { soldSaaSPlans } from "@/lib/saas-plans";
 import {
   appOrigin,
+  checkoutBlocked,
   getOrganizationBilling,
   getOrganizationForBilling,
   hadPriorSubscription,
@@ -33,7 +34,9 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
   const organization = await getOrganizationForBilling(session.organizationId);
   if (!organization) return apiError(404, "organization_not_found", "Negocio no encontrado.");
   const current = await getOrganizationBilling(session.organizationId);
-  if (current.status === "active" || current.status === "trialing") {
+  // Durante la prueba de autoservicio (sin Stripe) sí puede pagar: es lo que
+  // se le pide. `hadPriorSubscription` ya evita una segunda prueba en Stripe.
+  if (checkoutBlocked(current)) {
     return apiError(409, "billing_active", "Gestiona el cambio de plan desde tu portal de facturación.");
   }
 

@@ -4,7 +4,7 @@ import {
   hasPaidSaaSPlanFromMetadata,
   selfServeTrialExpired,
 } from "@/server/agencia/entitlements";
-import { hadPriorSubscription, billingFromMetadata, isSelfServeTrial } from "@/server/saas/billing";
+import { checkoutBlocked, hadPriorSubscription, billingFromMetadata, isSelfServeTrial } from "@/server/saas/billing";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -52,5 +52,18 @@ describe("prueba de autoservicio (7 días, sin Stripe)", () => {
     const state = billingFromMetadata(metadata(trial(3 * DAY)));
     expect(isSelfServeTrial(state)).toBe(true);
     expect(hadPriorSubscription(state)).toBe(true);
+  });
+
+  it("vencida se lee como inactiva en todo el producto y puede pagar", () => {
+    const state = billingFromMetadata(metadata(trial(-1000)));
+    expect(state.status).toBe("inactive");
+    expect(checkoutBlocked(state)).toBe(false);
+    // Sigue sin regalar la prueba de Stripe.
+    expect(hadPriorSubscription(state)).toBe(true);
+  });
+
+  it("vigente también puede pagar; una suscripción de Stripe viva no", () => {
+    expect(checkoutBlocked(billingFromMetadata(metadata(trial(3 * DAY))))).toBe(false);
+    expect(checkoutBlocked(billingFromMetadata(metadata(trial(3 * DAY, { subscriptionId: "sub_1", status: "active" }))))).toBe(true);
   });
 });

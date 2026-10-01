@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 
 /**
@@ -122,9 +122,10 @@ export async function markError(
       target: t.organizationId,
       set: {
         ...values,
-        // Un número que ya recibió mensajes no "se rompe" por un reintento
-        // fallido de otro paso: el error queda anotado, el estado no baja.
-        status: sql`case when ${t.firstMessageAt} is not null then 'primer_mensaje' else 'error' end`,
+        // Un número que ya quedó activo no "se rompe" por un reintento fallido
+        // (p. ej. reabrir Meta y cerrar): el error queda anotado, el estado no
+        // baja. markConnected con otro número limpia webhook_ok_at antes.
+        status: sql`case when ${t.firstMessageAt} is not null then 'primer_mensaje' when ${t.webhookOkAt} is not null then 'webhook_ok' else 'error' end`,
         attempts: sql`${t.attempts} + 1`,
       },
     });
@@ -140,7 +141,8 @@ export async function markFirstMessage(organizationId: string): Promise<boolean>
   const rows = await getDb()
     .update(t)
     .set({ status: "primer_mensaje", firstMessageAt: now, errorStep: null, errorCode: null, errorDetail: null, updatedAt: now })
-    .where(and(eq(t.organizationId, organizationId), isNull(t.firstMessageAt)))
+    // Solo cierra un alta con número guardado (no `pendiente`).
+    .where(and(eq(t.organizationId, organizationId), isNull(t.firstMessageAt), ne(t.status, "pendiente")))
     .returning({ organizationId: t.organizationId });
   return rows.length > 0;
 }

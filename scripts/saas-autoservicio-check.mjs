@@ -150,6 +150,13 @@ async function main() {
   ok("sigue en webhook_ok y cuenta los intentos", row?.status === "webhook_ok" && row?.attempts >= 2, JSON.stringify(row));
   const retry = await owner(tenantHost, "/api/onboarding/whatsapp/retry", { method: "POST" });
   ok("'terminar de activar' con el token guardado funciona sin abrir Meta", retry.json?.ok === true, JSON.stringify(retry.json));
+  const cfg2 = await owner(APP_HOST, `/api/whatsapp/embedded-signup/config?org=${slug}&mode=coexistence`);
+  await owner(APP_HOST, "/api/whatsapp/embedded-signup/event", {
+    method: "POST",
+    body: JSON.stringify({ state: cfg2.json?.state, mode: "coexistence", event: "CANCEL" }),
+  });
+  row = await onboardingRow(slug);
+  ok("reabrir Meta y cerrar no baja un número ya activo", row?.status === "webhook_ok" && row?.error_step !== null, JSON.stringify(row));
 
   console.log("\n== 5. Primer mensaje: llega al inbox y cierra el onboarding ==");
   const inbound = await owner(APP_HOST, "/api/dev/wa-mock/inbound", {

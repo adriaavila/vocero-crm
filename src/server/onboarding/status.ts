@@ -1,5 +1,5 @@
 import { errorKeyForStep, type OnboardingErrorKey } from "@/lib/onboarding-errors";
-import { activateNumber, metaErrorSink } from "@/server/agencia/whatsapp-signup/complete";
+import { activateNumber, finishActivation, metaErrorSink } from "@/server/agencia/whatsapp-signup/complete";
 import { getPhoneNameStatus } from "@/server/agencia/whatsapp-signup/graph";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 import { ensureOnboarding, getOnboarding, markError, type OnboardingStatus } from "./whatsapp-onboarding";
@@ -83,5 +83,11 @@ export async function retryActivation(
     await markError(organizationId, { step: result.step, code: meta?.code ?? null, detail: meta?.detail ?? null });
     return { ok: false, status: result.status, step: result.step };
   }
+  await finishActivation({
+    organizationId,
+    phoneNumberId: creds.phoneNumberId,
+    token: creds.token,
+    mode: row?.mode ?? "coexistence",
+  });
   return { ok: true };
 }

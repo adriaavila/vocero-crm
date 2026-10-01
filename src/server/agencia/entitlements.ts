@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { isSaaSPlan, planMeetsTier } from "@/lib/saas-plans";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
@@ -126,17 +126,18 @@ export async function trialAiQuotaReached(organizationId: string): Promise<boole
     return false;
   }
   if (!isSelfServeTrialBilling(billing)) return false;
-  const [replies] = await db
-    .select({ n: count() })
-    .from(schema.message)
-    .where(
-      and(
-        eq(schema.message.organizationId, organizationId),
-        eq(schema.message.origin, "ai"),
-        eq(schema.message.direction, "out"),
-      ),
-    );
-  return (replies?.n ?? 0) >= SELF_SERVE_TRIAL_AI_REPLIES;
+  // Cuenta hasta el tope y para (`limit`): nunca recorre todo el historial
+  // importado. El Laboratorio (conversaciones de prueba) no gasta el tope.
+  const counted = await db.execute(sql`
+    select count(*)::int as n from (
+      select 1 from message m
+      join conversation c on c.id = m.conversation_id and c.organization_id = m.organization_id
+      where m.organization_id = ${organizationId}
+        and m.origin = 'ai' and m.direction = 'out' and not c.is_test
+      limit ${SELF_SERVE_TRIAL_AI_REPLIES}
+    ) s`);
+  const n = Number((counted as unknown as { n: number }[])[0]?.n ?? 0);
+  return n >= SELF_SERVE_TRIAL_AI_REPLIES;
 }
 
 export async function canAutomate(organizationId: string): Promise<boolean> {

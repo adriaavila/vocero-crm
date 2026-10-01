@@ -47,13 +47,21 @@ const onboarding = {
 vi.mock("@/server/onboarding/whatsapp-onboarding", () => onboarding);
 
 let clashRows: { organizationId: string; phoneNumberId?: string }[] = [];
+const advisoryLocks: unknown[] = [];
+const fakeTx = {
+  execute: (q: unknown) => {
+    advisoryLocks.push(q);
+    return Promise.resolve([]);
+  },
+  select: () => ({
+    from: () => ({
+      where: () => Promise.resolve(clashRows.map((r) => ({ phoneNumberId: "phone_1", ...r }))),
+    }),
+  }),
+};
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
-    select: () => ({
-      from: () => ({
-        where: () => Promise.resolve(clashRows.map((r) => ({ phoneNumberId: "phone_1", ...r }))),
-      }),
-    }),
+    transaction: <T>(fn: (tx: typeof fakeTx) => Promise<T>) => fn(fakeTx),
   }),
   schema: {
     metaCredentials: { organizationId: "organization_id", phoneNumberId: "phone_number_id", wabaId: "waba_id" },
@@ -319,6 +327,14 @@ describe("runEmbeddedSignupCompletion — estado del onboarding y errores nuevos
     expect(onboarding.markError).not.toHaveBeenCalled();
     const savedAt = saveCredentials.mock.invocationCallOrder[0]!;
     expect(onboarding.markConnected.mock.invocationCallOrder[0]!).toBeGreaterThan(savedAt);
+  });
+
+  it("chequeo de WABA ajena y guardado van en la misma transacción, con candado", async () => {
+    advisoryLocks.length = 0;
+    const result = await run();
+    expect(result.ok).toBe(true);
+    expect(advisoryLocks).toHaveLength(1);
+    expect(saveCredentials).toHaveBeenCalledWith(expect.anything(), fakeTx);
   });
 
   it("bloquea una WABA que ya es de otro negocio aunque el número sea otro (waba_in_use)", async () => {

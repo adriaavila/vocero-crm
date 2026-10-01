@@ -266,6 +266,7 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
     await applyStatusUpdate(organizationId, status);
   }
 
+  let ingested = false;
   for (const msg of value.messages ?? []) {
     const text = inboundText(msg);
     const isReply = REPLY_TYPES.has(msg.type) && text !== null;
@@ -291,6 +292,14 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       // de qué forma lo mandó Meta.
       anuncio: anuncioDeWhatsapp(msg.referral),
     });
+    ingested = true;
+  }
+
+  // Alta de autoservicio: el primer WhatsApp que entra cierra el onboarding.
+  if (ingested) {
+    await markFirstMessage(organizationId).catch((err) =>
+      console.error("[onboarding] no se pudo marcar el primer mensaje:", err)
+    );
   }
 }
 
@@ -511,11 +520,6 @@ export async function ingestInboundMessage(input: {
     type: "conversation.updated",
     data: { conversation: { id: conversation.id } },
   });
-
-  // Alta de autoservicio: el primer mensaje que entra cierra el onboarding.
-  await markFirstMessage(organizationId).catch((err) =>
-    console.error("[onboarding] no se pudo marcar el primer mensaje:", err)
-  );
 
   await maybeRunAgentTurn(conversation.id, organizationId);
 }
