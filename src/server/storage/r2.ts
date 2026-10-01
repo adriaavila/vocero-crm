@@ -114,10 +114,17 @@ async function r2Request(
 
 /* ---------- Camino sin dependencia externa: disco bajo MEDIA_DIR ---------- */
 
+export function isSafeStorageKey(key: string): boolean {
+  return (
+    /^org\/[\w.-]+\/properties\/[\w.-]+\/[\w.-]+$/.test(key) &&
+    !key.split("/").some((segment) => segment === "." || segment === "..")
+  );
+}
+
 function assertSafeKey(key: string): void {
   // Mismos segmentos que arma `propertyPhotoKey`: org/<id>/properties/<id>/<archivo>.
   // Nunca `..` ni una barra invertida — nada que se salga de MEDIA_DIR.
-  if (!/^org\/[\w.-]+\/properties\/[\w.-]+\/[\w.-]+$/.test(key)) {
+  if (!isSafeStorageKey(key)) {
     throw new StorageError(`llave de almacenamiento inválida: ${key}`);
   }
 }

@@ -22,7 +22,7 @@ export const PATCH = withRealty(async (session, req: Request, ctx: Params) => {
   if (!parsed.ok) return parsed.response;
 
   try {
-    await movePhoto(session.organizationId, photoId, parsed.data.position);
+    await movePhoto(session.organizationId, photoId, parsed.data.position, id);
     const photos = await listPhotos(session.organizationId, id);
     return Response.json({ photos: photos.map(serializePhoto) });
   } catch (err) {
@@ -37,7 +37,7 @@ export const PATCH = withRealty(async (session, req: Request, ctx: Params) => {
 export const DELETE = withRealty(async (session, _req: Request, ctx: Params) => {
   const { id, photoId } = await ctx.params;
   try {
-    await deletePhoto(session.organizationId, photoId);
+    await deletePhoto(session.organizationId, photoId, id);
     const photos = await listPhotos(session.organizationId, id);
     return Response.json({ photos: photos.map(serializePhoto) });
   } catch (err) {

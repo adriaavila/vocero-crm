@@ -189,3 +189,15 @@ describe("getImageDimensions", () => {
     expect(getImageDimensions(Buffer.from("algo"), "application/pdf")).toBeNull();
   });
 });
+
+describe("isSafeStorageKey", async () => {
+  const { isSafeStorageKey } = await import("@/server/storage/r2");
+  it("acepta la llave que arma propertyPhotoKey", () => {
+    expect(isSafeStorageKey("org/org_a/properties/prop_1/pph_1.jpg")).toBe(true);
+  });
+  it("rechaza segmentos . y ..", () => {
+    expect(isSafeStorageKey("org/org_a/properties/../pph_1.jpg")).toBe(false);
+    expect(isSafeStorageKey("org/org_a/properties/prop_1/..")).toBe(false);
+    expect(isSafeStorageKey("org/org_a/properties/./pph_1.jpg")).toBe(false);
+  });
+});

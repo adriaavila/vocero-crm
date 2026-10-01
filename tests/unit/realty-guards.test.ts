@@ -3,6 +3,7 @@ import {
   MAX_PHOTOS_PER_PROPERTY,
   MAX_PHOTO_BYTES,
   isAllowedMimeType,
+  matchesImageBytes,
   validatePhoto,
 } from "@/server/realty/photos";
 import {
@@ -111,5 +112,15 @@ describe("derivados del catálogo", () => {
     expect(formatZone("Equipetrol", "Santa Cruz")).toBe("Equipetrol, Santa Cruz");
     expect(formatZone(null, "Santa Cruz")).toBe("Santa Cruz");
     expect(formatZone(null, null)).toBe("—");
+  });
+});
+
+describe("matchesImageBytes", () => {
+  it("acepta la firma real y rechaza lo que solo dice ser imagen", () => {
+    expect(matchesImageBytes(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "image/jpeg")).toBe(true);
+    expect(matchesImageBytes(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "image/png")).toBe(true);
+    expect(matchesImageBytes(Buffer.from("RIFF\0\0\0\0WEBP", "latin1"), "image/webp")).toBe(true);
+    expect(matchesImageBytes(Buffer.from("<script>alert(1)</script>"), "image/jpeg")).toBe(false);
+    expect(matchesImageBytes(Buffer.from([0xff, 0xd8, 0xff, 0xe0]), "image/png")).toBe(false);
   });
 });

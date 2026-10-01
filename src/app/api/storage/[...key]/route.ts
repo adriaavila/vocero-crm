@@ -1,5 +1,5 @@
 import { apiError, withAuth } from "@/lib/api";
-import { getLocalObject } from "@/server/storage/r2";
+import { getLocalObject, isSafeStorageKey } from "@/server/storage/r2";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,7 @@ export const GET = withAuth(async (session, _req: Request, ctx: Params) => {
     return apiError(404, "not_found", "Archivo no encontrado");
   }
   const key = segments.join("/");
-  if (!/^org\/[\w.-]+\/properties\/[\w.-]+\/[\w.-]+$/.test(key)) {
+  if (!isSafeStorageKey(key)) {
     return apiError(404, "not_found", "Archivo no encontrado");
   }
 

@@ -78,6 +78,14 @@ export function validatePhoto(input: {
   return null;
 }
 
+/** Firma de los primeros bytes: el `mimeType` lo declara el cliente. */
+export function matchesImageBytes(data: Buffer, mimeType: string): boolean {
+  if (mimeType === "image/jpeg") return data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  if (mimeType === "image/png") return data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (mimeType === "image/webp") return data.subarray(0, 4).toString("latin1") === "RIFF" && data.subarray(8, 12).toString("latin1") === "WEBP";
+  return false;
+}
+
 export type PhotoRow = typeof schema.propertyPhoto.$inferSelect;
 
 export async function listPhotos(
@@ -120,6 +128,9 @@ export async function addPhoto(
     currentCount: existing.length,
   });
   if (invalid) throw invalid;
+  if (!matchesImageBytes(input.data, input.mimeType)) {
+    throw new PhotoError("bad_type", "Solo se aceptan imágenes JPEG, PNG o WebP");
+  }
 
   const photoId = newId("propertyPhoto");
   const storageKey = propertyPhotoKey(organizationId, propertyId, photoId, input.mimeType);
@@ -158,7 +169,8 @@ export async function addPhoto(
  */
 export async function deletePhoto(
   organizationId: string,
-  photoId: string
+  photoId: string,
+  propertyId?: string
 ): Promise<void> {
   const db = getDb();
   const rows = await db
@@ -173,7 +185,9 @@ export async function deletePhoto(
     )
     .limit(1);
   const photo = rows[0];
-  if (!photo) throw new PhotoError("not_found", "Foto no encontrada");
+  if (!photo || (propertyId && photo.propertyId !== propertyId)) {
+    throw new PhotoError("not_found", "Foto no encontrada");
+  }
 
   await db.transaction(async (tx) => {
     await tx
@@ -207,7 +221,8 @@ export async function deletePhoto(
 export async function movePhoto(
   organizationId: string,
   photoId: string,
-  targetPosition: number
+  targetPosition: number,
+  propertyId?: string
 ): Promise<void> {
   const db = getDb();
   const rows = await db
@@ -226,7 +241,9 @@ export async function movePhoto(
     )
     .limit(1);
   const photo = rows[0];
-  if (!photo) throw new PhotoError("not_found", "Foto no encontrada");
+  if (!photo || (propertyId && photo.propertyId !== propertyId)) {
+    throw new PhotoError("not_found", "Foto no encontrada");
+  }
 
   const siblings = await listPhotos(organizationId, photo.propertyId);
   const target = Math.max(0, Math.min(targetPosition, siblings.length - 1));
