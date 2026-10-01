@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
+import { markFirstMessage } from "@/server/onboarding/whatsapp-onboarding";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { normalizeMx } from "@/lib/meta/client";
@@ -510,6 +511,11 @@ export async function ingestInboundMessage(input: {
     type: "conversation.updated",
     data: { conversation: { id: conversation.id } },
   });
+
+  // Alta de autoservicio: el primer mensaje que entra cierra el onboarding.
+  await markFirstMessage(organizationId).catch((err) =>
+    console.error("[onboarding] no se pudo marcar el primer mensaje:", err)
+  );
 
   await maybeRunAgentTurn(conversation.id, organizationId);
 }

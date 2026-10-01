@@ -19,7 +19,10 @@ export type SignupStep =
   | "webhook"
   | "webhook_verify"
   | "register"
-  | "register_pin_mismatch";
+  | "register_pin_mismatch"
+  | "register_not_verified"
+  | "register_limit"
+  | "waba_in_use";
 
 const COPY: Record<SignupStep, string> = {
   config: "La conexión de WhatsApp en la app no está configurada.",
@@ -32,12 +35,15 @@ const COPY: Record<SignupStep, string> = {
   debug_token: "Meta no pudo validar la conexión. Vuelve a intentar.",
   permissions: "Falta autorizar permisos de WhatsApp en Meta.",
   resolve: "No pudimos identificar un único número de WhatsApp para conectar.",
-  phone_in_use: "Ese número de WhatsApp ya está conectado a otro negocio.",
+  phone_in_use: "Ese número ya está conectado a otra cuenta de allok. Escríbenos y lo movemos a tu cuenta.",
+  waba_in_use: "Ese número ya está conectado a otra cuenta de allok. Escríbenos y lo movemos a tu cuenta.",
   webhook: "Meta rechazó el enlace de mensajes. Vuelve a intentar.",
   webhook_verify: "Meta no confirmó el enlace de mensajes. Vuelve a intentar.",
   register: "Meta rechazó el alta del número. Vuelve a intentar.",
   register_pin_mismatch:
-    "Este número ya tiene un PIN de verificación en dos pasos distinto configurado en Meta. Pide el PIN a quien lo conectó la primera vez, o usa \"Recuperar cuenta\" en Meta.",
+    "Tu número tiene un PIN de verificación en dos pasos. Desactívalo en WhatsApp Manager y vuelve a intentar.",
+  register_not_verified: "Meta todavía no verificó tu número. Termina la verificación y vuelve a intentar.",
+  register_limit: "Meta frenó los intentos con este número por ahora. Espera unas horas y vuelve a intentar.",
 };
 
 const FALLBACK = "No pudimos completar la conexión con Meta. Vuelve a intentar.";

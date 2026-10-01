@@ -1,15 +1,17 @@
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { getEnv } from "@/lib/env";
 import { MetaApiError } from "@/lib/meta/client";
 import { saveCredentials } from "@/server/whatsapp/credentials";
 import { syncTemplates } from "@/server/whatsapp/templates";
+import { markConnected, markError, markWebhookOk } from "@/server/onboarding/whatsapp-onboarding";
 import { copyForStep } from "./copy";
 import {
   debugBusinessToken,
   exchangeCodeForToken,
   getMissingPermissions,
   getPhoneCoexistenceStatus,
+  NOT_VERIFIED_CODE,
   PIN_MISMATCH_CODE,
   registerPhoneNumber,
   requestSmbAppDataSync,
@@ -65,14 +67,30 @@ function fail(
   return { ok: false, status, step, error: copyForStep(step), ...extra };
 }
 
-function logMetaError(step: string, err: unknown): void {
-  const detail =
-    err instanceof MetaApiError
-      ? `${err.message} (status=${err.status} code=${err.code ?? "?"})`
-      : err instanceof Error
-        ? err.message
-        : String(err);
-  console.error(`[whatsapp-signup] paso "${step}" falló:`, detail);
+type MetaErrorInfo = { code: string | null; detail: string };
+
+function describeMetaError(err: unknown): MetaErrorInfo {
+  if (err instanceof MetaApiError) {
+    return {
+      code: err.code == null ? null : String(err.code),
+      detail: `${err.message} (status=${err.status} code=${err.code ?? "?"})`,
+    };
+  }
+  return { code: null, detail: err instanceof Error ? err.message : String(err) };
+}
+
+/** Anota el último error de Meta de un alta para guardarlo en el estado del onboarding. */
+export type MetaErrorSink = (step: string, err: unknown) => void;
+
+export function metaErrorSink(): { log: MetaErrorSink; last: () => MetaErrorInfo | null } {
+  let last: MetaErrorInfo | null = null;
+  return {
+    log(step, err) {
+      last = describeMetaError(err);
+      console.error(`[whatsapp-signup] paso "${step}" falló:`, last.detail);
+    },
+    last: () => last,
+  };
 }
 
 export async function runEmbeddedSignupCompletion(input: {
@@ -80,23 +98,24 @@ export async function runEmbeddedSignupCompletion(input: {
   mode: EmbeddedSignupMode;
   payload: CompleteSignupPayload;
 }): Promise<CompleteSignupResult> {
-  const { organizationId, mode, payload } = input;
-
-  // Registra el paso que falla en organization.metadata, para que
-  // /config pueda avisar "falta activar la recepción de mensajes" con un
-  // número YA guardado (saveCredentials corrió en f) pero sin webhook
-  // confirmado. `phoneNumberId` puede no existir todavía (falla antes de d).
-  async function failAndRecord(
-    status: number,
-    step: string,
-    phoneNumberIdForError: string | null,
-    extra: Partial<CompleteSignupFailure> = {}
-  ): Promise<CompleteSignupFailure> {
-    if (phoneNumberIdForError) {
-      await recordWhatsappSignupError(organizationId, phoneNumberIdForError, step).catch(() => {});
-    }
-    return fail(status, step, extra);
+  const sink = metaErrorSink();
+  const result = await completeSteps(input, sink.log);
+  if (!result.ok) {
+    const meta = sink.last();
+    await markError(input.organizationId, {
+      step: result.step,
+      code: meta?.code ?? null,
+      detail: meta?.detail ?? null,
+    }).catch((err) => console.error("[whatsapp-signup] no se pudo anotar el error del alta:", err));
   }
+  return result;
+}
+
+async function completeSteps(
+  input: { organizationId: string; mode: EmbeddedSignupMode; payload: CompleteSignupPayload },
+  logMetaError: MetaErrorSink,
+): Promise<CompleteSignupResult> {
+  const { organizationId, mode, payload } = input;
 
   // b) intercambio del code — vive 30s, se hace de inmediato.
   let token: string;
@@ -141,15 +160,25 @@ export async function runEmbeddedSignupCompletion(input: {
   }
   const { wabaId, phoneNumberId, phoneProfile } = resolved;
 
-  // e) ese número no puede estar atado a OTRA organización (pre-chequeo;
-  // la carrera real la cierra el catch de unique_violation más abajo).
-  const clash = await getDb()
-    .select({ organizationId: schema.metaCredentials.organizationId })
+  // e) ni el número ni su WABA pueden estar atados a OTRA organización
+  // (decisión de Adrian, 2026-09-30: se bloquea y soporte lo mueve; nunca se
+  // reasigna solo). La carrera real del número la cierra el catch de
+  // unique_violation más abajo.
+  const clashes = await getDb()
+    .select({
+      organizationId: schema.metaCredentials.organizationId,
+      phoneNumberId: schema.metaCredentials.phoneNumberId,
+    })
     .from(schema.metaCredentials)
-    .where(eq(schema.metaCredentials.phoneNumberId, phoneNumberId))
-    .limit(1);
-  if (clash[0] && clash[0].organizationId !== organizationId) {
-    return fail(409, "phone_in_use");
+    .where(
+      or(
+        eq(schema.metaCredentials.phoneNumberId, phoneNumberId),
+        eq(schema.metaCredentials.wabaId, wabaId)
+      )
+    );
+  const foreign = clashes.find((row) => row.organizationId !== organizationId);
+  if (foreign) {
+    return fail(409, foreign.phoneNumberId === phoneNumberId ? "phone_in_use" : "waba_in_use");
   }
 
   // f) CREDENCIALES PRIMERO.
@@ -168,62 +197,13 @@ export async function runEmbeddedSignupCompletion(input: {
     }
     throw err;
   }
+  await markConnected(organizationId, { mode, wabaId, phoneNumberId });
 
-  // g) WEBHOOK SEGUNDO: override a esta instancia + verificación con reintentos.
-  // Cualquier fallo de aquí en adelante ya tiene credenciales guardadas: se
-  // anota en organization.metadata para que /config pueda mostrar "falta
-  // activar la recepción de mensajes" en vez de un simple "conectado".
-  const env = getEnv();
-  const callbackUri = new URL(
-    `/api/webhooks/wa/${env.META_WEBHOOK_VERIFY_TOKEN}`,
-    env.APP_BASE_URL
-  ).toString();
-  try {
-    await subscribeWabaOverride({
-      wabaId,
-      token,
-      callbackUri,
-      verifyToken: env.META_WEBHOOK_VERIFY_TOKEN,
-    });
-  } catch (err) {
-    logMetaError("webhook", err);
-    return failAndRecord(502, "webhook", phoneNumberId);
-  }
-  let overrideConfirmed: boolean;
-  try {
-    overrideConfirmed = await verifyOverrideWithRetry({
-      wabaId,
-      token,
-      callbackUri,
-      appId: env.META_APP_ID,
-    });
-  } catch (err) {
-    logMetaError("webhook_verify", err);
-    return failAndRecord(502, "webhook_verify", phoneNumberId);
-  }
-  if (!overrideConfirmed) {
-    return failAndRecord(502, "webhook_verify", phoneNumberId);
-  }
-
-  // h) Cloud API: registrar el número. Coexistencia JAMÁS se registra — eso
-  // lo sacaría de la app de WhatsApp Business del cliente.
-  if (mode === "cloud_api") {
-    const pin = deriveRegistrationPin(phoneNumberId, env.ENCRYPTION_KEY);
-    try {
-      await registerPhoneNumber({ phoneNumberId, token, pin });
-    } catch (err) {
-      logMetaError("register", err);
-      // 133005 confirmado en la documentación de Meta: PIN de verificación en
-      // dos pasos incorrecto — significa que ESTE número ya tiene un PIN
-      // distinto puesto por otra parte (Meta, otra herramienta). Credenciales
-      // y webhook ya quedaron bien: es un problema puntual de ese número, no
-      // del alta, y el dueño necesita el PIN real, no un reintento genérico.
-      const step =
-        err instanceof MetaApiError && err.code === PIN_MISMATCH_CODE
-          ? "register_pin_mismatch"
-          : "register";
-      return failAndRecord(502, step, phoneNumberId);
-    }
+  // g + h) webhook y, en número nuevo, registro.
+  const activation = await activateNumber({ organizationId, wabaId, phoneNumberId, token, mode }, logMetaError);
+  if (!activation.ok) {
+    await recordWhatsappSignupError(organizationId, phoneNumberId, activation.step).catch(() => {});
+    return activation;
   }
 
   // i) Coexistencia: SYNC AL FINAL, con reserva atómica ANTES de llamar a
@@ -278,4 +258,84 @@ export async function runEmbeddedSignupCompletion(input: {
     verifiedName: phoneProfile.verified_name ?? null,
     mode,
   };
+}
+
+/**
+ * g) webhook a esta instancia (override + verificación) y h) registro del
+ * número nuevo. Idempotente: suscribir y registrar otra vez no rompe nada, así
+ * que sirve igual para el alta y para "Reintentar" con el token ya guardado
+ * (sin abrir otra vez la ventana de Meta). Marca `webhook_ok` al terminar.
+ */
+export async function activateNumber(
+  input: {
+    organizationId: string;
+    wabaId: string;
+    phoneNumberId: string;
+    token: string;
+    mode: EmbeddedSignupMode;
+  },
+  logMetaError: MetaErrorSink = metaErrorSink().log,
+): Promise<{ ok: true } | CompleteSignupFailure> {
+  const { organizationId, wabaId, phoneNumberId, token, mode } = input;
+  const env = getEnv();
+  const callbackUri = new URL(
+    `/api/webhooks/wa/${env.META_WEBHOOK_VERIFY_TOKEN}`,
+    env.APP_BASE_URL
+  ).toString();
+  try {
+    await subscribeWabaOverride({
+      wabaId,
+      token,
+      callbackUri,
+      verifyToken: env.META_WEBHOOK_VERIFY_TOKEN,
+    });
+  } catch (err) {
+    logMetaError("webhook", err);
+    return fail(502, "webhook");
+  }
+  let overrideConfirmed: boolean;
+  try {
+    overrideConfirmed = await verifyOverrideWithRetry({
+      wabaId,
+      token,
+      callbackUri,
+      appId: env.META_APP_ID,
+    });
+  } catch (err) {
+    logMetaError("webhook_verify", err);
+    return fail(502, "webhook_verify");
+  }
+  if (!overrideConfirmed) {
+    return fail(502, "webhook_verify");
+  }
+
+  // Coexistencia JAMÁS se registra: lo sacaría de la app de WhatsApp Business.
+  if (mode === "cloud_api") {
+    const pin = deriveRegistrationPin(phoneNumberId, env.ENCRYPTION_KEY);
+    try {
+      const { alreadyRegistered } = await registerPhoneNumber({ phoneNumberId, token, pin });
+      if (alreadyRegistered) {
+        // 133016 también es el límite de 10 registros en 72 h (docs de Meta):
+        // solo cuenta como "ya registrado" si Meta dice que el número está en
+        // Cloud API.
+        const status = await getPhoneCoexistenceStatus(phoneNumberId, token).catch(() => null);
+        if (status?.platformType !== "CLOUD_API") {
+          return fail(429, "register_limit");
+        }
+      }
+    } catch (err) {
+      logMetaError("register", err);
+      const code = err instanceof MetaApiError ? err.code : null;
+      const step =
+        code === PIN_MISMATCH_CODE
+          ? "register_pin_mismatch"
+          : code === NOT_VERIFIED_CODE
+            ? "register_not_verified"
+            : "register";
+      return fail(502, step);
+    }
+  }
+
+  await markWebhookOk(organizationId);
+  return { ok: true };
 }

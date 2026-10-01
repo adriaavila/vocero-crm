@@ -126,7 +126,7 @@ export default function RegisterForm({
   return (
     <Card className="shadow-md">
       <CardHeader>
-        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] text-brand-fg">1</span> Tu espacio</span><span className="normal-case tracking-normal text-text-4">1 de 7</span></div>
+        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] text-brand-fg">1</span> Tu espacio</span><span className="normal-case tracking-normal text-text-4">1 de 6</span></div>
         <CardTitle>Empieza con tu negocio</CardTitle>
         <CardDescription>
           En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar Allok.

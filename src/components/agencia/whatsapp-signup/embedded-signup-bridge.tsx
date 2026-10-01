@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, MessageCircle, RotateCw, Smartphone } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { errorKeyForCancel, onboardingErrorCopy } from "@/lib/onboarding-errors";
 
 /**
  * Bridge de Embedded Signup EN la app (fork). Puerto de
@@ -50,6 +51,7 @@ type SignupEvent = {
     business_id?: string;
     current_step?: string;
     error_message?: string;
+    error_code?: string | number;
   };
 };
 
@@ -76,14 +78,11 @@ type Config = {
 
 type Status = "loading" | "choose_mode" | "opening" | "processing" | "success" | "error";
 
-type ErrorKind =
-  | "cancelled"
-  | "missing_permissions"
-  | "phone_in_use"
-  | "meta_error"
-  | "plan_inactive"
-  | "session_expired"
-  | "generic";
+/**
+ * Clave de `@/lib/onboarding-errors` (lo que ve el dueño) o uno de los dos
+ * casos propios de esta pantalla: plan inactivo y servidor sin respuesta.
+ */
+type ErrorKind = string;
 
 type SuccessDetails = { displayPhoneNumber: string | null; verifiedName: string | null; mode: Mode };
 
@@ -134,6 +133,7 @@ export function EmbeddedSignupBridge({
   const stateRef = useRef<string>("");
   const configRef = useRef<Config | null>(null);
   const modeRef = useRef<Mode>("coexistence");
+  const cancelReportedRef = useRef(false);
 
   const loadConfig = useCallback(async (nextMode: Mode) => {
     setStatus("loading");
@@ -154,7 +154,7 @@ export function EmbeddedSignupBridge({
             ? "plan_inactive"
             : data.error === "session_expired"
               ? "session_expired"
-              : "generic"
+              : "meta_unavailable"
         );
         return;
       }
@@ -165,7 +165,7 @@ export function EmbeddedSignupBridge({
       loadFbSdk(data);
     } catch {
       setStatus("error");
-      setErrorKind("generic");
+      setErrorKind("meta_unavailable");
       setErrorMessage("No pudimos conectar con el servidor. Revisa tu conexión e intenta de nuevo.");
     }
   }, [orgSlug]);
@@ -207,7 +207,7 @@ export function EmbeddedSignupBridge({
       exchangeStartedRef.current ||
       !pending.code ||
       !cfg ||
-      (!allowServerDiscovery && (!pending.wabaId || !pending.phoneNumberId))
+      (!allowServerDiscovery && !pending.wabaId)
     ) {
       return;
     }
@@ -230,30 +230,44 @@ export function EmbeddedSignupBridge({
     }).catch(() => null);
     const data = (await res?.json().catch(() => ({}))) as
       | { ok: true; displayPhoneNumber: string | null; verifiedName: string | null; mode: Mode; redirectTo?: string }
-      | { error?: string; step?: string }
+      | { error?: string; step?: string; errorKey?: string }
       | null;
 
     if (!res?.ok || !data || !("ok" in data) || !data.ok) {
       exchangeStartedRef.current = false;
       setStatus("error");
-      const step = data && "step" in data ? data.step : undefined;
-      const message = (data && "error" in data ? data.error : null) ?? "Meta no pudo completar la conexión.";
-      setErrorMessage(message);
-      setErrorKind(
-        step === "permissions"
-          ? "missing_permissions"
-          : step === "phone_in_use"
-            ? "phone_in_use"
-            : step === "state" || step === "session" || step === "membership"
-              ? "session_expired"
-              : "meta_error"
-      );
+      setErrorMessage(null);
+      setErrorKind((data && "errorKey" in data && data.errorKey) || "meta_unavailable");
       return;
     }
 
     setSuccess({ displayPhoneNumber: data.displayPhoneNumber, verifiedName: data.verifiedName, mode: data.mode });
     setRedirectTo(data.redirectTo ?? null);
     setStatus("success");
+    // La pantalla final ("mándale un mensaje a tu número") vive en el
+    // subdominio del negocio, donde llegan los mensajes en vivo.
+    if (data.redirectTo) window.location.assign(data.redirectTo);
+  }, []);
+
+  /**
+   * Guarda dónde cerró el dueño la ventana de Meta (o qué error reportó Meta)
+   * para que pueda retomar y soporte lo vea. Una vez por apertura.
+   */
+  const reportCancel = useCallback((data?: SignupEvent["data"]) => {
+    if (cancelReportedRef.current || !stateRef.current) return;
+    cancelReportedRef.current = true;
+    void fetch("/api/whatsapp/embedded-signup/event", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        state: stateRef.current,
+        mode: modeRef.current,
+        event: "CANCEL",
+        currentStep: data?.current_step,
+        errorCode: data?.error_code,
+        errorMessage: data?.error_message,
+      }),
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -270,13 +284,17 @@ export function EmbeddedSignupBridge({
       if (signupEvent.event === "CANCEL") {
         exchangeStartedRef.current = false;
         setStatus("error");
-        setErrorKind("cancelled");
-        setErrorMessage(signupEvent.data?.error_message ?? "Cancelaste la conexión antes de terminar.");
+        setErrorKind(errorKeyForCancel(signupEvent.data?.error_code));
+        setErrorMessage(null);
+        reportCancel(signupEvent.data);
         return;
       }
+      // FINISH, FINISH_ONLY_WABA, FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING…: en
+      // coexistencia Meta a veces manda solo la WABA; el servidor encuentra el
+      // número dentro de ella.
       const wabaId = signupEvent.data?.waba_id;
       const phoneNumberId = signupEvent.data?.phone_number_id;
-      if (!wabaId || !phoneNumberId) return;
+      if (!wabaId) return;
       pendingRef.current = {
         ...pendingRef.current,
         wabaId,
@@ -288,7 +306,7 @@ export function EmbeddedSignupBridge({
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [exchangeWhenReady]);
+  }, [exchangeWhenReady, reportCancel]);
 
   function onModeChange(next: Mode) {
     if (status === "processing" || status === "opening") return;
@@ -301,19 +319,18 @@ export function EmbeddedSignupBridge({
     if (!window.FB || !config) return;
     setStatus("opening");
     setErrorMessage(null);
+    cancelReportedRef.current = false;
     const cloudApi = mode === "cloud_api";
     window.FB.login(
       (response: FBLoginResponse) => {
         const code = response.authResponse?.code;
         if (!code) {
-          setStatus("error");
-          setErrorKind(response.status === "not_authorized" ? "cancelled" : "meta_error");
-          setErrorMessage(
-            response.error_message ??
-              (response.status === "not_authorized"
-                ? "Meta no autorizó la conexión."
-                : "Meta no devolvió un código de autorización. Vuelve a intentar.")
-          );
+          // El popup se cerró sin terminar. Si Meta mandó su evento CANCEL ya
+          // quedó anotado con más detalle; si no, se anota aquí.
+          setStatus((current) => (current === "error" ? current : "error"));
+          setErrorKind((current) => (current && current !== "meta_unavailable" ? current : "cancelled"));
+          setErrorMessage(null);
+          reportCancel();
           return;
         }
         pendingRef.current = { ...pendingRef.current, code };
@@ -331,10 +348,12 @@ export function EmbeddedSignupBridge({
         return_scopes: true,
         scope: "whatsapp_business_management,whatsapp_business_messaging",
         state: config.state,
+        // Embedded Signup v4: la versión la decide la configuración de
+        // Facebook Login for Business (config_id), no `extras`. Sin
+        // `sessionInfoVersion` (v2/v3 se retiran el 2026-10-15).
         extras: {
           setup: {},
           ...(cloudApi ? {} : { featureType: "whatsapp_business_app_onboarding" }),
-          sessionInfoVersion: "3",
         },
       }
     );
@@ -388,7 +407,7 @@ export function EmbeddedSignupBridge({
                 <ModeOption
                   icon={Smartphone}
                   title="Ya uso WhatsApp Business en mi teléfono"
-                  description="Recomendado. Conservas la app en tu celular; Vocero recibe los mensajes en paralelo."
+                  description="Recomendado. Sigues usando la app en tu celular y los mensajes también llegan aquí."
                   selected={mode === "coexistence"}
                   onSelect={() => onModeChange("coexistence")}
                 />
@@ -451,7 +470,7 @@ export function EmbeddedSignupBridge({
                 Volver a mi CRM <ArrowRight className="ml-2 h-4 w-4" />
               </a>
             ) : (
-              <p className="text-sm text-text-3">Ya puedes volver a Vocero.</p>
+              <p className="text-sm text-text-3">Ya puedes volver a tu CRM.</p>
             )}
           </CardContent>
         )}
@@ -462,8 +481,18 @@ export function EmbeddedSignupBridge({
               <AlertTriangle className="h-6 w-6" aria-hidden="true" />
             </span>
             <p className="font-medium text-danger-text">{errorTitle(errorKind)}</p>
-            <p className="text-sm text-text-3">{errorMessage ?? "Vuelve a intentar en unos minutos."}</p>
-            {errorKind !== "plan_inactive" && errorKind !== "phone_in_use" && (
+            <p className="text-sm text-text-3">{errorMessage ?? errorBody(errorKind)}</p>
+            {errorAction(errorKind) && (
+              <a
+                href={errorAction(errorKind)!.href}
+                target="_blank"
+                rel="noreferrer"
+                className={buttonVariants({ className: "mt-2 min-h-11 w-full" })}
+              >
+                {errorAction(errorKind)!.label}
+              </a>
+            )}
+            {errorKind !== "plan_inactive" && onboardingErrorCopy(errorKind).retry && (
               <Button type="button" variant="outline" className="mt-2 min-h-11 w-full" onClick={() => void loadConfig(mode)}>
                 <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />
                 Reintentar
@@ -496,20 +525,17 @@ function statusAnnouncementFor(status: Status, errorKind: ErrorKind, success: Su
 }
 
 function errorTitle(kind: ErrorKind): string {
-  switch (kind) {
-    case "cancelled":
-      return "Conexión cancelada";
-    case "missing_permissions":
-      return "Faltan permisos en Meta";
-    case "phone_in_use":
-      return "Número ya conectado a otro negocio";
-    case "plan_inactive":
-      return "Activa tu plan";
-    case "session_expired":
-      return "Tu sesión de conexión expiró";
-    default:
-      return "No pudimos completar la conexión";
-  }
+  return kind === "plan_inactive" ? "Activa tu plan" : onboardingErrorCopy(kind).title;
+}
+
+function errorBody(kind: ErrorKind): string {
+  return kind === "plan_inactive"
+    ? "Tu prueba terminó. Elige un plan para seguir conectando WhatsApp."
+    : onboardingErrorCopy(kind).body;
+}
+
+function errorAction(kind: ErrorKind): { label: string; href: string } | undefined {
+  return kind === "plan_inactive" ? undefined : onboardingErrorCopy(kind).action;
 }
 
 function ModeOption({

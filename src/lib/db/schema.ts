@@ -595,6 +595,40 @@ export const metaCredentials = pgTable(
 );
 
 /**
+ * Alta de WhatsApp de autoservicio: dónde quedó cada negocio, para que el
+ * dueño retome y soporte vea lo mismo. Una fila por organización; el avance es
+ * pendiente → conectado → webhook_ok → primer_mensaje, y `error` guarda el paso
+ * y el motivo sin perder lo ya hecho (las columnas *_at no se borran).
+ */
+export const whatsappOnboarding = pgTable("whatsapp_onboarding", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  status: text("status", {
+    enum: ["pendiente", "conectado", "webhook_ok", "primer_mensaje", "error"],
+  })
+    .notNull()
+    .default("pendiente"),
+  mode: text("mode", { enum: ["coexistence", "cloud_api"] }),
+  wabaId: text("waba_id"),
+  phoneNumberId: text("phone_number_id"),
+  /** Paso del alta que falló (clave de `onboarding/errors.ts`), null sin error. */
+  errorStep: text("error_step"),
+  /** Código de Meta si lo hubo (p. ej. 133005), para soporte; nunca se muestra crudo. */
+  errorCode: text("error_code"),
+  /** Detalle técnico para soporte (mensaje de Meta). No llega al dueño. */
+  errorDetail: text("error_detail"),
+  /** Paso del popup donde el dueño canceló (current_step de Meta). */
+  cancelledAtStep: text("cancelled_at_step"),
+  attempts: integer("attempts").notNull().default(0),
+  connectedAt: timestamp("connected_at"),
+  webhookOkAt: timestamp("webhook_ok_at"),
+  firstMessageAt: timestamp("first_message_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+/**
  * 014 - Credenciales del canal de Instagram. Tabla explicita (no un jsonb
  * generico) porque unas credenciales tienen forma fija y conocida: asi
  * conservan tipado e indices. El token se cifra con los mismos helpers que el

@@ -20,6 +20,7 @@ const graph = {
   getPhoneCoexistenceStatus: vi.fn(),
   requestSmbAppDataSync: vi.fn(),
   PIN_MISMATCH_CODE: 133005,
+  NOT_VERIFIED_CODE: 133006,
 };
 vi.mock("@/server/agencia/whatsapp-signup/graph", () => graph);
 
@@ -38,18 +39,25 @@ const syncGuard = {
 };
 vi.mock("@/server/agencia/whatsapp-signup/sync-guard", () => syncGuard);
 
-let clashRows: { organizationId: string }[] = [];
+const onboarding = {
+  markConnected: vi.fn(),
+  markWebhookOk: vi.fn(),
+  markError: vi.fn(),
+};
+vi.mock("@/server/onboarding/whatsapp-onboarding", () => onboarding);
+
+let clashRows: { organizationId: string; phoneNumberId?: string }[] = [];
 vi.mock("@/lib/db", () => ({
   getDb: () => ({
     select: () => ({
       from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(clashRows),
-        }),
+        where: () => Promise.resolve(clashRows.map((r) => ({ phoneNumberId: "phone_1", ...r }))),
       }),
     }),
   }),
-  schema: { metaCredentials: { organizationId: "organization_id", phoneNumberId: "phone_number_id" } },
+  schema: {
+    metaCredentials: { organizationId: "organization_id", phoneNumberId: "phone_number_id", wabaId: "waba_id" },
+  },
 }));
 
 beforeAll(() => {
@@ -102,6 +110,9 @@ beforeEach(() => {
   syncGuard.recordWhatsappSignupError.mockResolvedValue(undefined);
   syncGuard.clearWhatsappSignupError.mockResolvedValue(undefined);
   syncTemplates.mockResolvedValue(3);
+  onboarding.markConnected.mockResolvedValue(undefined);
+  onboarding.markWebhookOk.mockResolvedValue(undefined);
+  onboarding.markError.mockResolvedValue(undefined);
 });
 
 async function run(mode: "coexistence" | "cloud_api" = "coexistence") {
@@ -294,3 +305,63 @@ describe("runEmbeddedSignupCompletion — caminos infelices", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("runEmbeddedSignupCompletion — estado del onboarding y errores nuevos", () => {
+  it("anota conectado tras guardar credenciales y webhook_ok al terminar", async () => {
+    const result = await run("cloud_api");
+    expect(result.ok).toBe(true);
+    expect(onboarding.markConnected).toHaveBeenCalledWith("org_1", {
+      mode: "cloud_api",
+      wabaId: "waba_1",
+      phoneNumberId: "phone_1",
+    });
+    expect(onboarding.markWebhookOk).toHaveBeenCalledWith("org_1");
+    expect(onboarding.markError).not.toHaveBeenCalled();
+    const savedAt = saveCredentials.mock.invocationCallOrder[0]!;
+    expect(onboarding.markConnected.mock.invocationCallOrder[0]!).toBeGreaterThan(savedAt);
+  });
+
+  it("bloquea una WABA que ya es de otro negocio aunque el número sea otro (waba_in_use)", async () => {
+    clashRows = [{ organizationId: "org_otro", phoneNumberId: "phone_9" }];
+    const result = await run();
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.status).toBe(409);
+    expect(result.step).toBe("waba_in_use");
+    expect(saveCredentials).not.toHaveBeenCalled();
+    expect(onboarding.markError).toHaveBeenCalledWith("org_1", expect.objectContaining({ step: "waba_in_use" }));
+  });
+
+  it("guarda el paso y el código de Meta cuando falla (para soporte)", async () => {
+    graph.subscribeWabaOverride.mockRejectedValue(new FakeMetaApiError("sin acceso", { status: 400, code: 200 }));
+    const result = await run();
+    expect(result.ok).toBe(false);
+    expect(onboarding.markError).toHaveBeenCalledWith(
+      "org_1",
+      expect.objectContaining({ step: "webhook", code: "200", detail: expect.stringContaining("sin acceso") })
+    );
+    expect(onboarding.markWebhookOk).not.toHaveBeenCalled();
+  });
+
+  it("133006 en el registro → register_not_verified", async () => {
+    graph.registerPhoneNumber.mockRejectedValue(new FakeMetaApiError("no verificado", { status: 400, code: 133006 }));
+    const result = await run("cloud_api");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.step).toBe("register_not_verified");
+  });
+
+  it("133016 solo cuenta como 'ya registrado' si Meta dice que el número está en Cloud API", async () => {
+    graph.registerPhoneNumber.mockResolvedValue({ alreadyRegistered: true });
+    graph.getPhoneCoexistenceStatus.mockResolvedValue({ isOnBizApp: false, platformType: "NOT_APPLICABLE" });
+    const limited = await run("cloud_api");
+    expect(limited.ok).toBe(false);
+    if (limited.ok) return;
+    expect(limited.step).toBe("register_limit");
+
+    graph.getPhoneCoexistenceStatus.mockResolvedValue({ isOnBizApp: false, platformType: "CLOUD_API" });
+    const registered = await run("cloud_api");
+    expect(registered.ok).toBe(true);
+  });
+});
+

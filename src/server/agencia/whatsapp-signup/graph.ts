@@ -52,6 +52,9 @@ export const ALREADY_REGISTERED_CODE = 133016;
 /** Confirmado en la documentación pública de Meta: PIN de verificación en dos pasos incorrecto. */
 export const PIN_MISMATCH_CODE = 133005;
 
+/** Documentación de Meta: el número todavía no fue verificado (SMS o llamada). */
+export const NOT_VERIFIED_CODE = 133006;
+
 function requireAppCredentials(): { appId: string; appSecret: string } {
   const env = getEnv();
   if (!env.META_APP_ID || !env.META_APP_SECRET) {
@@ -268,6 +271,22 @@ export async function getPhoneCoexistenceStatus(
     { token }
   );
   return { isOnBizApp: data.is_on_biz_app ?? null, platformType: data.platform_type ?? null };
+}
+
+/**
+ * Estado del nombre visible del número (`name_status` de Meta: APPROVED,
+ * PENDING_REVIEW, DECLINED, …). Informativo: un nombre en revisión no impide
+ * recibir ni responder mensajes.
+ */
+export async function getPhoneNameStatus(
+  phoneNumberId: string,
+  token: string
+): Promise<string | null> {
+  const data = await graphRequest<{ name_status?: string }>(
+    `${encodeURIComponent(phoneNumberId)}?fields=name_status`,
+    { token }
+  );
+  return data.name_status ?? null;
 }
 
 /** Cada `syncType` es de un solo uso por número — el guard vive en `complete.ts`, no aquí. */

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { WhatsappOnboardingPanel } from "@/components/settings/whatsapp-onboarding-panel";
 import {
   AlertTriangle,
   ArrowRight,
@@ -101,13 +102,13 @@ export function WhatsappWizard({
   return (
     <div className="max-w-3xl space-y-6">
       <header>
-        <p className="kicker">Configuración · paso 3 de 7</p>
+        <p className="kicker">Configuración · paso 2 de 6</p>
         <h1 className="mt-1 text-2xl font-[680] tracking-tight">Conecta tu WhatsApp</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">Primero conectamos el canal. Después ajustarás horarios, información del negocio y probarás respuestas antes de activar.</p>
-        <ol aria-label="Progreso de configuración" className="mt-6 grid max-w-xl grid-cols-7 gap-2">
-          {["Cuenta", "Pago", "WhatsApp", "Horario", "Negocio", "Prueba", "Activar"].map((label, index) => {
-            const current = index === 2;
-            const complete = index < 2;
+        <ol aria-label="Progreso de configuración" className="mt-6 grid max-w-xl grid-cols-6 gap-2">
+          {["Cuenta", "WhatsApp", "Horario", "Negocio", "Prueba", "Activar"].map((label, index) => {
+            const current = index === 1;
+            const complete = index < 1;
             return (
               <li key={label} className="min-w-0">
                 <div className={`h-1.5 rounded-full ${current ? "bg-brand" : complete ? "bg-success" : "bg-secondary"}`} />
@@ -119,6 +120,7 @@ export function WhatsappWizard({
           })}
         </ol>
       </header>
+      {saasMode && bridgeUrl && <WhatsappOnboardingPanel bridgeUrl={bridgeUrl} />}
       {bridgeUrl ? (
         <Card className="overflow-hidden border-brand-soft bg-brand-tint">
           <CardHeader>
@@ -126,7 +128,7 @@ export function WhatsappWizard({
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-brand-fg"><Sparkles className="h-5 w-5" /></span>
               <div>
                 <CardTitle>Conecta tu WhatsApp</CardTitle>
-                <CardDescription className="mt-1">Flujo oficial de Meta, sin salir de Vocero. Conserva tu WhatsApp Business si ya lo usas en tu teléfono.</CardDescription>
+                <CardDescription className="mt-1">Flujo oficial de Meta. Si ya usas WhatsApp Business en tu teléfono, lo sigues usando.</CardDescription>
               </div>
             </div>
           </CardHeader>
