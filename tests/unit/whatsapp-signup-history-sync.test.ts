@@ -139,6 +139,8 @@ describe("processHistoryValue", () => {
     });
     expect(getOrCreateContactByIdentity).toHaveBeenCalledTimes(1);
     expect(getOrCreateConversation).toHaveBeenCalledTimes(1);
+    // Un chat viejo del teléfono nace con la IA apagada.
+    expect(getOrCreateConversation).toHaveBeenCalledWith(expect.anything(), expect.anything(), { aiEnabled: false });
   });
 
   it("lastMessageAt de la conversación avanza al máximo timestamp del thread (GREATEST, no se pisa con uno viejo)", async () => {
