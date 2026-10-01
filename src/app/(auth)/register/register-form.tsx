@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, ShieldCheck } from "lucide-react";
 import { signUp } from "@/lib/auth/client";
-import { SIGNUP_HOST_HINT } from "@/lib/tenant-host";
 import { isSaaSPlan, PLAN_CATALOG } from "@/lib/saas-plans";
 import type { SaaSPlan } from "@/server/saas/billing";
 import type { Brand } from "@/lib/brand";

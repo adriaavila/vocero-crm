@@ -10,7 +10,7 @@ import { getDb, schema } from "@/lib/db";
  * patrón que los canales opcionales (ADR-001): las tablas existen siempre,
  * apagadas por defecto, y lo que decide si el módulo EXISTE es una bandera —
  * aquí por ORGANIZACIÓN (`organization.metadata.vertical`), no de instancia
- * completa, porque un mismo despliegue de Rei CRM sirve a varias agencias y
+ * completa, porque un mismo despliegue de Rei sirve a varias agencias y
  * cada una es dueña de su propio vertical.
  *
  * Ver la enmienda de `.specify/memory/constitution.md` (Principio VIII).

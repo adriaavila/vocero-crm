@@ -114,7 +114,7 @@ const ALLOK_PRO_NAV: NavItem[] = [
  *
  * `realty` (parte 1 del vertical inmobiliario) es un flag POR ORGANIZACIÓN
  * (`organization.metadata.vertical`), no de instancia como `agenda`: un
- * mismo despliegue de Rei CRM sirve a varias agencias. Por eso llega aparte
+ * mismo despliegue de Rei sirve a varias agencias. Por eso llega aparte
  * y no se deduce de `pro` — una organización Pro sin el vertical no debe ver
  * "Propiedades".
  */
@@ -198,7 +198,7 @@ export function AppNav({
    * Vertical inmobiliario (parte 1) — ¿esta ORGANIZACIÓN tiene el vertical
    * activo? A diferencia de `agenda` (bandera de instancia), viene de
    * `organization.metadata.vertical`: dos agencias del mismo despliegue de
-   * Rei CRM pueden diferir.
+   * Rei pueden diferir.
    */
   realty?: boolean;
   saasMode?: boolean;
