@@ -20,7 +20,7 @@ import {
   saasAppHost,
   SIGNUP_HOST_HINT,
   tenantSlugFromHost,
-  trustedSaaSOrigin,
+  trustedOriginForRequest,
 } from "@/lib/tenant-host";
 
 /**
@@ -75,7 +75,10 @@ function createAuth() {
     // alta y en admin, no solo en APP_BASE_URL.
     trustedOrigins: (request?: Request): string[] => {
       if (!isAllokSaaSMode()) return [];
-      const origin = trustedSaaSOrigin(request?.headers.get("origin"));
+      const origin = trustedOriginForRequest(
+        request?.headers.get("origin"),
+        request?.headers.get("x-forwarded-host") ?? request?.headers.get("host"),
+      );
       return origin ? [origin] : [];
     },
     advanced: {

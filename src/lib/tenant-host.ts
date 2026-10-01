@@ -25,6 +25,8 @@ const RESERVED_SUBDOMAINS = new Set([
   "mail",
   "docs",
   "blog",
+  "deploy-hooks",
+  "medidor",
 ]);
 
 /**
@@ -180,6 +182,23 @@ export function trustedSaaSOrigin(
     isLegacyAppHost(host, rootDomain) ||
     Boolean(tenantSlugFromHost(host, rootDomain));
   return known ? url.origin : null;
+}
+
+/**
+ * The Origin to trust for one auth request: a known SaaS origin AND the same
+ * host the request was sent to. Every real flow is same-origin (the auth client
+ * has no baseURL), so a sibling subdomain this app doesn't serve, another port
+ * or a loopback origin never passes.
+ */
+export function trustedOriginForRequest(
+  origin: string | null | undefined,
+  requestHost: string | null | undefined,
+  rootDomain = process.env.ALLOK_ROOT_DOMAIN ?? DEFAULT_ROOT_DOMAIN,
+): string | null {
+  const trusted = trustedSaaSOrigin(origin, rootDomain);
+  const host = requestHost?.split(",")[0]?.trim().toLowerCase().replace(/\.(?=:|$)/, "");
+  if (!trusted || !host) return null;
+  return new URL(trusted).host === host ? trusted : null;
 }
 
 export function tenantSlugFromHost(
