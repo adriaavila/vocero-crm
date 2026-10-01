@@ -317,8 +317,8 @@ export function checkoutBlocked(billing: Pick<SaaSBillingState, "source" | "subs
 
 /**
  * Pagar durante la prueba de autoservicio no quema los días que quedan: Stripe
- * cobra al terminar la prueba (`trial_end`). Stripe exige al menos 48 h; con
- * menos, cobra ya.
+ * cobra al terminar la prueba (`trial_end`). Stripe exige al menos 48 h (aquí
+ * 49 h de margen); con menos, cobra ya.
  */
 export function selfServeTrialEnd(
   billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status" | "currentPeriodEnd">,
@@ -326,7 +326,7 @@ export function selfServeTrialEnd(
 ): number | undefined {
   if (!isSelfServeTrial(billing) || !billing.currentPeriodEnd) return undefined;
   const end = Math.floor(Date.parse(billing.currentPeriodEnd) / 1000);
-  return end * 1000 - now > 48 * 3600 * 1000 ? end : undefined;
+  return end * 1000 - now > 49 * 3600 * 1000 ? end : undefined;
 }
 
 /**

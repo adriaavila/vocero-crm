@@ -72,8 +72,13 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
       if (m.direction !== "in") return;
       // El servidor decide (solo WhatsApp cuenta): un mensaje de Instagram o
       // Messenger no cierra el alta.
-      void load().then((status) => {
+      // El evento sale antes de que se marque el alta: si aún no, un reintento.
+      const show = (status: string | null) => {
         if (status === "primer_mensaje") setFirstMessage((prev) => prev ?? { text: m.text ?? null });
+        return status;
+      };
+      void load().then(show).then((status) => {
+        if (status !== "primer_mensaje") window.setTimeout(() => void load().then(show), 1500);
       });
     },
   });
