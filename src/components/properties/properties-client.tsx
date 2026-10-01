@@ -365,7 +365,7 @@ function PropertyCard({
               property.id
             )}`}
           >
-            Sin fotos
+            {imgFailed ? "Foto no disponible" : "Sin fotos"}
           </span>
         )}
         <span className="absolute left-2 top-2">
