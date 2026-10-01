@@ -16,9 +16,12 @@ import { Label } from "@/components/ui/label";
 export default function RegisterForm({
   adminMode = false,
   soldPlans,
+  selfServe = false,
 }: {
   adminMode?: boolean;
   soldPlans: SaaSPlan[];
+  /** Alta de autoservicio: 7 días gratis, sin checkout; lo siguiente es conectar WhatsApp. */
+  selfServe?: boolean;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -75,6 +78,12 @@ export default function RegisterForm({
       }
       return;
     }
+    if (selfServe) {
+      // Prueba de 7 días sin tarjeta: el siguiente paso es conectar WhatsApp
+      // en el subdominio del negocio. El cobro llega después, desde Facturación.
+      await goToTenant("/settings/whatsapp");
+      return;
+    }
     const checkout = await fetch("/api/saas/billing/checkout", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -94,14 +103,18 @@ export default function RegisterForm({
     const destino = payload?.error?.code === "billing_unconfigured"
       ? "/overview?billing=unavailable"
       : "/settings/billing?checkout=failed";
+    await goToTenant(destino);
+  }
+
+  async function goToTenant(path: string) {
     const tenant = await fetch("/api/saas/tenant").then((response) =>
       response.ok ? response.json().catch(() => null) : null
     ) as { url?: string | null } | null;
     if (tenant?.url && new URL(tenant.url).origin !== window.location.origin) {
-      window.location.assign(`${tenant.url}${destino}`);
+      window.location.assign(`${tenant.url}${path}`);
       return;
     }
-    router.push(destino);
+    router.push(path);
     router.refresh();
   }
 
@@ -126,14 +139,21 @@ export default function RegisterForm({
   return (
     <Card className="shadow-md">
       <CardHeader>
-        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] text-brand-fg">1</span> Tu espacio</span><span className="normal-case tracking-normal text-text-4">1 de 7</span></div>
+        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] text-brand-fg">1</span> Tu espacio</span><span className="normal-case tracking-normal text-text-4">1 de 6</span></div>
         <CardTitle>Empieza con tu negocio</CardTitle>
         <CardDescription>
           En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar Allok.
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {PLAN_CATALOG[plan].name}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
+        {selfServe ? (
+          <div className="mb-4 rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm">
+            <span className="block font-semibold">7 días gratis, sin tarjeta</span>
+            <span className="block text-xs text-text-3">Conecta tu WhatsApp y prueba el agente. Eliges plan cuando termine la prueba.</span>
+          </div>
+        ) : (
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">Allok {PLAN_CATALOG[plan].name}</span></span><Link href="https://allok.fun/#precios" className="text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
+        )}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="name">Nombre del negocio</Label>

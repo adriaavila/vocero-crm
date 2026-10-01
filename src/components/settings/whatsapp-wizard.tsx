@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { WhatsappOnboardingPanel } from "@/components/settings/whatsapp-onboarding-panel";
 import {
   AlertTriangle,
   ArrowRight,
@@ -43,9 +44,14 @@ export function shouldShowHandoverRecovery(
 export function WhatsappWizard({
   saasMode = false,
   guidedAvailable = false,
+  bridgeUrl = null,
 }: {
   saasMode?: boolean;
   guidedAvailable?: boolean;
+  /** Fork — Embedded Signup en la app: URL del bridge (`/conectar-whatsapp`
+   *  en el host de la app) con `?org=` ya armado. null = usar el enlace
+   *  guiado de allok.fun (fallback) o, sin ninguno, solo el formulario manual. */
+  bridgeUrl?: string | null;
 }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
@@ -54,6 +60,10 @@ export function WhatsappWizard({
   const [connectError, setConnectError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
+  const [launchingBridge, setLaunchingBridge] = useState(false);
+  // Con un alta en curso (esperando mensaje, error reintentable, conectado) la
+  // acción vive en el panel; aquí no se repite "Conectar WhatsApp".
+  const [showConnect, setShowConnect] = useState(true);
 
   const refetch = useCallback(async () => {
     const [c, w] = await Promise.all([
@@ -95,13 +105,13 @@ export function WhatsappWizard({
   return (
     <div className="max-w-3xl space-y-6">
       <header>
-        <p className="kicker">Configuración · paso 3 de 7</p>
+        <p className="kicker">Configuración · paso 2 de 6</p>
         <h1 className="mt-1 text-2xl font-[680] tracking-tight">Conecta tu WhatsApp</h1>
         <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">Primero conectamos el canal. Después ajustarás horarios, información del negocio y probarás respuestas antes de activar.</p>
-        <ol aria-label="Progreso de configuración" className="mt-6 grid max-w-xl grid-cols-7 gap-2">
-          {["Cuenta", "Pago", "WhatsApp", "Horario", "Negocio", "Prueba", "Activar"].map((label, index) => {
-            const current = index === 2;
-            const complete = index < 2;
+        <ol aria-label="Progreso de configuración" className="mt-6 grid max-w-xl grid-cols-6 gap-2">
+          {["Cuenta", "WhatsApp", "Horario", "Negocio", "Prueba", "Activar"].map((label, index) => {
+            const current = index === 1;
+            const complete = index < 1;
             return (
               <li key={label} className="min-w-0">
                 <div className={`h-1.5 rounded-full ${current ? "bg-brand" : complete ? "bg-success" : "bg-secondary"}`} />
@@ -113,7 +123,36 @@ export function WhatsappWizard({
           })}
         </ol>
       </header>
-      {guidedAvailable && (
+      {saasMode && bridgeUrl && <WhatsappOnboardingPanel bridgeUrl={bridgeUrl} onShowConnectChange={setShowConnect} />}
+      {bridgeUrl ? (
+        showConnect && (
+        <Card className="overflow-hidden border-brand-soft bg-brand-tint">
+          <CardHeader>
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-brand-fg"><Sparkles className="h-5 w-5" /></span>
+              <div>
+                <CardTitle>Conecta tu WhatsApp</CardTitle>
+                <CardDescription className="mt-1">Flujo oficial de Meta. Si ya usas WhatsApp Business en tu teléfono, lo sigues usando.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <Button
+              type="button"
+              className="w-full sm:w-auto"
+              disabled={launchingBridge}
+              onClick={() => {
+                setLaunchingBridge(true);
+                window.location.assign(bridgeUrl);
+              }}
+            >
+              {launchingBridge ? "Abriendo…" : "Conectar WhatsApp"}<ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <p className="mt-3 text-xs text-text-3">Se abrirá una ventana segura y volverás aquí cuando el número esté conectado.</p>
+          </CardContent>
+        </Card>
+        )
+      ) : guidedAvailable && (
         <Card className="overflow-hidden border-brand-soft bg-brand-tint">
           <CardHeader>
             <div className="flex items-start gap-3">
@@ -217,9 +256,17 @@ export function WhatsappWizard({
         </div>
       )}
 
-      <ConnectForm existing={connection} onSaved={() => void refetch()} saasMode={saasMode} />
+      <ConnectForm
+        existing={connection}
+        onSaved={() => void refetch()}
+        hasGuidedOption={Boolean(bridgeUrl) || guidedAvailable}
+      />
 
-      {webhook && <WebhookCard webhook={webhook} />}
+      {/* El override de Embedded Signup y el enlace guiado ya mueven el
+          webhook solos; en SaaS mostrar el verify token de la instancia
+          entera es una superficie que sobra (y hoy la ve cualquier
+          miembro — ver el fix owner-only en la ruta). */}
+      {webhook && !saasMode && <WebhookCard webhook={webhook} />}
     </div>
   );
 }
@@ -227,11 +274,11 @@ export function WhatsappWizard({
 function ConnectForm({
   existing,
   onSaved,
-  saasMode,
+  hasGuidedOption,
 }: {
   existing: Connection | null;
   onSaved: () => void;
-  saasMode: boolean;
+  hasGuidedOption: boolean;
 }) {
   const [wabaId, setWabaId] = useState(existing?.wabaId ?? "");
   const [phoneNumberId, setPhoneNumberId] = useState(
@@ -301,7 +348,11 @@ function ConnectForm({
     <Card>
       <CardHeader>
         <CardTitle>
-          {existing ? "Reconectar / actualizar el número" : saasMode ? "Conexión manual (respaldo)" : "Conectar tu número de WhatsApp"}
+          {existing
+            ? "Reconectar / actualizar el número"
+            : hasGuidedOption
+              ? "Conexión manual (respaldo)"
+              : "Conectar tu número de WhatsApp"}
         </CardTitle>
         <CardDescription>
           Pega las credenciales de WhatsApp Cloud API. El token se valida

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getAuth } from "@/lib/auth";
 import { isAllokSaaSMode, isSaaSAdminEmail } from "@/lib/tenant-host";
 import { soldSaaSPlans } from "@/lib/saas-plans";
-import { SAAS_SELF_SERVE } from "@/server/auth/registration";
+import { isSaaSSelfServe } from "@/server/auth/registration";
 import { ALLOK_START_URL } from "@/components/agencia/allok/setup-contact";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -20,12 +20,12 @@ export const dynamic = "force-dynamic";
  */
 export default async function RegisterPage() {
   const soldPlans = soldSaaSPlans(process.env.SAAS_PLANS);
-  if (isAllokSaaSMode() && !SAAS_SELF_SERVE) {
+  if (isAllokSaaSMode() && !isSaaSSelfServe()) {
     const session = await getAuth().api.getSession({ headers: await headers() }).catch(() => null);
     if (!isSaaSAdminEmail(session?.user.email)) return <SetupWithUs />;
     return <RegisterForm adminMode soldPlans={soldPlans} />;
   }
-  return <RegisterForm soldPlans={soldPlans} />;
+  return <RegisterForm soldPlans={soldPlans} selfServe={isAllokSaaSMode()} />;
 }
 
 function SetupWithUs() {

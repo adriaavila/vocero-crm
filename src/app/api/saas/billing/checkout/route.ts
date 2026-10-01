@@ -2,12 +2,15 @@ import { apiError, parseBody, withOwner } from "@/lib/api";
 import { soldSaaSPlans } from "@/lib/saas-plans";
 import {
   appOrigin,
+  checkoutBlocked,
   getOrganizationBilling,
   getOrganizationForBilling,
   hadPriorSubscription,
+  pendingCheckoutBilling,
   priceIdForPlan,
   randomIntegrationSuffix,
   saveOrganizationBilling,
+  selfServeTrialEnd,
   stripeForSaaS,
   tenantOrigin,
   trialDaysForPlan,
@@ -33,7 +36,9 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
   const organization = await getOrganizationForBilling(session.organizationId);
   if (!organization) return apiError(404, "organization_not_found", "Negocio no encontrado.");
   const current = await getOrganizationBilling(session.organizationId);
-  if (current.status === "active" || current.status === "trialing") {
+  // Durante la prueba de autoservicio (sin Stripe) sí puede pagar: es lo que
+  // se le pide. `hadPriorSubscription` ya evita una segunda prueba en Stripe.
+  if (checkoutBlocked(current)) {
     return apiError(409, "billing_active", "Gestiona el cambio de plan desde tu portal de facturación.");
   }
 
@@ -46,6 +51,7 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
 
   const origin = appOrigin(request);
   const dashboardOrigin = organization.slug ? tenantOrigin(organization.slug, request) : origin;
+  const trialEnd = selfServeTrialEnd(current);
   const checkout = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer,
@@ -60,7 +66,9 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
       plan: parsed.data.plan,
     },
     subscription_data: {
-      trial_period_days: trialDaysForPlan(parsed.data.plan, hadPriorSubscription(current)),
+      ...(trialEnd
+        ? { trial_end: trialEnd }
+        : { trial_period_days: trialDaysForPlan(parsed.data.plan, hadPriorSubscription(current)) }),
       metadata: {
         organizationId: session.organizationId,
         plan: parsed.data.plan,
@@ -68,11 +76,9 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
     },
   });
 
-  await saveOrganizationBilling(session.organizationId, {
-    plan: parsed.data.plan as SaaSPlan,
-    status: "incomplete",
-    customerId: customer,
-    priceId: price,
-  });
+  await saveOrganizationBilling(
+    session.organizationId,
+    pendingCheckoutBilling(current, { plan: parsed.data.plan as SaaSPlan, customerId: customer, priceId: price }),
+  );
   return Response.json({ url: checkout.url });
 }, { allowSaaSAppHost: true });

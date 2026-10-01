@@ -101,6 +101,14 @@ try {
   check("Alfa lee su propia marca", alphaBranding?.branding?.name === "Alfa visible");
   check("Beta lee su propia marca", betaBranding?.branding?.name === "Beta visible");
 
+  // "Sin plan" de verdad antes de probar las puertas de pago: con el
+  // autoservicio encendido el registro trae 7 días de prueba, y una corrida
+  // anterior de este guion deja a Alfa en "active" (ver más abajo).
+  await sql`
+    update organization
+    set metadata = (coalesce(metadata::jsonb, '{}'::jsonb) || '{"allok":{"billing":{"status":"inactive"}}}'::jsonb)::text
+    where slug = ${alphaHost.split(".")[0]}`;
+
   const activation = await alpha.request.put(`${base}/api/agent/profile`, {
     headers: { ...headers(alphaHost), "content-type": "application/json" },
     data: { enabled: true },

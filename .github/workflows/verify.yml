@@ -44,6 +44,9 @@ jobs:
       ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       META_WEBHOOK_VERIFY_TOKEN: ci-webhook-token
       META_APP_SECRET: ci-meta-app-secret
+      META_APP_ID: ci-meta-app-id
+      META_ES_CONFIG_ID: ci-es-config
+      META_ES_CONFIG_ID_CLOUD_API: ci-es-config-cloud
       META_GRAPH_BASE_URL: http://localhost:3000/api/dev/wa-mock/graph
       WA_MOCK_ENABLED: "true"
       OPENAI_API_KEY: ci-openai-token

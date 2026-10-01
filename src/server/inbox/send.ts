@@ -35,7 +35,7 @@ import {
   uploadGraphMedia,
   validateOutgoing,
 } from "@/server/whatsapp/media";
-import { canAutomate } from "@/server/agencia/entitlements";
+import { trialAiQuotaReached, canAutomate } from "@/server/agencia/entitlements";
 import { canAgentRespondNow } from "@/server/business-hours";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 
@@ -151,6 +151,13 @@ async function prepareSend(
     throw new SendError(
       "billing_inactive",
       "La automatización está pausada: revisa la suscripción de Allok",
+    );
+  }
+
+  if (requireAiEnabled && (await trialAiQuotaReached(organizationId))) {
+    throw new SendError(
+      "billing_inactive",
+      "La prueba gratis llegó a su tope de respuestas del agente: elige un plan en Facturación",
     );
   }
 

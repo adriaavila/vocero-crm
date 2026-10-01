@@ -1,7 +1,29 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { isSaaSPlan, planMeetsTier } from "@/lib/saas-plans";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
+
+/** Espejo de `SELF_SERVE_TRIAL_*` en `server/saas/billing` (sin importarlo: evita el ciclo). */
+const SELF_SERVE_TRIAL_SOURCE = "self_serve_trial";
+const SELF_SERVE_TRIAL_AI_REPLIES = 300;
+
+type TrialFields = { source?: unknown; subscriptionId?: unknown; status?: unknown; currentPeriodEnd?: unknown };
+
+/** Prueba de autoservicio vigente (sin suscripción de Stripe todavía). */
+function isSelfServeTrialBilling(billing: TrialFields | null | undefined): boolean {
+  return (
+    billing?.source === SELF_SERVE_TRIAL_SOURCE &&
+    !billing.subscriptionId &&
+    billing.status === "trialing"
+  );
+}
+
+/** La prueba de autoservicio vence sola por fecha: no hay Stripe que la cambie. */
+export function selfServeTrialExpired(billing: TrialFields | null | undefined, now = new Date()): boolean {
+  if (!isSelfServeTrialBilling(billing)) return false;
+  const ends = typeof billing?.currentPeriodEnd === "string" ? Date.parse(billing.currentPeriodEnd) : NaN;
+  return !Number.isFinite(ends) || ends <= now.getTime();
+}
 
 export type AutomationBillingStatus =
   | "incomplete"
@@ -30,9 +52,10 @@ export function hasPaidSaaSPlanFromMetadata(
   if (!raw) return false;
   try {
     const parsed = JSON.parse(raw) as {
-      allok?: { billing?: { plan?: string; status?: string } };
+      allok?: { billing?: { plan?: string; status?: string } & TrialFields };
     };
     const billing = parsed.allok?.billing;
+    if (selfServeTrialExpired(billing)) return false;
     const currentPlan = isSaaSPlan(billing?.plan) ? billing.plan : null;
     return (
       planMeetsTier(currentPlan, plan) &&
@@ -75,10 +98,46 @@ export function automationAccessFromMetadata(
       ? status
       : "inactive";
 
+  if (selfServeTrialExpired(billing as TrialFields | null)) {
+    return { allowed: false, status: "inactive" };
+  }
   return {
     allowed: normalized === "active" || normalized === "trialing",
     status: normalized,
   };
+}
+
+/**
+ * Tope de respuestas de IA de la prueba de autoservicio. Solo frena al
+ * agente, nunca las respuestas a mano del dueño ni la conexión de WhatsApp.
+ */
+export async function trialAiQuotaReached(organizationId: string): Promise<boolean> {
+  if (!isAllokSaaSMode()) return false;
+  const db = getDb();
+  const rows = await db
+    .select({ metadata: schema.organization.metadata })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  let billing: TrialFields | null = null;
+  try {
+    billing = (JSON.parse(rows[0]?.metadata ?? "{}") as { allok?: { billing?: TrialFields } }).allok?.billing ?? null;
+  } catch {
+    return false;
+  }
+  if (!isSelfServeTrialBilling(billing)) return false;
+  // Cuenta hasta el tope y para (`limit`): nunca recorre todo el historial
+  // importado. El Laboratorio (conversaciones de prueba) no gasta el tope.
+  const counted = await db.execute(sql`
+    select count(*)::int as n from (
+      select 1 from message m
+      join conversation c on c.id = m.conversation_id and c.organization_id = m.organization_id
+      where m.organization_id = ${organizationId}
+        and m.origin = 'ai' and m.direction = 'out' and not c.is_test
+      limit ${SELF_SERVE_TRIAL_AI_REPLIES}
+    ) s`);
+  const n = Number((counted as unknown as { n: number }[])[0]?.n ?? 0);
+  return n >= SELF_SERVE_TRIAL_AI_REPLIES;
 }
 
 export async function canAutomate(organizationId: string): Promise<boolean> {

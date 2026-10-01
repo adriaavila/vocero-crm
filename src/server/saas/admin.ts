@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { errorKeyForStep } from "@/lib/onboarding-errors";
 import { count, desc } from "drizzle-orm";
 import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
@@ -79,11 +80,22 @@ export type SaaSTenantStatus = {
   whatsapp: "connected" | "reconnect_required" | "not_connected";
   agentEnabled: boolean;
   billing: Pick<SaaSBillingState, "plan" | "status" | "source" | "subscriptionId">;
+  /** Alta de WhatsApp de autoservicio: dónde quedó, para soporte. */
+  onboarding: {
+    status: "pendiente" | "conectado" | "webhook_ok" | "primer_mensaje" | "error";
+    errorKey: string | null;
+    errorCode: string | null;
+    errorDetail: string | null;
+    cancelledAtStep: string | null;
+    attempts: number;
+    updatedAt: string;
+    canRetry: boolean;
+  } | null;
 };
 
 export async function listSaaSTenantStatus(): Promise<SaaSTenantStatus[]> {
   const db = getDb();
-  const [organizations, members, credentials, profiles] = await Promise.all([
+  const [organizations, members, credentials, profiles, onboardings] = await Promise.all([
     db.select({ id: schema.organization.id, name: schema.organization.name, slug: schema.organization.slug, createdAt: schema.organization.createdAt, metadata: schema.organization.metadata })
       .from(schema.organization)
       .orderBy(desc(schema.organization.createdAt)),
@@ -94,7 +106,9 @@ export async function listSaaSTenantStatus(): Promise<SaaSTenantStatus[]> {
       .from(schema.metaCredentials),
     db.select({ organizationId: schema.agentProfile.organizationId, enabled: schema.agentProfile.enabled })
       .from(schema.agentProfile),
+    db.select().from(schema.whatsappOnboarding),
   ]);
+  const onboardingByOrg = new Map(onboardings.map((row) => [row.organizationId, row]));
   const memberCount = new Map(members.map((row) => [row.organizationId, row.count]));
   const credentialStatus = new Map(credentials.map((row) => [row.organizationId, row.status]));
   const agentStatus = new Map(profiles.map((row) => [row.organizationId, row.enabled]));
@@ -109,7 +123,25 @@ export async function listSaaSTenantStatus(): Promise<SaaSTenantStatus[]> {
     billing: (({ plan, status, source, subscriptionId }) => ({ plan, status, source, subscriptionId }))(
       billingFromMetadata(organization.metadata)
     ),
+    onboarding: onboardingSummary(onboardingByOrg.get(organization.id), credentialStatus.has(organization.id)),
   }));
+}
+
+function onboardingSummary(
+  row: typeof schema.whatsappOnboarding.$inferSelect | undefined,
+  hasCredentials: boolean,
+): SaaSTenantStatus["onboarding"] {
+  if (!row) return null;
+  return {
+    status: row.status,
+    errorKey: row.status === "error" ? errorKeyForStep(row.errorStep) : null,
+    errorCode: row.errorCode,
+    errorDetail: row.errorDetail,
+    cancelledAtStep: row.cancelledAtStep,
+    attempts: row.attempts,
+    updatedAt: row.updatedAt.toISOString(),
+    canRetry: hasCredentials && row.status === "error",
+  };
 }
 
 /**

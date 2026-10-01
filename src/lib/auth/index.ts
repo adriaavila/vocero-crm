@@ -11,7 +11,7 @@ import {
   resolveActiveOrganizationId,
   resolveOrganizationIdForHost,
 } from "@/server/auth/on-signup";
-import { isPublicSignupAllowed } from "@/server/auth/registration";
+import { isPublicSignupAllowed, isSaaSSelfServe } from "@/server/auth/registration";
 import {
   isAllokSaaSMode,
   isKnownAllokHost,
@@ -183,10 +183,18 @@ function createAuth() {
       user: {
         create: {
           after: async (user, context) => {
+            const internal = isInternalSignup();
             await onUserCreated(user.id, user.name, {
-              skipOrganization: isInternalSignup(),
+              skipOrganization: internal,
               // La manda /register: fija la zona del horario del negocio nuevo.
               timezone: context?.headers?.get("x-timezone"),
+              // Registro público con el autoservicio encendido. Un negocio que
+              // crea un admin de allok sigue el camino de la puesta en marcha.
+              selfServeTrial:
+                !internal &&
+                isAllokSaaSMode() &&
+                isSaaSSelfServe() &&
+                !(await isSaaSAdminRequest(context?.headers)),
             });
           },
         },

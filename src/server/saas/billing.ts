@@ -111,9 +111,17 @@ function asHistory(value: unknown): BillingHistoryEntry[] {
 
 export function billingFromMetadata(raw: string | null | undefined): SaaSBillingState {
   const billing = billingMetadata(parseMetadata(raw));
+  // La prueba de autoservicio no tiene Stripe que la cierre: vencida, se lee
+  // como "inactive" en todo el producto (Facturación ofrece los planes, el
+  // checkout la deja pagar, el menú deja de mostrar Completo).
+  const trialExpired =
+    billing.source === SELF_SERVE_TRIAL_SOURCE &&
+    typeof billing.subscriptionId !== "string" &&
+    billing.status === "trialing" &&
+    !(typeof billing.currentPeriodEnd === "string" && Date.parse(billing.currentPeriodEnd) > Date.now());
   return {
     plan: asPlan(billing.plan),
-    status: asStatus(billing.status),
+    status: trialExpired ? "inactive" : asStatus(billing.status),
     customerId: typeof billing.customerId === "string" ? billing.customerId : null,
     subscriptionId: typeof billing.subscriptionId === "string" ? billing.subscriptionId : null,
     priceId: typeof billing.priceId === "string" ? billing.priceId : null,
@@ -166,11 +174,16 @@ export function trialDaysForPlan(plan: SaaSPlan, hadSubscription = false): numbe
   return plan === "pro" && !hadSubscription ? 7 : undefined;
 }
 
-export function appOrigin(request: Request): string {
+/**
+ * `request` es opcional: en un Server Component no hay `Request` a mano, y las
+ * dos variables de entorno ya deciden en casi todo caso real (el header solo
+ * importa como último respaldo dentro de un route handler).
+ */
+export function appOrigin(request?: Request): string {
   return (
     process.env.ALLOK_SAAS_APP_URL?.trim() ||
     process.env.APP_BASE_URL?.trim() ||
-    request.headers.get("origin") ||
+    request?.headers.get("origin") ||
     "http://localhost:3000"
   ).replace(/\/$/, "");
 }
@@ -277,7 +290,85 @@ export function mergeBillingState(
  * gratis a quien pagó por link/transferencia y ahora pasa por checkout.
  */
 export function hadPriorSubscription(current: SaaSBillingState): boolean {
-  return current.subscriptionId !== null || current.grantedAt !== null;
+  return (
+    current.subscriptionId !== null ||
+    current.grantedAt !== null ||
+    current.source === SELF_SERVE_TRIAL_SOURCE
+  );
+}
+
+/**
+ * Prueba de autoservicio (decisión de Adrian, 2026-09-30): quien se registra
+ * solo conecta WhatsApp gratis y tiene 7 días de Completo, con tope de 300
+ * respuestas de IA. Sin Stripe: termina sola por fecha (`currentPeriodEnd`).
+ * Deja de ser "prueba de autoservicio" en cuanto existe una suscripción.
+ */
+export const SELF_SERVE_TRIAL_SOURCE = "self_serve_trial";
+export const SELF_SERVE_TRIAL_DAYS = 7;
+export const SELF_SERVE_TRIAL_AI_REPLIES = 300;
+
+/**
+ * Checkout se niega solo con una suscripción de Stripe viva. La prueba de
+ * autoservicio (vigente o vencida) siempre puede pagar.
+ */
+export function checkoutBlocked(billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">): boolean {
+  return (billing.status === "active" || billing.status === "trialing") && !isSelfServeTrial(billing);
+}
+
+/**
+ * Pagar durante la prueba de autoservicio no quema los días que quedan: Stripe
+ * cobra al terminar la prueba (`trial_end`). Stripe exige al menos 48 h (aquí
+ * 49 h de margen); con menos, cobra ya.
+ */
+export function selfServeTrialEnd(
+  billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status" | "currentPeriodEnd">,
+  now = Date.now(),
+): number | undefined {
+  if (!isSelfServeTrial(billing) || !billing.currentPeriodEnd) return undefined;
+  const end = Math.floor(Date.parse(billing.currentPeriodEnd) / 1000);
+  return end * 1000 - now > 49 * 3600 * 1000 ? end : undefined;
+}
+
+/**
+ * Lo que checkout anota antes de que Stripe confirme. En la prueba de
+ * autoservicio solo el cliente de Stripe: si abandona el checkout, la prueba
+ * (estado y plan) sigue intacta y el agente sigue contestando.
+ */
+export function pendingCheckoutBilling(
+  current: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,
+  input: { plan: SaaSPlan; customerId: string; priceId: string },
+): Partial<SaaSBillingState> {
+  if (isSelfServeTrial(current)) return { customerId: input.customerId };
+  return { plan: input.plan, status: "incomplete", customerId: input.customerId, priceId: input.priceId };
+}
+
+export function isSelfServeTrial(
+  billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,
+): boolean {
+  return (
+    billing.source === SELF_SERVE_TRIAL_SOURCE &&
+    billing.subscriptionId === null &&
+    billing.status === "trialing"
+  );
+}
+
+export async function startSelfServeTrial(
+  organizationId: string,
+  now = new Date(),
+  db: DbOrTx = getDb(),
+): Promise<SaaSBillingState> {
+  const ends = new Date(now.getTime() + SELF_SERVE_TRIAL_DAYS * 24 * 60 * 60 * 1000);
+  return saveOrganizationBilling(
+    organizationId,
+    {
+      plan: "pro",
+      status: "trialing",
+      source: SELF_SERVE_TRIAL_SOURCE,
+      currentPeriodEnd: ends.toISOString(),
+      updatedAt: now.toISOString(),
+    },
+    db,
+  );
 }
 
 /**

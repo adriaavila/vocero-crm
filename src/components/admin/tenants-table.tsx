@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { billingStatusLabel, formatManualSource, PLAN_CATALOG, PLAN_ORDER } from "@/lib/saas-plans";
+import { onboardingErrorCopy } from "@/lib/onboarding-errors";
 import type { SaaSPlan } from "@/server/saas/billing";
 import type { SaaSTenantStatus } from "@/server/saas/admin";
 
@@ -20,6 +22,14 @@ type PendingAction = "grant" | "revoke" | null;
 function planLabel(plan: SaaSPlan | null): string {
   return plan ? PLAN_CATALOG[plan].name : "—";
 }
+
+const ONBOARDING_LABEL: Record<NonNullable<SaaSTenantStatus["onboarding"]>["status"], string> = {
+  pendiente: "sin conectar",
+  conectado: "número guardado",
+  webhook_ok: "esperando primer mensaje",
+  primer_mensaje: "recibiendo mensajes",
+  error: "trabada",
+};
 
 function whatsappLabel(status: SaaSTenantStatus["whatsapp"]): string {
   return status === "connected" ? "Conectado" : status === "reconnect_required" ? "Reconectar" : "Pendiente";
@@ -38,11 +48,34 @@ function nothingToRevoke(billing: Billing): boolean {
  */
 export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTenantStatus[] }) {
   const [tenants, setTenants] = useState(initialTenants);
+  // router.refresh() trae filas nuevas del servidor (soporte del alta).
+  useEffect(() => setTenants(initialTenants), [initialTenants]);
   const [choice, setChoice] = useState<Record<string, SaaSPlan>>({});
   const [pending, setPending] = useState<Record<string, PendingAction>>({});
   const [needsConfirm, setNeedsConfirm] = useState<Record<string, "grant" | "revoke">>({});
   const [error, setError] = useState<Record<string, string>>({});
   const confirmButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const router = useRouter();
+  const [support, setSupport] = useState<Record<string, "retry" | "reset" | null>>({});
+
+  async function onboardingAction(tenantId: string, action: "retry" | "reset") {
+    setSupport((state) => ({ ...state, [tenantId]: action }));
+    setError((state) => ({ ...state, [tenantId]: "" }));
+    const response = await fetch(`/api/saas/businesses/${tenantId}/onboarding`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    }).catch(() => null);
+    const data = (await response?.json().catch(() => null)) as { ok?: boolean; outcome?: string } | null;
+    setSupport((state) => ({ ...state, [tenantId]: null }));
+    if (!data?.ok) {
+      setError((state) => ({
+        ...state,
+        [tenantId]: `No se pudo: ${onboardingErrorCopy(data?.outcome).title}.`,
+      }));
+    }
+    router.refresh();
+  }
 
   useEffect(() => {
     for (const tenantId of Object.keys(needsConfirm)) {
@@ -146,7 +179,50 @@ export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTe
               Agente {tenant.agentEnabled ? "activo" : "en pausa"}
             </span>
             <span>{tenant.members} usuario{tenant.members === 1 ? "" : "s"}</span>
+            {tenant.onboarding && (
+              <span className={tenant.onboarding.status === "error" ? "text-warning-text" : undefined}>
+                Alta: {ONBOARDING_LABEL[tenant.onboarding.status]}
+                {tenant.onboarding.attempts > 1 ? ` · ${tenant.onboarding.attempts} intentos` : ""}
+              </span>
+            )}
           </div>
+
+          {tenant.onboarding?.status === "error" && (
+            <div className="mt-3 rounded-md border border-warning-soft bg-warning-tint px-3 py-2.5 text-xs text-warning-text">
+              <p className="font-semibold">{onboardingErrorCopy(tenant.onboarding.errorKey).title}</p>
+              {(tenant.onboarding.errorCode || tenant.onboarding.errorDetail || tenant.onboarding.cancelledAtStep) && (
+                <p className="mt-1 break-words font-mono text-[11px]">
+                  {[
+                    tenant.onboarding.errorCode && `código ${tenant.onboarding.errorCode}`,
+                    tenant.onboarding.cancelledAtStep && `cerró en ${tenant.onboarding.cancelledAtStep}`,
+                    tenant.onboarding.errorDetail,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+              <div className="mt-2 flex flex-wrap gap-2">
+                {tenant.onboarding.canRetry && (
+                  <Button
+                    className="h-11"
+                    variant="outline"
+                    disabled={Boolean(support[tenant.id])}
+                    onClick={() => void onboardingAction(tenant.id, "retry")}
+                  >
+                    {support[tenant.id] === "retry" ? "Reintentando…" : "Reintentar activación"}
+                  </Button>
+                )}
+                <Button
+                  className="h-11"
+                  variant="ghost"
+                  disabled={Boolean(support[tenant.id])}
+                  onClick={() => void onboardingAction(tenant.id, "reset")}
+                >
+                  {support[tenant.id] === "reset" ? "Reiniciando…" : "Pedir que reconecte"}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Select value={planFor(tenant.id)} onValueChange={(value) => setChoice((state) => ({ ...state, [tenant.id]: value as SaaSPlan }))}>
