@@ -61,6 +61,9 @@ export function WhatsappWizard({
   const [retrying, setRetrying] = useState(false);
   const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [launchingBridge, setLaunchingBridge] = useState(false);
+  // Con un alta en curso (esperando mensaje, error reintentable, conectado) la
+  // acción vive en el panel; aquí no se repite "Conectar WhatsApp".
+  const [showConnect, setShowConnect] = useState(true);
 
   const refetch = useCallback(async () => {
     const [c, w] = await Promise.all([
@@ -120,8 +123,9 @@ export function WhatsappWizard({
           })}
         </ol>
       </header>
-      {saasMode && bridgeUrl && <WhatsappOnboardingPanel bridgeUrl={bridgeUrl} />}
+      {saasMode && bridgeUrl && <WhatsappOnboardingPanel bridgeUrl={bridgeUrl} onShowConnectChange={setShowConnect} />}
       {bridgeUrl ? (
+        showConnect && (
         <Card className="overflow-hidden border-brand-soft bg-brand-tint">
           <CardHeader>
             <div className="flex items-start gap-3">
@@ -147,6 +151,7 @@ export function WhatsappWizard({
             <p className="mt-3 text-xs text-text-3">Se abrirá una ventana segura y volverás aquí cuando el número esté conectado.</p>
           </CardContent>
         </Card>
+        )
       ) : guidedAvailable && (
         <Card className="overflow-hidden border-brand-soft bg-brand-tint">
           <CardHeader>

@@ -80,8 +80,13 @@ export function BillingClient({
             <p className="font-semibold">Prueba gratis de Completo</p>
             <p className="mt-1 text-sm text-text-2">
               {billing.currentPeriodEnd
-                ? `Termina el ${new Date(billing.currentPeriodEnd).toLocaleDateString("es-VE")}. Elige un plan para seguir cuando termine.`
-                : "Elige un plan para seguir cuando termine."}
+                ? `Termina el ${new Date(billing.currentPeriodEnd).toLocaleDateString("es", { day: "numeric", month: "long" })}. ${
+                    // Igual que selfServeTrialEnd: con menos de 49 h, Stripe cobra ya.
+                    Date.parse(billing.currentPeriodEnd) - Date.now() > 49 * 3600 * 1000
+                      ? "Si eliges un plan ahora, el cobro empieza cuando termine."
+                      : "Elige un plan para que tu agente siga contestando."
+                  }`
+                : "Elige un plan para que tu agente siga contestando."}
             </p>
           </CardContent>
         </Card>

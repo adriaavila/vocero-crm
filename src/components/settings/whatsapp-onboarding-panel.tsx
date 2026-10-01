@@ -37,7 +37,14 @@ const META_STEP: Record<string, string> = {
  * de activar un número ya guardado sin abrir Meta otra vez, y cierra con
  * "mándale un mensaje a tu número" viendo llegar el mensaje en vivo.
  */
-export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
+export function WhatsappOnboardingPanel({
+  bridgeUrl,
+  onShowConnectChange,
+}: {
+  bridgeUrl: string;
+  /** El botón "Conectar WhatsApp" del wizard solo compite cuando no hay alta en curso. */
+  onShowConnectChange?: (show: boolean) => void;
+}) {
   const [view, setView] = useState<View | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
@@ -82,6 +89,15 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
       });
     },
   });
+
+  // pendiente, o un error que no se arregla reintentando (otro número, otra cuenta):
+  // ahí el wizard muestra su "Conectar WhatsApp". En los demás estados la acción
+  // vive en este panel.
+  const showConnect =
+    view !== null && (view.status === "pendiente" || (view.status === "error" && !onboardingErrorCopy(view.errorKey).retry));
+  useEffect(() => {
+    if (view) onShowConnectChange?.(showConnect);
+  }, [view, showConnect, onShowConnectChange]);
 
   async function retry() {
     if (!view?.canRetryActivation) {
@@ -163,13 +179,18 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
                 {firstMessage ? "¡Llegó tu primer mensaje!" : "WhatsApp conectado y recibiendo mensajes"}
               </p>
               <p className="text-sm text-text-3">
-                {firstMessage?.text ? `"${firstMessage.text.slice(0, 80)}"` : number}
+                {firstMessage?.text ? `"${clip(firstMessage.text, 80)}"` : number}
               </p>
             </div>
           </div>
-          <Link href="/inbox" className={buttonVariants({ className: "min-h-11" })}>
-            Ver en la bandeja <ArrowRight className="ml-2 h-4 w-4" />
-          </Link>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Link href="/inbox" className={buttonVariants({ variant: "outline", className: "min-h-11" })}>
+              Ver en la bandeja
+            </Link>
+            <Link href="/agent" className={buttonVariants({ className: "min-h-11" })}>
+              Seguir: horario y agente <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </div>
         </CardContent>
         {nameNotice && <Notice text={nameNotice} href={WHATSAPP_MANAGER_URL} label="Abrir WhatsApp Manager" />}
       </Card>
@@ -199,6 +220,9 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
           <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
           Esperando tu mensaje…
         </p>
+        <a href={bridgeUrl} className="inline-flex min-h-11 items-center text-sm font-medium text-text-2 underline-offset-2 hover:underline">
+          ¿Número equivocado? Conecta otro
+        </a>
         {nameNotice && <p className="text-sm text-text-3">{nameNotice}</p>}
         <p className="flex items-start gap-2 text-xs text-text-3">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
@@ -224,4 +248,8 @@ function Notice({ text, href, label }: { text: string; href: string; label: stri
       </a>
     </div>
   );
+}
+
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }
