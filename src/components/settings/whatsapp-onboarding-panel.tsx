@@ -45,9 +45,10 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
 
   const load = useCallback(async (withMeta = false) => {
     const res = await fetch(`/api/onboarding/whatsapp${withMeta ? "?meta=1" : ""}`, { cache: "no-store" }).catch(() => null);
-    if (!res?.ok) return;
+    if (!res?.ok) return null;
     const data = (await res.json().catch(() => null)) as View | null;
     if (data) setView((prev) => ({ ...data, nameStatus: data.nameStatus ?? prev?.nameStatus }));
+    return data?.status ?? null;
   }, []);
 
   useEffect(() => {
@@ -69,8 +70,11 @@ export function WhatsappOnboardingPanel({ bridgeUrl }: { bridgeUrl: string }) {
       if (!waiting) return;
       const m = message as { direction?: string; text?: string | null };
       if (m.direction !== "in") return;
-      setFirstMessage((prev) => prev ?? { text: m.text ?? null });
-      setView((prev) => (prev ? { ...prev, status: "primer_mensaje" } : prev));
+      // El servidor decide (solo WhatsApp cuenta): un mensaje de Instagram o
+      // Messenger no cierra el alta.
+      void load().then((status) => {
+        if (status === "primer_mensaje") setFirstMessage((prev) => prev ?? { text: m.text ?? null });
+      });
     },
   });
 

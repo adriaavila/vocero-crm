@@ -315,6 +315,33 @@ export function checkoutBlocked(billing: Pick<SaaSBillingState, "source" | "subs
   return (billing.status === "active" || billing.status === "trialing") && !isSelfServeTrial(billing);
 }
 
+/**
+ * Pagar durante la prueba de autoservicio no quema los días que quedan: Stripe
+ * cobra al terminar la prueba (`trial_end`). Stripe exige al menos 48 h; con
+ * menos, cobra ya.
+ */
+export function selfServeTrialEnd(
+  billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status" | "currentPeriodEnd">,
+  now = Date.now(),
+): number | undefined {
+  if (!isSelfServeTrial(billing) || !billing.currentPeriodEnd) return undefined;
+  const end = Math.floor(Date.parse(billing.currentPeriodEnd) / 1000);
+  return end * 1000 - now > 48 * 3600 * 1000 ? end : undefined;
+}
+
+/**
+ * Lo que checkout anota antes de que Stripe confirme. En la prueba de
+ * autoservicio solo el cliente de Stripe: si abandona el checkout, la prueba
+ * (estado y plan) sigue intacta y el agente sigue contestando.
+ */
+export function pendingCheckoutBilling(
+  current: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,
+  input: { plan: SaaSPlan; customerId: string; priceId: string },
+): Partial<SaaSBillingState> {
+  if (isSelfServeTrial(current)) return { customerId: input.customerId };
+  return { plan: input.plan, status: "incomplete", customerId: input.customerId, priceId: input.priceId };
+}
+
 export function isSelfServeTrial(
   billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,
 ): boolean {

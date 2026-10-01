@@ -6,9 +6,11 @@ import {
   getOrganizationBilling,
   getOrganizationForBilling,
   hadPriorSubscription,
+  pendingCheckoutBilling,
   priceIdForPlan,
   randomIntegrationSuffix,
   saveOrganizationBilling,
+  selfServeTrialEnd,
   stripeForSaaS,
   tenantOrigin,
   trialDaysForPlan,
@@ -49,6 +51,7 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
 
   const origin = appOrigin(request);
   const dashboardOrigin = organization.slug ? tenantOrigin(organization.slug, request) : origin;
+  const trialEnd = selfServeTrialEnd(current);
   const checkout = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer,
@@ -63,7 +66,9 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
       plan: parsed.data.plan,
     },
     subscription_data: {
-      trial_period_days: trialDaysForPlan(parsed.data.plan, hadPriorSubscription(current)),
+      ...(trialEnd
+        ? { trial_end: trialEnd }
+        : { trial_period_days: trialDaysForPlan(parsed.data.plan, hadPriorSubscription(current)) }),
       metadata: {
         organizationId: session.organizationId,
         plan: parsed.data.plan,
@@ -71,11 +76,9 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
     },
   });
 
-  await saveOrganizationBilling(session.organizationId, {
-    plan: parsed.data.plan as SaaSPlan,
-    status: "incomplete",
-    customerId: customer,
-    priceId: price,
-  });
+  await saveOrganizationBilling(
+    session.organizationId,
+    pendingCheckoutBilling(current, { plan: parsed.data.plan as SaaSPlan, customerId: customer, priceId: price }),
+  );
   return Response.json({ url: checkout.url });
 }, { allowSaaSAppHost: true });

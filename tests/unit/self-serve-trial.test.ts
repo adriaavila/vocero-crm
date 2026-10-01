@@ -4,7 +4,7 @@ import {
   hasPaidSaaSPlanFromMetadata,
   selfServeTrialExpired,
 } from "@/server/agencia/entitlements";
-import { checkoutBlocked, hadPriorSubscription, billingFromMetadata, isSelfServeTrial } from "@/server/saas/billing";
+import { checkoutBlocked, pendingCheckoutBilling, selfServeTrialEnd, hadPriorSubscription, billingFromMetadata, isSelfServeTrial } from "@/server/saas/billing";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -65,5 +65,22 @@ describe("prueba de autoservicio (7 días, sin Stripe)", () => {
   it("vigente también puede pagar; una suscripción de Stripe viva no", () => {
     expect(checkoutBlocked(billingFromMetadata(metadata(trial(3 * DAY))))).toBe(false);
     expect(checkoutBlocked(billingFromMetadata(metadata(trial(3 * DAY, { subscriptionId: "sub_1", status: "active" }))))).toBe(true);
+  });
+
+  it("abandonar el checkout durante la prueba no la apaga", () => {
+    const state = billingFromMetadata(metadata(trial(3 * DAY)));
+    const saved = pendingCheckoutBilling(state, { plan: "basic", customerId: "cus_1", priceId: "price_1" });
+    expect(saved).toEqual({ customerId: "cus_1" });
+    const after = metadata({ ...trial(3 * DAY), ...saved });
+    expect(automationAccessFromMetadata(after, true)).toEqual({ allowed: true, status: "trialing" });
+    expect(hasPaidSaaSPlanFromMetadata(after, "pro", true)).toBe(true);
+  });
+
+  it("pagar durante la prueba cobra al terminarla (si faltan más de 48 h)", () => {
+    const now = Date.now();
+    const state = billingFromMetadata(metadata(trial(3 * DAY)));
+    expect(selfServeTrialEnd(state, now)).toBe(Math.floor(Date.parse(state.currentPeriodEnd!) / 1000));
+    expect(selfServeTrialEnd(billingFromMetadata(metadata(trial(DAY))), now)).toBeUndefined();
+    expect(selfServeTrialEnd(billingFromMetadata(metadata(trial(-DAY))), now)).toBeUndefined();
   });
 });
