@@ -17,6 +17,7 @@ export default async function BillingPage({
       billing={await getOrganizationBilling(session.organizationId)}
       soldPlans={soldSaaSPlans(process.env.SAAS_PLANS)}
       brandName={brand().Name}
+      trial={brand().id !== "rei"}
       // El registro manda aquí cuando el checkout no abrió: la cuenta existe y
       // el pago no, así que la pantalla tiene que decirlo antes que nada.
       notice={params.checkout === "failed"

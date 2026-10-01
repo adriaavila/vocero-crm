@@ -97,8 +97,10 @@ export async function generateMetadata(): Promise<Metadata> {
   ).catch(() => fallback);
   return {
     title: saasMode
-      ? `${branding.name} — Tu WhatsApp responde aunque estés cerrado`
-      : `${branding.name} — CRM de WhatsApp`,
+      ? brand().id === "rei"
+        ? `${branding.name}: Tu WhatsApp responde aunque estés en una visita`
+        : `${branding.name} — Tu WhatsApp responde aunque estés cerrado`
+      : brand().id === "rei" ? `${branding.name}: CRM de WhatsApp` : `${branding.name} — CRM de WhatsApp`,
     description: saasMode
       ? `${brand().Name} atiende las preguntas de tus clientes cuando tu equipo no está disponible.`
       : "CRM de WhatsApp con agente de IA y Laboratorio de auto-evaluación",

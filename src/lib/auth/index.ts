@@ -200,6 +200,8 @@ function createAuth() {
                 !internal &&
                 isAllokSaaSMode() &&
                 isSaaSSelfServe() &&
+                // Rei no tiene prueba gratis: el alta pasa por el checkout.
+                brand().id !== "rei" &&
                 !(await isSaaSAdminRequest(context?.headers)),
             });
           },

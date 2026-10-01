@@ -8,6 +8,7 @@ export default function LoginPage() {
   return (
     <LoginForm
       saasClosed={isAllokSaaSMode() && !isSaaSSelfServe()}
+      reiBrand={brand().id === "rei"}
       brandName={brand().name}
       startUrl={startUrl()}
       helpUrl={helpUrl()}

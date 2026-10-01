@@ -58,7 +58,7 @@ export default function PricingPage() {
                 </>
               )}
             </p>
-            <p className="mt-1 text-sm text-text-3">{plan.period}</p>
+            {plan.price !== null && <p className="mt-1 text-sm text-text-3">{plan.period}</p>}
 
             <ul className="mt-6 flex-1 space-y-2.5 text-[15px]">
               {plan.features.map((feature) => (

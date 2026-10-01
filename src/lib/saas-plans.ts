@@ -1,4 +1,5 @@
 import type { SaaSPlan } from "@/server/saas/billing";
+import { activeBrandId } from "@/lib/brand";
 
 /**
  * Catálogo de planes SaaS: puro (sin `process.env`, sin Stripe) para que un
@@ -101,7 +102,9 @@ export function soldSaaSPlans(raw: string | null | undefined): SaaSPlan[] {
   }
   const requested = tokens.filter(isSaaSPlan);
   const sold = PLAN_ORDER.filter((id) => requested.includes(id));
-  return sold.length > 0 ? sold : ["basic", "pro"];
+  if (sold.length > 0) return sold;
+  // Rei vende un solo plan (Agencia) y sin prueba; allok, basic y pro.
+  return activeBrandId() === "rei" ? ["inmobiliaria"] : ["basic", "pro"];
 }
 
 const STATUS_LABELS: Record<string, string> = {

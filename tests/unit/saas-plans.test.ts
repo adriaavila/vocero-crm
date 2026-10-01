@@ -70,6 +70,17 @@ describe("Catálogo de planes SaaS", () => {
       expect(soldSaaSPlans("")).toEqual(["basic", "pro"]);
     });
 
+    it("bajo BRAND=rei, sin configurar vende solo Agencia (inmobiliaria)", () => {
+      vi.stubEnv("BRAND", "rei");
+      try {
+        expect(soldSaaSPlans(undefined)).toEqual(["inmobiliaria"]);
+        expect(soldSaaSPlans("enterprise")).toEqual(["inmobiliaria"]);
+        expect(soldSaaSPlans("basic,pro")).toEqual(["basic", "pro"]);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it("respeta la lista configurada, en el orden de nivel (no el de la variable)", () => {
       expect(soldSaaSPlans("pro,basic")).toEqual(["basic", "pro"]);
       expect(soldSaaSPlans("basic,pro,inmobiliaria")).toEqual(["basic", "pro", "inmobiliaria"]);

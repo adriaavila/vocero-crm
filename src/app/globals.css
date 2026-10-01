@@ -469,6 +469,9 @@
     --bg-panel: #142822;
     --bg-hover: #1a332b;
     --bg-active: #204036;
+    /* El tinte de acento (tarjeta destacada de /precios) es la superficie
+       verde-negra de Rei, no el azul marino de allok. */
+    --accent-tint: #142822;
     --text: var(--rei-on-noir);
     --text-2: #b3c0ba;
     --text-3: #7d8a85;

@@ -15,8 +15,11 @@ export default function LoginForm({
   startUrl,
   helpUrl,
   channelSuffix,
+  reiBrand = false,
 }: {
   saasClosed: boolean;
+  /** Rei no tiene "cuenta inicial": quien no tiene cuenta escribe a Rei. */
+  reiBrand?: boolean;
   /** Resueltos en el servidor: ver el comentario en register-form.tsx. */
   brandName: string;
   startUrl: string;
@@ -65,6 +68,7 @@ export default function LoginForm({
           <div className="space-y-1.5">
             <Label htmlFor="email">Correo</Label>
             <Input
+              className="min-h-11"
               id="email"
               type="email"
               autoComplete="email"
@@ -76,6 +80,7 @@ export default function LoginForm({
           <div className="space-y-1.5">
             <Label htmlFor="password">Contraseña</Label>
             <Input
+              className="min-h-11"
               id="password"
               type="password"
               autoComplete="current-password"
@@ -85,20 +90,20 @@ export default function LoginForm({
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" className="w-full" disabled={loading}>
+          <Button type="submit" className="min-h-11 w-full" disabled={loading}>
             {loading ? "Entrando…" : "Entrar"}
           </Button>
-          {saasClosed ? (
+          {saasClosed || reiBrand ? (
             <>
               <p className="text-center text-xs text-muted-foreground">
                 ¿Olvidaste tu contraseña?{" "}
-                <a href={helpUrl} className="text-primary hover:underline">
+                <a href={helpUrl} className="inline-flex min-h-11 items-center text-primary hover:underline">
                   Escríbenos {channelSuffix}
                 </a>
               </p>
               <p className="text-center text-sm text-muted-foreground">
                 ¿Aún no tienes {brandName}?{" "}
-                <a href={startUrl} className="text-primary hover:underline">
+                <a href={startUrl} className="inline-flex min-h-11 items-center text-primary hover:underline">
                   Te lo dejamos andando
                 </a>
               </p>
@@ -110,7 +115,7 @@ export default function LoginForm({
               </p>
               <p className="text-center text-sm text-muted-foreground">
                 ¿Primera vez aquí?{" "}
-                <Link href="/register" className="text-primary hover:underline">
+                <Link href="/register" className="inline-flex min-h-11 items-center text-primary hover:underline">
                   Crear la cuenta inicial
                 </Link>
               </p>
