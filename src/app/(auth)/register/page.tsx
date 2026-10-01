@@ -25,9 +25,9 @@ export default async function RegisterPage() {
   if (isAllokSaaSMode() && !isSaaSSelfServe()) {
     const session = await getAuth().api.getSession({ headers: await headers() }).catch(() => null);
     if (!isSaaSAdminEmail(session?.user.email)) return <SetupWithUs />;
-    return <RegisterForm adminMode soldPlans={soldPlans} brand={brand()} exampleHost={`clinica-perez.${resolvedRootDomain()}`} />;
+    return <RegisterForm adminMode soldPlans={soldPlans} brand={brand()} exampleHost={`${brand().id === "rei" ? "inmobiliaria-perez" : "clinica-perez"}.${resolvedRootDomain()}`} />;
   }
-  return <RegisterForm soldPlans={soldPlans} selfServe={isAllokSaaSMode() && brand().id !== "rei"} brand={brand()} exampleHost={`clinica-perez.${resolvedRootDomain()}`} />;
+  return <RegisterForm soldPlans={soldPlans} selfServe={isAllokSaaSMode() && brand().id !== "rei"} brand={brand()} exampleHost={`${brand().id === "rei" ? "inmobiliaria-perez" : "clinica-perez"}.${resolvedRootDomain()}`} />;
 }
 
 function SetupWithUs() {

@@ -72,7 +72,8 @@ export const PLAN_CATALOG: Record<SaaSPlan, PlanCatalogEntry> = {
     priceUsd: 299,
     tagline: "Para inmobiliarias con varios asesores vendiendo a la vez.",
     features: [
-      "Todo lo de Completo",
+      "Tus ventas en etapas y agenda de citas",
+      "Responde todo el día",
       "Pensado para equipos de asesores",
       "Hasta 10 usuarios",
       "Factura desde el día 1, sin prueba gratis",

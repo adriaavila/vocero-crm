@@ -98,7 +98,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: saasMode
       ? brand().id === "rei"
-        ? `${branding.name}: Tu WhatsApp responde aunque estés en una visita`
+        ? `${branding.name}: tu WhatsApp responde aunque estés en una visita`
         : `${branding.name} — Tu WhatsApp responde aunque estés cerrado`
       : brand().id === "rei" ? `${branding.name}: CRM de WhatsApp` : `${branding.name} — CRM de WhatsApp`,
     description: saasMode
@@ -156,7 +156,7 @@ export default async function RootLayout({
       <head>
         {/* Acento white-label inyectado en SSR: sin flash de tema */}
         <style
-          dangerouslySetInnerHTML={{ __html: accentCssVariables(accent) }}
+          dangerouslySetInnerHTML={{ __html: accentCssVariables(accent, brand().id === "rei" ? "#142822" : undefined) }}
         />
       </head>
       <body className="font-sans">{children}</body>

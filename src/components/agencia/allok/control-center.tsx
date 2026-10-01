@@ -88,9 +88,9 @@ export function ControlCenter({
 
   if (!snapshot) {
     return (
-      <div className="mx-auto max-w-xl py-16 text-center">
+      <div className="mx-auto max-w-xl px-4 py-16 text-center">
         <h1 className="text-xl font-semibold tracking-tight">Estamos preparando tu espacio</h1>
-        <p className="mt-2 text-sm text-text-2">Todavía no hay datos para mostrar. Recarga en un momento o conecta tu WhatsApp desde Ajustes.</p>
+        <p className="mt-2 text-sm text-text-2">Todavía no hay datos para mostrar. Recarga en un momento o conecta tu WhatsApp desde Configuración.</p>
         <Link href="/settings/whatsapp" className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-brand-text hover:underline">
           Conectar WhatsApp <ArrowRight className="h-4 w-4" />
         </Link>
