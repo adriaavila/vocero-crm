@@ -41,10 +41,24 @@ export default async function Image() {
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         {rei ? (
-          <svg width={52} height={52} viewBox="0 0 64 64">
-            <rect width="64" height="64" rx="14" fill={REI_MARK_ACCENT} />
-            <text x="32" y="36" fill="#ffffff" fontFamily="Georgia,serif" fontSize={30} fontWeight={600} textAnchor="middle">R</text>
-          </svg>
+          // Satori no dibuja <text> dentro de un SVG (la imagen daba 502): la R va en un div.
+          <div
+            style={{
+              display: "flex",
+              width: 52,
+              height: 52,
+              borderRadius: 11,
+              background: REI_MARK_ACCENT,
+              color: "#ffffff",
+              alignItems: "center",
+              justifyContent: "center",
+              fontFamily: "serif",
+              fontSize: 25,
+              fontWeight: 600,
+            }}
+          >
+            R
+          </div>
         ) : saas ? (
           <svg width={52} height={52} viewBox="0 0 64 64">
             <rect width="64" height="64" rx="17" fill="#0b0d0e" stroke="#f7f8f8" strokeOpacity="0.15" />
