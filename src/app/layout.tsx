@@ -101,7 +101,13 @@ export async function generateMetadata(): Promise<Metadata> {
     ? organizationId ? getBranding(organizationId) : fallback
     : getBranding()
   ).catch(() => fallback);
+  // Sin esto Next arma og:image con http://localhost:3000 y el link pegado en
+  // WhatsApp sale sin imagen. El host de la request da la vista previa de
+  // cada subdominio.
+  const proto = requestHeaders.get("x-forwarded-proto") ?? "https";
+  const metadataBase = host && URL.canParse(`${proto}://${host}`) ? new URL(`${proto}://${host}`) : undefined;
   return {
+    metadataBase,
     title: saasMode
       ? brand().id === "rei"
         ? `${branding.name}: tu WhatsApp responde aunque estés en una visita`
