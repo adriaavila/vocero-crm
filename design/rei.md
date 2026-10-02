@@ -1,4 +1,4 @@
-# rei.md — Rei CRM (superficie pública y SaaS)
+# rei.md — Rei (superficie pública y SaaS)
 
 La versión legible por agentes del sistema de la marca Rei dentro del CRM.
 Si te piden «construí esta pantalla en el lenguaje de Rei», lee esto. Solo

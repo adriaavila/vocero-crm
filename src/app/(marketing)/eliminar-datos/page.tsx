@@ -4,7 +4,7 @@ import { LegalContact, LegalPage } from "../legal-page";
 
 export const metadata: Metadata = {
   title: `Eliminar mis datos de ${productName()}`,
-  description: "Cómo pedir que se borren tus datos de Rei CRM, qué se borra y en cuánto tiempo.",
+  description: "Cómo pedir que se borren tus datos de Rei, qué se borra y en cuánto tiempo.",
 };
 
 export default function DataDeletionPage() {

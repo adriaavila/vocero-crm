@@ -4,7 +4,7 @@ import { LegalContact, LegalEntity, LegalPage } from "../legal-page";
 
 export const metadata: Metadata = {
   title: `Términos del servicio de ${productName()}`,
-  description: "Condiciones de uso de Rei CRM: qué incluye, qué se espera de quien lo contrata, cobro y baja.",
+  description: "Condiciones de uso de Rei: qué incluye, qué se espera de quien lo contrata, cobro y baja.",
 };
 
 export default function TermsPage() {

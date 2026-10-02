@@ -5,7 +5,7 @@
  * La misma imagen se despliega dos veces con identidad distinta según `BRAND`:
  *   BRAND=allok (default, sin variable) → allok.fun, exactamente el
  *     comportamiento de siempre (nada cambia).
- *   BRAND=rei                            → Rei CRM en reiprop.tech.
+ *   BRAND=rei                            → Rei en reiprop.tech.
  *
  * `ALLOK_BRAND=off` sigue significando "sin marca, Vocero puro" (ver
  * `isAllokBrand()` en `tenant-host.ts`) y no se toca acá: ese interruptor es
@@ -72,7 +72,7 @@ export function brandById(id: BrandId): Brand {
       id: "rei",
       name: "Rei",
       Name: "Rei",
-      productName: "Rei CRM",
+      productName: "Rei",
       // Esmeralda rei (ver design/rei.md y el --rei-brand-500 portado del fork).
       defaultAccent: "#0a7350",
       signupHostHint: "El registro de Rei empieza en",
@@ -83,7 +83,7 @@ export function brandById(id: BrandId): Brand {
         email: nonEmpty(process.env.CONTACT_EMAIL),
       },
       pricingHref: "/precios",
-      startMessage: "Hola, vengo de Rei CRM. Quiero un agente de WhatsApp para mi inmobiliaria.",
+      startMessage: "Hola, vengo de Rei. Quiero un agente de WhatsApp para mi inmobiliaria.",
       helpMessage: "Hola, necesito recuperar el acceso a mi cuenta de Rei.",
     };
   }
