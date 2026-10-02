@@ -11,7 +11,7 @@ import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { isRealtyOrg } from "@/server/agencia/vertical";
 import { brand } from "@/lib/brand";
-import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, isSaaSAdminHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import { getOrganizationBilling } from "@/server/saas/billing";
 // Capa de agencia: el estado de la operación (el punto de all ● k).
@@ -25,6 +25,9 @@ export default async function AppLayout({
   const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
   const tenantSlug = tenantSlugFromHost(host);
   if (saasMode && !isKnownAllokHost(host)) notFound();
+  // El host admin no tiene organización: el login empuja a /overview y sin
+  // esto requireSession falla y devuelve a /login, como si no hubiera entrado.
+  if (saasMode && isSaaSAdminHost(host)) redirect("/admin");
   if (saasMode && tenantSlug && !(await resolveOrganizationIdForHost(host))) notFound();
   let session;
   try {
