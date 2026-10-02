@@ -5,17 +5,12 @@ import { isMarketingHost, plans, productName } from "@/lib/marketing";
 
 /**
  * La superficie pública de Rei lleva su marca; el panel de un negocio, no.
- * Ninguna pantalla que vea el cliente de una agencia puede decir "Rei CRM" —
- * el portero está en `(marketing)/layout.tsx` (vía `isMarketingHost`); esta
- * prueba vigila que el nombre no se cuele fuera de ese grupo por un copiar y
- * pegar, igual que en el fork de origen.
+ * El portero está en `(marketing)/layout.tsx` (vía `isMarketingHost`). La
+ * marca se llama "Rei" en todas partes (decisión de Adrian, 2026-10-01); esta
+ * prueba vigila que el nombre viejo "Rei CRM" no vuelva por un copiar y pegar.
  */
 
 const SRC = join(process.cwd(), "src");
-const PUBLIC_GROUP = join(SRC, "app", "(marketing)");
-// Las dos fuentes legítimas del nombre: `brand.ts` lo define, `marketing.ts`
-// lo reexpone para la superficie pública. Ninguna otra debería escribirlo.
-const ALLOWED_SOURCES = new Set([join(SRC, "lib", "marketing.ts"), join(SRC, "lib", "brand.ts")]);
 
 function filesUnder(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -28,13 +23,10 @@ function filesUnder(dir: string): string[] {
 describe("marca blanca: el nombre de Rei no sale del grupo público", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("ningún archivo fuera de (marketing) escribe 'Rei CRM' a mano", () => {
+  it("la marca es 'Rei' y el nombre viejo 'Rei CRM' no aparece en ninguna parte", () => {
     vi.stubEnv("BRAND", "rei");
-    const name = productName();
-    expect(name).toBe("Rei CRM");
-    const offenders = filesUnder(SRC)
-      .filter((f) => !f.startsWith(PUBLIC_GROUP) && !ALLOWED_SOURCES.has(f))
-      .filter((f) => readFileSync(f, "utf8").includes(name));
+    expect(productName()).toBe("Rei");
+    const offenders = filesUnder(SRC).filter((f) => readFileSync(f, "utf8").includes("Rei CRM"));
     expect(offenders.map((f) => f.slice(SRC.length + 1))).toEqual([]);
   });
 });

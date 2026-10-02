@@ -52,7 +52,7 @@ describe("Rei: identidad propia", () => {
   it("nombre, acento y precios son los de Rei, no los de allok", () => {
     const rei = brandById("rei");
     expect(rei.name).toBe("Rei");
-    expect(rei.productName).toBe("Rei CRM");
+    expect(rei.productName).toBe("Rei");
     expect(rei.defaultAccent).toBe("#0a7350");
     expect(rei.pricingHref).toBe("/precios");
     expect(rei.contact.whatsapp).not.toBe("584220023684");

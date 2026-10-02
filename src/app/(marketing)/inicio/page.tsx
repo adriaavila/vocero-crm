@@ -6,7 +6,7 @@ import { contactHref, productName } from "@/lib/marketing";
 export const metadata: Metadata = {
   title: `${productName()}: tu WhatsApp responde aunque estés en una visita`,
   description:
-    "Rei CRM conecta tu WhatsApp con tu catálogo: venta, alquiler y anticrético. El agente responde, agenda visitas y avisa a tu equipo.",
+    "Rei conecta tu WhatsApp con tu catálogo: venta, alquiler y anticrético. El agente responde, agenda visitas y avisa a tu equipo.",
 };
 
 const STEPS = [

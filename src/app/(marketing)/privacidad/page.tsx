@@ -4,7 +4,7 @@ import { LegalAddress, LegalContact, LegalEntity, LegalPage } from "../legal-pag
 
 export const metadata: Metadata = {
   title: `Política de privacidad de ${productName()}`,
-  description: "Qué datos trata Rei CRM, con qué fin, cuánto los guarda y cómo pedir que se borren.",
+  description: "Qué datos trata Rei, con qué fin, cuánto los guarda y cómo pedir que se borren.",
 };
 
 export default function PrivacyPage() {

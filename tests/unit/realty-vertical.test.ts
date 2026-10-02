@@ -17,7 +17,7 @@ describe("defaultVerticalFromEnv", () => {
     expect(defaultVerticalFromEnv()).toBeUndefined();
   });
 
-  it("DEFAULT_VERTICAL=inmobiliario activa el vertical de Rei CRM", () => {
+  it("DEFAULT_VERTICAL=inmobiliario activa el vertical de Rei", () => {
     vi.stubEnv("DEFAULT_VERTICAL", "inmobiliario");
     expect(defaultVerticalFromEnv()).toBe("inmobiliario");
   });
