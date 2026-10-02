@@ -1,4 +1,5 @@
 import { DEFAULT_BRANDING } from "@/lib/branding";
+import { brand } from "@/lib/brand";
 import { getBranding } from "@/server/branding";
 import { BrandLogo } from "@/components/brand-mark";
 import { AllokAuthFrame } from "@/components/agencia/allok/auth-frame";
@@ -28,15 +29,20 @@ export default async function AuthLayout({
     : undefined;
   if (tenantSlug && !organizationId) notFound();
   // Capa de agencia: la entrada es la portada de allok.fun, en el SaaS y en
-  // una dedicada.
-  if (isAllokBrand()) return <AllokAuthFrame>{children}</AllokAuthFrame>;
+  // una dedicada. Es la identidad "all ok" en sí misma (el punto, el juego de
+  // palabras): no se generaliza a otra marca. Rei (y una instancia sin marca)
+  // usan la entrada llana de abajo, ya blanca de marca por su cuenta.
+  if (isAllokBrand() && brand().id === "allok") return <AllokAuthFrame>{children}</AllokAuthFrame>;
   const branding = await getBranding(organizationId).catch(() => DEFAULT_BRANDING);
+  // El resplandor degradado es voz de allok/Vocero; el sistema rei no usa
+  // degradados (design/rei.md).
+  const showGlow = brand().id !== "rei";
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-subtle p-4">
       <div className="brand-grid absolute inset-0" aria-hidden />
-      <div className="brand-glow brand-glow-a" aria-hidden />
-      <div className="brand-glow brand-glow-b" aria-hidden />
+      {showGlow && <div className="brand-glow brand-glow-a" aria-hidden />}
+      {showGlow && <div className="brand-glow brand-glow-b" aria-hidden />}
 
       <div className="relative w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center gap-4 text-center">

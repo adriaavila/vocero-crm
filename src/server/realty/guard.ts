@@ -12,7 +12,7 @@ import { isRealtyOrg } from "@/server/agencia/vertical";
  *    NO EXISTE, y un 403 filtraría que sí existe pero está bloqueada.
  * 2. Con el vertical activo pero sin plan Completo, 403 `plan_required` —
  *    mismo criterio que Resultados/Agenda/Equipo (`withPro` en `lib/api.ts`).
- *    En una instancia sin `ALLOK_SAAS_MODE` (Rei CRM, autoprovisionado por su
+ *    En una instancia sin `ALLOK_SAAS_MODE` (Rei, autoprovisionado por su
  *    propio negocio) `hasSaaSPlan` siempre da `true`: el gate solo actúa
  *    quien vende el vertical DENTRO de allok con su propio plan de pago.
  */

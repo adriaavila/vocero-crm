@@ -1,4 +1,5 @@
 import { apiError, withOwner } from "@/lib/api";
+import { brand } from "@/lib/brand";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAutomate } from "@/server/agencia/entitlements";
 
@@ -53,11 +54,11 @@ export const POST = withOwner(async (session) => {
     return apiError(
       409,
       "no_connection",
-      "Allok no ve ningún número conectado para este negocio. Conéctalo con Meta primero.",
+      `${brand().Name} no ve ningún número conectado para este negocio. Conéctalo con Meta primero.`,
     );
   }
   if (!response?.ok || payload?.ok !== true) {
-    return apiError(502, "retry_failed", payload?.error ?? "Allok no pudo repetir la entrega");
+    return apiError(502, "retry_failed", payload?.error ?? `${brand().Name} no pudo repetir la entrega`);
   }
   return Response.json({ ok: true });
 });

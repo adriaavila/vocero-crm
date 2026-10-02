@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { getDb, getSql } from "@/lib/db";
+import { missingReiConfigVars } from "@/lib/brand";
 import { getEnv } from "@/lib/env";
 import { APP_VERSION, resolveBuildCommit } from "@/lib/version";
 import { isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
@@ -138,11 +139,15 @@ export async function GET() {
     // atascado no debe tumbar el healthcheck de toda la instancia, que es lo
     // único que decide si Coolify sigue sirviendo tráfico.
     const agentQueue = await agentQueueStatus();
+    const missingReiConfig = missingReiConfigVars(isAllokSaaSMode());
     return Response.json({
       ok: true,
       version: APP_VERSION,
       ...(commit ? { commit } : {}),
       agentQueue,
+      // Solo aparece bajo BRAND=rei en SaaS con algo sin definir: allok y las
+      // instancias dedicadas nunca lo ven.
+      ...(missingReiConfig.length > 0 ? { missingReiConfig } : {}),
     });
   } catch {
     return Response.json(

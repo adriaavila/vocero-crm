@@ -1,4 +1,5 @@
 import { and, count, desc, eq, max } from "drizzle-orm";
+import { brand } from "@/lib/brand";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -134,7 +135,7 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
           status: input.businessHoursConfigured ? "complete" as const : "pending" as const,
           label: "Define el horario de respuesta",
           detail: input.businessHoursConfigured
-            ? "Allok sabe cuándo responder por ti."
+            ? `${brand().Name} sabe cuándo responder por ti.`
             : "Elige los días, las horas y la zona horaria del negocio.",
           href: "/agent",
         }]

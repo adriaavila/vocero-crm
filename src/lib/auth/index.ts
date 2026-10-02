@@ -12,13 +12,14 @@ import {
   resolveOrganizationIdForHost,
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed, isSaaSSelfServe } from "@/server/auth/registration";
+import { brand } from "@/lib/brand";
 import {
   isAllokSaaSMode,
   isKnownAllokHost,
   isSaaSAdminEmail,
   isSaaSAppHost,
+  resolvedRootDomain,
   saasAppHost,
-  SIGNUP_HOST_HINT,
   tenantSlugFromHost,
   trustedOriginForRequest,
 } from "@/lib/tenant-host";
@@ -67,7 +68,7 @@ function createAuth() {
   const appHost = new URL(env.APP_BASE_URL).hostname;
   const cookieDomain = appHost === "localhost"
     ? ".localhost"
-    : `.${process.env.ALLOK_ROOT_DOMAIN ?? "allok.fun"}`;
+    : `.${resolvedRootDomain()}`;
   return betterAuth({
     baseURL: env.APP_BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
@@ -125,7 +126,7 @@ function createAuth() {
             ctx.headers?.get("x-forwarded-host") ?? ctx.headers?.get("host");
           if (!isKnownAllokHost(host)) {
             throw new APIError("NOT_FOUND", {
-              message: "El host de Allok no existe",
+              message: `El host de ${brand().Name} no existe`,
             });
           }
           const tenantSlug = tenantSlugFromHost(host);
@@ -161,7 +162,12 @@ function createAuth() {
             ctx.headers?.get("x-forwarded-host") ?? ctx.headers?.get("host");
           if (isAllokSaaSMode() && !isSaaSAppHost(host)) {
             throw new APIError("FORBIDDEN", {
-              message: `${SIGNUP_HOST_HINT} ${saasAppHost()}`,
+              // El prefijo "El registro" es lo que el formulario reconoce
+              // (register-form.tsx) para mostrar esto tal cual en vez de un
+              // genérico "instancia ya tiene organización": el cliente no
+              // puede leer `BRAND` (no es NEXT_PUBLIC_), así que el nombre de
+              // marca va DESPUÉS del prefijo estable, nunca dentro de él.
+              message: `El registro de ${brand().Name} empieza en ${saasAppHost()}`,
             });
           }
           if (
@@ -194,6 +200,8 @@ function createAuth() {
                 !internal &&
                 isAllokSaaSMode() &&
                 isSaaSSelfServe() &&
+                // Rei no tiene prueba gratis: el alta pasa por el checkout.
+                brand().id !== "rei" &&
                 !(await isSaaSAdminRequest(context?.headers)),
             });
           },

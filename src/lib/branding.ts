@@ -237,12 +237,14 @@ function accentBlock(selector: string, s: AccentSet): string {
  * El selector va duplicado (`:root:root`) a propósito: así gana en
  * especificidad a los bloques de globals.css sin depender del orden de carga.
  */
-export function accentCssVariables(accentHex: string): string {
+export function accentCssVariables(accentHex: string, darkTint?: string): string {
   return (
     accentBlock(":root:root", resolveAccentSet(accentHex, "light")) +
     accentBlock(
       ':root:root[data-theme="dark"]',
-      resolveAccentSet(accentHex, "dark")
+      darkTint
+        ? { ...resolveAccentSet(accentHex, "dark"), tint: darkTint }
+        : resolveAccentSet(accentHex, "dark")
     )
   );
 }

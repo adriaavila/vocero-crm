@@ -31,12 +31,37 @@
       }
     },
     {
-      "name": "vocero-dev-3314",
+      "name": "vocero-allok-3313",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "--port", "3313"],
+      "port": 3313,
+      "env": {
+        "NODE_OPTIONS": "--max-old-space-size=8192",
+        "ALLOK_SAAS_MODE": "true"
+      }
+    },
+    {
+      "name": "vocero-rei-3314",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev", "--port", "3314"],
       "port": 3314,
       "env": {
-        "NODE_OPTIONS": "--max-old-space-size=8192"
+        "NODE_OPTIONS": "--max-old-space-size=8192",
+        "APP_BASE_URL": "http://localhost:3314",
+        "BRAND": "rei",
+        "ALLOK_SAAS_MODE": "true",
+        "ALLOK_LEGACY_HOST": "none",
+        "META_GRAPH_BASE_URL": "http://localhost:3314/api/dev/wa-mock/graph",
+        "OPENAI_BASE_URL": "http://localhost:3314/api/dev/ai-mock",
+        "ZOOM_BASE_URL": "http://localhost:3314/api/dev/zoom-mock",
+        "ZOOM_OAUTH_BASE_URL": "http://localhost:3314/api/dev/zoom-mock",
+        "GOOGLE_CAL_BASE_URL": "http://localhost:3314/api/dev/google-mock",
+        "GOOGLE_OAUTH_BASE_URL": "http://localhost:3314/api/dev/google-mock",
+        "ZERNIO_BASE_URL": "http://localhost:3314/api/dev/zernio-mock",
+        "CONTACT_WHATSAPP": "EJEMPLO-59171234567",
+        "CONTACT_EMAIL": "EJEMPLO-hola@reiprop.tech",
+        "LEGAL_NAME": "EJEMPLO-Rei Prop S.R.L.",
+        "LEGAL_ADDRESS": "EJEMPLO-Av. Arce 2333, La Paz, Bolivia"
       }
     }
   ]

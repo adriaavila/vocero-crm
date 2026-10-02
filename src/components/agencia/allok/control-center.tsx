@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
-import { STATE_HINT, STATE_LABEL, type SystemSnapshot, type SystemState } from "@/lib/estado";
+import { STATE_HINT, stateLabelFor, type SystemSnapshot, type SystemState } from "@/lib/estado";
 import type { Centro } from "@/server/agencia/estado";
 import type { getOverview } from "@/server/overview";
 import type { ReadinessResponse } from "@/server/readiness";
@@ -51,6 +51,8 @@ export function ControlCenter({
   businessName,
   userName,
   owner,
+  brandId = "allok",
+  productLabel = "allok",
 }: {
   centro: Centro;
   overview: Overview;
@@ -61,6 +63,9 @@ export function ControlCenter({
   businessName: string;
   userName: string;
   owner: boolean;
+  /** Resueltos en el servidor (brand() no es NEXT_PUBLIC_): qué marca dibuja este centro de control. */
+  brandId?: "allok" | "rei";
+  productLabel?: string;
 }) {
   const snapshot = useSystemState();
   const revision = useSystemRevision();
@@ -81,7 +86,17 @@ export function ControlCenter({
     return () => clearTimeout(timer);
   }, [revision, router]);
 
-  if (!snapshot) return null;
+  if (!snapshot) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-16 text-center">
+        <h1 className="text-xl font-semibold tracking-tight">Estamos preparando tu espacio</h1>
+        <p className="mt-2 text-sm text-text-2">Todavía no hay datos para mostrar. Recarga en un momento o conecta tu WhatsApp desde Configuración.</p>
+        <Link href="/settings/whatsapp" className="mt-5 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-brand-text hover:underline">
+          Conectar WhatsApp <ArrowRight className="h-4 w-4" />
+        </Link>
+      </div>
+    );
+  }
   const state = snapshot.state;
   const action = actionLabel(snapshot);
   const tz = centro.timezone;
@@ -96,7 +111,7 @@ export function ControlCenter({
       ? "Todavía no escribió nadie hoy."
       : solo === 0
         ? `Hoy escribieron ${conversations} ${conversations === 1 ? "persona" : "personas"}.`
-        : `allok atendió sin ayuda ${solo} de ${conversations} ${conversations === 1 ? "conversación" : "conversaciones"} de hoy.`;
+        : `${productLabel} atendió sin ayuda ${solo} de ${conversations} ${conversations === 1 ? "conversación" : "conversaciones"} de hoy.`;
 
   const kpis: { label: string; value: number; of?: number; state?: SystemState }[] = [
     { label: "Conversaciones", value: conversations },
@@ -133,7 +148,7 @@ export function ControlCenter({
             <span className="flex items-center gap-3">
               <StateDot state={state} size={14} decorative motion />
               <span className="text-[24px] font-bold leading-none tracking-[-0.035em] md:text-[28px]">
-                {STATE_LABEL[state]}
+                {stateLabelFor(state, brandId)}
               </span>
             </span>
             <span className="font-mono text-[11.5px] text-text-3">
@@ -155,7 +170,7 @@ export function ControlCenter({
             )}
           </div>
 
-          <DayLine day={centro.day} timezone={tz} owner={owner} />
+          <DayLine day={centro.day} timezone={tz} owner={owner} productLabel={productLabel} />
 
           <dl className="grid grid-cols-2 gap-px bg-border lg:grid-cols-4">
             {kpis.map((kpi) => (
@@ -217,7 +232,7 @@ export function ControlCenter({
           {STATES.map((s) => (
             <div key={s} className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5 gap-y-0.5 md:flex">
               <StateDot state={s} size={8} decorative />
-              <dt className="text-[13px] font-semibold">{STATE_LABEL[s]}</dt>
+              <dt className="text-[13px] font-semibold">{stateLabelFor(s, brandId)}</dt>
               <dd className="col-start-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-text-3">{STATE_HINT[s]}</dd>
             </div>
           ))}

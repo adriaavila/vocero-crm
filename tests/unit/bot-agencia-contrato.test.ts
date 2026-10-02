@@ -87,6 +87,9 @@ describe("contrato de agencia con el cerebro externo", () => {
     expect(out.allowedWaIds).toEqual(["5215512345678"]);
   });
 
+  // 20s: este `it` importa varias rutas de Next (transformación en frío) y se
+  // ha visto pasar de los 5s por defecto bajo una máquina con carga. Amplía
+  // el margen, no oculta una falla real.
   it("las rutas los siguen sirviendo (no solo el módulo)", async () => {
     const perfilRoute = await import("@/app/api/bot/profile/route");
     const contextRoute = await import("@/app/api/bot/context/route");
@@ -109,5 +112,5 @@ describe("contrato de agencia con el cerebro externo", () => {
     expect(profileBuilder).toContain("perfilDeAgencia");
     expect(contextBuilder).toContain("accesoDeAgencia");
     expect(contextBuilder).toContain("agentAccess");
-  });
+  }, 20_000);
 });

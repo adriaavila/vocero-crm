@@ -1,4 +1,5 @@
 import { and, eq, isNull, lt } from "drizzle-orm";
+import { brand } from "@/lib/brand";
 import { getDb, schema } from "@/lib/db";
 import { neaMessageId, newId } from "@/lib/db/ids";
 import { graphRequest, MetaApiError, normalizeRecipient } from "@/lib/meta/client";
@@ -142,7 +143,7 @@ async function prepareSend(
     if (!profiles[0]?.enabled) {
       throw new SendError(
         "ai_disabled",
-        "Allok fue pausado antes de entregar esta respuesta"
+        `${brand().Name} fue pausado antes de entregar esta respuesta`
       );
     }
   }
@@ -150,7 +151,7 @@ async function prepareSend(
   if (requireAiEnabled && !(await canAutomate(organizationId))) {
     throw new SendError(
       "billing_inactive",
-      "La automatización está pausada: revisa la suscripción de Allok",
+      `La automatización está pausada: revisa la suscripción de ${brand().Name}`,
     );
   }
 

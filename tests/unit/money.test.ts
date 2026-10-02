@@ -86,4 +86,11 @@ describe("catálogo de monedas", () => {
     expect(isCurrency("pesos")).toBe(false);
     expect(isCurrency(null)).toBe(false);
   });
+
+  it("incluye el boliviano (Bs) — primer mercado de Rei", () => {
+    expect(isCurrency("BOB")).toBe(true);
+    const out = formatMoneyCents(1_250_050, "BOB", "es-BO");
+    expect(out).toContain("12.500,50");
+    expect(out).toMatch(/Bs/);
+  });
 });

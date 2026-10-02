@@ -1,3 +1,5 @@
+import { brand } from "./brand";
+
 /**
  * Capa de agencia (fork) — el estado de la operación, la idea central de la
  * marca allok: **all ok = all systems OK**. El logotipo lleva el estado en la
@@ -7,6 +9,11 @@
  *
  * Puro y sin servidor: lo usan el cálculo (server/agencia/estado) y la UI.
  * Espejo de los cuatro estados de allok-fun/src/lib/brand.ts.
+ *
+ * Las frases mencionan la marca del despliegue (`brand()`, que lee
+ * `process.env.BRAND`): SOLO se llama desde `server/agencia/estado.ts`
+ * (server-side), nunca desde un componente cliente — ver el comentario de
+ * `setup-contact.ts` para por qué eso importa.
  */
 
 export type SystemState = "activo" | "atendiendo" | "atencion" | "pausado";
@@ -17,6 +24,19 @@ export const STATE_LABEL: Record<SystemState, string> = {
   atencion: "Requiere atención",
   pausado: "Pausado",
 };
+
+/**
+ * Los mismos rótulos, para superficies que se comparten con Rei (control
+ * center, la leyenda de estados): "all ok" es el juego de palabras de la
+ * marca allok, no un estado genérico. Toma el id de marca por prop (nunca
+ * `brand()` desde un componente cliente — ver setup-contact.ts) porque estos
+ * componentes SÍ renderizan para Rei (a diferencia de `AllokWordmark`/
+ * `AllokNavHead`, que solo existen bajo allok).
+ */
+export function stateLabelFor(state: SystemState, brandId: "allok" | "rei"): string {
+  if (state === "activo" && brandId !== "allok") return "Todo en orden";
+  return STATE_LABEL[state];
+}
 
 /**
  * El color del punto, para donde no llega el CSS (el icono de la pestaña). En
@@ -104,7 +124,7 @@ export function conversationNote(
   now = Date.now(),
 ): string {
   if (state === "activo") return "Respondida";
-  if (state === "atendiendo") return "allok está respondiendo";
+  if (state === "atendiendo") return `${brand().name} está respondiendo`;
   if (state === "atencion") return "Sin responder";
   const inbound = ms(c.lastInboundAt);
   return inbound !== null && now - inbound >= WINDOW_MS ? "Se cerró la ventana de 24 h" : "Leída, sin respuesta";
@@ -149,7 +169,7 @@ export function systemState(i: SystemInput): SystemVerdict {
     return { state: "atencion", reason: "Meta cortó el acceso: reconecta tu WhatsApp.", href: own("/settings/whatsapp") };
   }
   if (!i.billingActive) {
-    return { state: "atencion", reason: "Reactiva tu plan para que allok siga contestando.", href: own("/settings/billing") };
+    return { state: "atencion", reason: `Reactiva tu plan para que ${brand().name} siga contestando.`, href: own("/settings/billing") };
   }
   if (i.waiting > 0) {
     return {
@@ -168,7 +188,7 @@ export function systemState(i: SystemInput): SystemVerdict {
       href: "/inbox",
     };
   }
-  return { state: "activo", reason: "Todo en orden. allok contesta por ti.", href: null };
+  return { state: "activo", reason: `Todo en orden. ${brand().name} contesta por ti.`, href: null };
 }
 
 export type SystemSnapshot = SystemVerdict & {

@@ -1,5 +1,6 @@
 import { apiError, parseBody, withOwner } from "@/lib/api";
 import { agentProfilePutSchema, compatibleActivation } from "@/lib/agent-profile-compat";
+import { brand } from "@/lib/brand";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
@@ -47,7 +48,7 @@ export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, agentProfilePutSchema);
   if (!body.ok) return body.response;
   if (body.data.enabled === true && !(await canAutomate(session.organizationId))) {
-    return apiError(402, "billing_inactive", "Activa o recupera tu suscripción para encender Allok.");
+    return apiError(402, "billing_inactive", `Activa o recupera tu suscripción para encender ${brand().Name}.`);
   }
   if (body.data.enabled === true && isAllokSaaSMode()) {
     if (!(await isAgentAvailableForOrganization(session.organizationId))) {
@@ -55,14 +56,14 @@ export const PUT = withOwner(async (session, req: Request) => {
     }
     const credentials = await getCredentialsByOrg(session.organizationId);
     if (!credentials || credentials.status !== "connected") {
-      return apiError(409, "whatsapp_required", "Conecta y verifica tu número de WhatsApp antes de activar Allok.");
+      return apiError(409, "whatsapp_required", `Conecta y verifica tu número de WhatsApp antes de activar ${brand().Name}.`);
     }
     const businessHours = await getBusinessHours(session.organizationId);
     if (businessHours.responseMode === "all_day" && !(await hasSaaSPlan(session.organizationId, "pro"))) {
       return apiError(402, "pro_required", "La atención todo el día está disponible en Completo.");
     }
     if (!hasConfiguredBusinessHours(businessHours)) {
-      return apiError(409, "business_hours_required", "Define al menos un horario de respuesta antes de activar Allok.");
+      return apiError(409, "business_hours_required", `Define al menos un horario de respuesta antes de activar ${brand().Name}.`);
     }
     const pending = saasActivationBlockers(await getReadiness(session.organizationId))
       .filter((step) => step.id !== "whatsapp" && step.id !== "business_hours");

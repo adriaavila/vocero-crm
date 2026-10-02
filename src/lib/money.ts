@@ -22,6 +22,8 @@ export const CURRENCIES = [
   "GTQ",
   "DOP",
   "BRL",
+  // Boliviano — primer mercado de Rei (venta, alquiler, anticrético).
+  "BOB",
 ] as const;
 
 export type Currency = (typeof CURRENCIES)[number];

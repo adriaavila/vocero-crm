@@ -104,7 +104,7 @@ const envSchema = z.object({
   // Vertical inmobiliario (parte 1): con qué vertical nace cada organización
   // NUEVA de esta instancia (organization.metadata.vertical). Sin ella (el
   // caso de allok), ninguna: el CRM se comporta exactamente como siempre.
-  // Único valor soportado hoy: DEFAULT_VERTICAL=inmobiliario (Rei CRM).
+  // Único valor soportado hoy: DEFAULT_VERTICAL=inmobiliario (Rei).
   DEFAULT_VERTICAL: z.string().optional(),
   // Fotos de propiedades: conector opcional de almacenamiento de objetos
   // (Cloudflare R2, S3-compatible) del OPERADOR del despliegue — no de cada

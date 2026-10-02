@@ -10,6 +10,7 @@ import { ToastProvider } from "@/components/ui/toast-provider";
 import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { isRealtyOrg } from "@/server/agencia/vertical";
+import { brand } from "@/lib/brand";
 import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 import { getOrganizationBilling } from "@/server/saas/billing";
@@ -38,7 +39,11 @@ export default async function AppLayout({
   const [billing, systemState, realty] = await Promise.all([
     saasMode ? getOrganizationBilling(session.organizationId) : null,
     // El punto de all ● k: va donde va la marca allok, también en la dedicada.
-    isAllokBrand() ? getSystemState(session.organizationId, session.role === "owner") : null,
+    // Es la identidad "all ok" en sí misma, no un widget genérico: Rei
+    // (y una instancia sin marca) usan el nav llano de siempre.
+    isAllokBrand() && brand().id === "allok"
+      ? getSystemState(session.organizationId, session.role === "owner")
+      : null,
     // Vertical inmobiliario (parte 1): por ORGANIZACIÓN, no de instancia.
     isRealtyOrg(session.organizationId),
   ]);
@@ -65,6 +70,7 @@ export default async function AppLayout({
       saasMode={saasMode}
       saasPlan={billing?.status === "active" || billing?.status === "trialing" ? billing.plan : null}
       systemState={systemState}
+      productLabel={brand().name}
     >
       <ToastProvider>{children}</ToastProvider>
     </AppShell>

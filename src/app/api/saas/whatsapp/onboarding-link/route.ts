@@ -1,4 +1,5 @@
 import { apiError, withOwner } from "@/lib/api";
+import { brand } from "@/lib/brand";
 import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { eq } from "drizzle-orm";
@@ -51,7 +52,7 @@ export const POST = withOwner(async (session, request: Request) => {
 
   const payload = (await response?.json().catch(() => null)) as { url?: string; error?: string } | null;
   if (!response?.ok || !payload?.url) {
-    return apiError(502, "onboarding_unavailable", payload?.error ?? "Allok no pudo preparar el enlace de Meta");
+    return apiError(502, "onboarding_unavailable", payload?.error ?? `${brand().Name} no pudo preparar el enlace de Meta`);
   }
   return Response.json({ url: payload.url, expiresInSeconds: 7 * 24 * 60 * 60 });
 });

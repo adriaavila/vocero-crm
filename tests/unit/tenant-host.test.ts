@@ -3,9 +3,11 @@ import {
   isAllokBrand,
   isKnownAllokHost,
   isLegacyAppHost,
+  isReservedSubdomain,
   isSaaSAdminHost,
   isSaaSAppHost,
   isTenantSlug,
+  resolvedRootDomain,
   saasAppHost,
   slugifyTenantName,
   tenantSlugFromHost,
@@ -93,5 +95,75 @@ describe("marca allok", () => {
     expect(isAllokBrand()).toBe(false);
     vi.stubEnv("ALLOK_SAAS_MODE", "true");
     expect(isAllokBrand()).toBe(true);
+  });
+});
+
+describe("gotcha: ALLOK_ROOT_DOMAIN vacío (docker-compose ${VAR:-})", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("una cadena vacía se trata como no configurada, no como dominio ''", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", "");
+    expect(resolvedRootDomain()).toBe("allok.fun");
+    expect(saasAppHost()).toBe("app.allok.fun");
+    expect(isSaaSAppHost("app.allok.fun")).toBe(true);
+  });
+
+  it("solo espacios cuenta igual que vacío", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", "   ");
+    expect(resolvedRootDomain()).toBe("allok.fun");
+  });
+
+  it("un solo punto se limpia a nada: también cuenta como no configurado", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", ".");
+    expect(resolvedRootDomain()).toBe("allok.fun");
+    expect(saasAppHost()).toBe("app.allok.fun");
+  });
+
+  it("un valor real sigue ganando, limpio de mayúsculas y puntos sueltos", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", " Reiprop.Tech. ");
+    expect(resolvedRootDomain()).toBe("reiprop.tech");
+    expect(saasAppHost()).toBe("app.reiprop.tech");
+  });
+});
+
+describe("ALLOK_LEGACY_HOST=none (Rei no tiene organización heredada)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("apaga el mapeo entero: crm.<root> deja de ser el host legacy", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", "reiprop.tech");
+    vi.stubEnv("ALLOK_LEGACY_HOST", "none");
+    expect(isLegacyAppHost("crm.reiprop.tech")).toBe(false);
+    expect(isLegacyAppHost("crm.localhost:3000")).toBe(false);
+  });
+
+  it("sin ALLOK_LEGACY_HOST=none, crm.<root> sigue siendo el legacy de siempre", () => {
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", "");
+    vi.stubEnv("ALLOK_LEGACY_HOST", "");
+    expect(isLegacyAppHost("crm.allok.fun")).toBe(true);
+  });
+});
+
+describe("ALLOK_RESERVED_SUBDOMAINS suma sin tocar código", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("un subdominio extra queda reservado, además de los de fábrica", () => {
+    vi.stubEnv("ALLOK_RESERVED_SUBDOMAINS", "inmo,portal,smtp,dev,test");
+    for (const extra of ["inmo", "portal", "smtp", "dev", "test"]) {
+      expect(isReservedSubdomain(extra)).toBe(true);
+    }
+    // Los de fábrica siguen reservados.
+    expect(isReservedSubdomain("crm")).toBe(true);
+  });
+
+  it("demo NO es reservado: sigue disponible como slug de negocio (allok y Rei)", () => {
+    vi.stubEnv("ALLOK_RESERVED_SUBDOMAINS", "inmo,portal,smtp,dev,test");
+    expect(isReservedSubdomain("demo")).toBe(false);
+    vi.stubEnv("ALLOK_ROOT_DOMAIN", "reiprop.tech");
+    expect(tenantSlugFromHost("demo.reiprop.tech")).toBe("demo");
+  });
+
+  it("sin la variable, ningún extra queda reservado", () => {
+    vi.stubEnv("ALLOK_RESERVED_SUBDOMAINS", "");
+    expect(isReservedSubdomain("inmo")).toBe(false);
   });
 });

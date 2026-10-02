@@ -41,6 +41,8 @@ type KbEntry = {
 export function AgentClient({
   saasMode = false,
   externalBrainAlwaysOn = false,
+  brandName = "Allok",
+  brandNameLower = "allok",
 }: {
   saasMode?: boolean;
   /**
@@ -50,6 +52,10 @@ export function AgentClient({
    * estado.ts` (`cerebroExternoLegadoSiempreOn`).
    */
   externalBrainAlwaysOn?: boolean;
+  /** "Allok" / "Rei", para el arranque de una oración. Resuelto en el servidor (`brand()` no es NEXT_PUBLIC_). */
+  brandName?: string;
+  /** "allok" / "Rei", mención dentro de una oración (allok es en minúscula). */
+  brandNameLower?: string;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [aiConfigured, setAiConfigured] = useState(true);
@@ -196,8 +202,9 @@ export function AgentClient({
             onSave={saveProfile}
             credentials={aiCredentials}
             onCredentialsChanged={() => void refetch()}
+            brandName={brandNameLower}
           />
-          {saasMode && <BusinessHoursSection />}
+          {saasMode && <BusinessHoursSection brandName={brandName} />}
         </div>
         <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
       </div>
@@ -224,7 +231,7 @@ const BUSINESS_DAYS: { key: BusinessDay; label: string; short: string }[] = [
   { key: "sun", label: "Domingo", short: "D" },
 ];
 
-function BusinessHoursSection() {
+function BusinessHoursSection({ brandName }: { brandName: string }) {
   const [settings, setSettings] = useState<BusinessHoursSettings | null>(null);
   const [canUseAllDay, setCanUseAllDay] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -305,14 +312,14 @@ function BusinessHoursSection() {
       <CardHeader>
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand-text"><Clock3 className="h-4 w-4" /></span>
-          <div><CardTitle>Horario de respuesta</CardTitle><CardDescription className="mt-1">Allok solo hablará por ti cuando esta regla lo permita. Es independiente del horario de citas.</CardDescription></div>
+          <div><CardTitle>Horario de respuesta</CardTitle><CardDescription className="mt-1">{brandName} solo hablará por ti cuando esta regla lo permita. Es independiente del horario de citas.</CardDescription></div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Modo de atención">
           <button type="button" onClick={() => setSettings({ ...settings, responseMode: "outside_hours" })} className={`rounded-md border p-3 text-left transition-colors ${settings.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
             <span className="block text-sm font-semibold">Fuera de horario</span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Esencial: Allok cubre las horas en que tu equipo descansa.</span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Esencial: {brandName} cubre las horas en que tu equipo descansa.</span>
           </button>
           <button type="button" disabled={!canUseAllDay} onClick={() => setSettings({ ...settings, responseMode: "all_day" })} className={`rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${settings.responseMode === "all_day" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
             <span className="flex items-center gap-2 text-sm font-semibold">Todo el día <Badge variant="success">Completo</Badge></span>
