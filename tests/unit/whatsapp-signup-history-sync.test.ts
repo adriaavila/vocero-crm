@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 /**
  * `history` / `smb_app_state_sync` (server/agencia/whatsapp-signup/
@@ -162,8 +164,14 @@ describe("processHistoryValue", () => {
     expect(conversationUpdates).toHaveLength(1);
     // El valor se envuelve en SQL GREATEST(...) — solo confirmamos que SE
     // actualiza con el máximo del thread, no con el último mensaje procesado.
-    const sqlChunk = conversationUpdates[0]!.lastMessageAt as { queryChunks?: unknown[] };
-    expect(sqlChunk).toBeTruthy();
+    const { sql, params } = new PgDialect().sqlToQuery(conversationUpdates[0]!.lastMessageAt as SQL);
+    expect(sql.toLowerCase()).toContain("greatest");
+    // postgres-js no serializa un Date crudo en un parámetro de tipo
+    // desconocido (prod: "The string argument must be of type string…
+    // Received an instance of Date"): va como texto ISO con cast.
+    expect(params.some((p) => p instanceof Date)).toBe(false);
+    expect(params).toContain(new Date(1700000200 * 1000).toISOString());
+    expect(sql).toMatch(/\$\d+::timestamp\)$/);
   });
 
   it("un error de base de datos real se propaga (no se atrapa) — Meta debe reintentar", async () => {

@@ -206,7 +206,9 @@ export async function processHistoryValue(value: HistoryFieldValue): Promise<Syn
         await db
           .update(schema.conversation)
           .set({
-            lastMessageAt: sql`GREATEST(coalesce(${schema.conversation.lastMessageAt}, to_timestamp(0)), ${maxTimestamp})`,
+            // El instante va como texto con cast explícito: postgres-js no
+            // serializa un Date crudo dentro de un `sql` (tipo desconocido).
+            lastMessageAt: sql`GREATEST(coalesce(${schema.conversation.lastMessageAt}, to_timestamp(0)), ${maxTimestamp.toISOString()}::timestamp)`,
           })
           .where(eq(schema.conversation.id, conversation.id));
       }
