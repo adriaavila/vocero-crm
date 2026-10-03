@@ -146,7 +146,8 @@ export async function saveBusinessHours(
       businessHours: next.weeklyHours,
       businessTimezone: next.timezone,
       responseMode: next.responseMode,
-      updatedAt: new Date(),
+      // Sin `updatedAt`: el horario no cambia lo que el agente dice, así que no
+      // vuelve vieja la prueba (ver `server/agencia/contenido-perfil.ts`).
     })
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .returning({ id: schema.agentProfile.id });

@@ -31,10 +31,9 @@ export async function onUserCreated(
     skipOrganization?: boolean;
     timezone?: string | null;
     /**
-     * Alta de autoservicio: 7 días de prueba sin Stripe, onboarding de
-     * WhatsApp en `pendiente` y el agente apagado hasta que el dueño lo active
-     * (con un número real conectado, contestaría a sus clientes sin saber nada
-     * del negocio).
+     * Alta de autoservicio: 7 días de prueba sin Stripe y onboarding de
+     * WhatsApp en `pendiente`. El agente nace en pausa en TODO alta (ver
+     * `DEFAULT_AGENT_PROFILE`), no solo en esta.
      */
     selfServeTrial?: boolean;
   },
@@ -110,7 +109,6 @@ export async function onUserCreated(
       ...defaultAgentProfile(),
       // SaaS calla sin horario de respuesta; legacy no lo usa y nace igual.
       ...(isAllokSaaSMode() ? defaultResponseSchedule(options?.timezone) : {}),
-      ...(options?.selfServeTrial ? { enabled: false } : {}),
     });
     return orgId;
   });

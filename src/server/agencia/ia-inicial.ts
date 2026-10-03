@@ -6,10 +6,11 @@ import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo"
 /**
  * Capa de agencia — ¿la IA nace encendida en una conversación nueva?
  *
- * Una instancia SaaS nueva nace con la plantilla Rei activa: el dueño solo
- * completa los datos del negocio y la knowledge base. Las claves de plataforma
- * o propias se resuelven en el adaptador; si no existe ninguna, el turno no
- * puede responder.
+ * Un negocio nuevo nace con el agente EN PAUSA (`DEFAULT_AGENT_PROFILE`): el
+ * dueño completa los datos del negocio, prueba y lo enciende en «Activar», y
+ * solo entonces nacen conversaciones con la IA prendida. Las claves de
+ * plataforma o propias se resuelven en el adaptador; si no existe ninguna, el
+ * turno no puede responder.
  *
  * Las dos respuestas fijas están mal, y la segunda peor: con la IA apagada en
  * cada conversación nueva y sin nada que la encienda, un cliente que YA activó

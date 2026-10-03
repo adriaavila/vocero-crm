@@ -79,6 +79,33 @@ itálicas de adorno.
 - **Portada** (`auth-frame.tsx` + `noche.tsx`): «Mientras duermes», un tablero
   de conversaciones de una noche cualquiera en el código de color. Es la
   promesa, no un dato: no lleva cifras.
+- **Puesta en marcha** (`setup-progress.tsx`, `server/agencia/setup-progress.ts`):
+  cuatro pasos, **Conectar WhatsApp · Tu negocio · Probar · Activar**, derivados
+  de la preparación del servidor y dibujados igual en WhatsApp, Tu agente y
+  Probar (Inicio los puede reusar). Cada paso es punto + palabra: listo es
+  *all ok*, el que toca es *atención* («Ahora», te toca a ti), el resto
+  *pausado*. Crear la cuenta pasa antes y no es un paso. **Sin contadores
+  escritos a mano** («paso 2 de 6»): el avance sale del servidor o no se dice.
+  Con el agente activo no se dibuja: el dueño que vuelve ve su operación.
+- **Tarjeta del número** (`whatsapp-conexion.tsx`): el número y tres hechos por
+  separado, cada uno con su evidencia: vinculado, *recibimos mensajes* y
+  *enviamos respuestas* (última respuesta que WhatsApp entregó), o «Por
+  verificar», que no es un error. Una sola acción principal. IDs, token y
+  webhook viven bajo «Conexión manual (soporte)», cerrado.
+- **Tu negocio** (`tu-negocio.tsx`): lo primero de Tu agente. Qué vendes,
+  precios, zona, preguntas frecuentes y cuándo pasar con una persona, con los
+  textos de ejemplo solo como *placeholder*. Lo técnico va en «Avanzado»,
+  cerrado. Solo entra lo que el dueño escribió; un guardado que falla conserva
+  el texto y dice por qué.
+- **Activar** (`activar.tsx`): antes del botón, el número, cuándo responde (y
+  quién atiende ahora) y qué hará el agente. Si falta algo, la lista del
+  servidor con un enlace para arreglar cada cosa; si no se pudo saber qué
+  falta, error con reintentar y **ningún** botón de activar. Pausar es siempre
+  inmediato.
+- **Probar** (`probar.tsx`): el resultado de la simulación en palabras (pasó,
+  pasó antes de que cambiara la información, o no pasó y qué se corrige y
+  dónde). Una respuesta que propone el revisor nunca se rellena sola: la
+  escribe el dueño.
 - **Botones**: esquina de 10px, sin levantar al pasar, presión 0.97 (`--btn-*`).
 - **Avatares** neutros: el color es estado, no identidad.
 - **Interruptor** encendido: pista verde de estado, perilla en tinta.
@@ -131,4 +158,7 @@ allok»):
 - **Sí**: tokens por nombre, nunca hex en un componente; estado = punto + palabra;
   una acción principal por pantalla; español, segunda persona, `allok` en minúscula.
 - **No**: colores de adorno, degradados, emoji en la interfaz, un verde que no
-  signifique «todo bien», un número inventado, un movimiento que no diga nada.
+  signifique «todo bien», un número inventado, un movimiento que no diga nada,
+  un contador de pasos escrito a mano, jerga al dueño (WABA, token, webhook,
+  prompt) fuera de «Avanzado» y «Conexión manual (soporte)», y rellenar con
+  texto generado lo que el dueño no escribió.
