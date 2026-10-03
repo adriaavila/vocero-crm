@@ -2,7 +2,6 @@ import { count, eq, gte, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
-  conversationNote,
   conversationState,
   systemState,
   WINDOW_MS,
@@ -24,7 +23,7 @@ import { dayIsoInTz } from "@/lib/time/slots";
  * Las reglas viven en `lib/estado` (puras y probadas); acá solo se leen.
  */
 
-async function agentOn(organizationId: string): Promise<{ on: boolean; timezone: string }> {
+export async function agentOn(organizationId: string): Promise<{ on: boolean; timezone: string }> {
   const rows = await getDb()
     .select({ enabled: schema.agentProfile.enabled, timezone: schema.agentProfile.businessTimezone })
     .from(schema.agentProfile)
@@ -102,34 +101,12 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   };
 }
 
-const HANDOFF_NOTE: Record<string, string> = {
-  cliente: "Pidió hablar con una persona",
-  modelo: "El agente prefirió pasártela",
-  error: "La respuesta automática falló",
-  ventana: "Se cerró la ventana de 24 h",
-  hostilidad: "Conversación delicada: tómala tú",
-  manual_reply: "Respondiste desde el teléfono",
-};
-
-export type FeedRow = {
-  id: string;
-  contactId: string;
-  name: string;
-  /** Lo último que se dijo, tal cual. */
-  preview: string | null;
-  /** Qué pasa con esta conversación, en palabras. */
-  note: string;
-  state: SystemState;
-  at: string | null;
-};
-
 /** Una conversación de hoy en la línea del día: el minuto en que el cliente escribió por última vez. */
 export type DayPoint = { id: string; contactId: string; name: string; state: SystemState; minute: number };
 
 export type Centro = {
   today: { conversations: number; solo: number; nuevos: number };
   waiting: number;
-  feed: FeedRow[];
   timezone: string;
   /** Inicio, «Hoy, hora por hora»: quién escribió y quién contesta cada minuto del día. */
   day: {
@@ -207,23 +184,6 @@ export async function getCentro(organizationId: string, conversations: Conversat
 
   const now = Date.now();
   const rows = conversations.map((c) => ({ c, state: conversationState(c, agent.on, now) }));
-  // Primero lo que espera por una persona, después lo que el agente atiende
-  // ahora, después lo más reciente (listConversations ya viene por recencia).
-  const rank = { atencion: 0, atendiendo: 1, activo: 2, pausado: 2 } as const;
-  const feed = [...rows]
-    .sort((a, b) => rank[a.state] - rank[b.state])
-    .slice(0, 7)
-    .map(({ c, state }): FeedRow => ({
-      id: c.id,
-      contactId: c.contact.id,
-      name: c.contact.name,
-      preview: c.preview,
-      note: c.handoffAt && state === "atencion"
-        ? HANDOFF_NOTE[c.handoffReason ?? ""] ?? "Espera por ti"
-        : conversationNote(c, state, now),
-      state,
-      at: c.lastMessageAt,
-    }));
   const row = (totals as unknown as { conversations: number; solo: number; nuevos: number }[])[0];
 
   // La línea del día: un punto por conversación de hoy, en el minuto en que
@@ -256,7 +216,6 @@ export async function getCentro(organizationId: string, conversations: Conversat
       nuevos: row?.nuevos ?? 0,
     },
     waiting: rows.filter((r) => r.state === "atencion").length,
-    feed,
     timezone: tz,
     day: {
       points,
