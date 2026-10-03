@@ -16,6 +16,9 @@ import {
 import { useEvents } from "@/components/use-events";
 import { Badge } from "@/components/ui/badge";
 import { LiveWhatsappTest } from "@/components/agencia/live-whatsapp-test";
+import { ProbarPanel } from "@/components/agencia/probar";
+import { passes } from "@/lib/probar";
+import type { SetupProgress } from "@/server/agencia/setup-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -27,6 +30,8 @@ type Run = {
   status: "running" | "done" | "failed";
   score: number | null;
   error: string | null;
+  /** Casos en rojo de la corrida (la lista de corridas lo trae; el detalle lo cuenta de sus casos). */
+  redCount?: number;
   startedAt: string;
   finishedAt: string | null;
   delta: number | null;
@@ -55,7 +60,7 @@ const TIPO_LABELS: Record<Hallazgo["tipo"], string> = {
   tono: "Tono",
 };
 
-export function LabClient() {
+export function LabClient({ initialProgress = null }: { initialProgress?: SetupProgress | null }) {
   const [runs, setRuns] = useState<Run[]>([]);
   const [aiConfigured, setAiConfigured] = useState(true);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -124,12 +129,11 @@ export function LabClient() {
         <div className="m-6 rounded-lg border border-brand-soft bg-brand-tint p-8 text-center">
           <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
           <p className="font-medium">
-            Configura tu proveedor de IA para usar el Laboratorio
+            La IA todavía no está lista en tu cuenta
           </p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            El Laboratorio necesita el agente activo: agrega{" "}
-            <code className="rounded bg-secondary px-1">OPENROUTER_API_TOKEN</code> a la
-            instancia y vuelve aquí.
+            Sin ella no se puede probar a tu agente. Escríbenos o pide ayuda a quien
+            administra tu instancia, y vuelve aquí.
           </p>
         </div>
       </div>
@@ -146,7 +150,22 @@ export function LabClient() {
         onLaunch={() => void launch()}
         disabled={false}
       />
-      {error && <p className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
+      {error && <p role="alert" className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
+
+      {/* Capa de agencia: el resultado en palabras del dueño y qué corregir.
+          Vive en components/agencia/ para que la próxima fusión con upstream
+          no toque este archivo más que en esta línea. */}
+      <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+        <ProbarPanel
+          runs={runs}
+          running={running}
+          launching={launching}
+          progress={progress}
+          onLaunch={() => void launch()}
+          onApplied={() => selectedRunId && void refetchDetail(selectedRunId)}
+          initialProgress={initialProgress}
+        />
+      </div>
 
       {running && progress && (
         <div className="mx-6 mt-4 rounded-lg border bg-card p-4">
@@ -207,15 +226,15 @@ function Header({
     <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
       <div>
         <h2 className="flex items-center gap-2 text-[17px] font-bold tracking-tight">
-          <FlaskConical className="h-4 w-4 text-primary" /> Laboratorio
+          <FlaskConical className="h-4 w-4 text-primary" /> Probar tu agente
         </h2>
         <p className="text-xs text-muted-foreground">
-          Sandbox interno — no envía mensajes reales
+          Simulación interna: no envía mensajes reales
         </p>
       </div>
-      <Button onClick={onLaunch} disabled={disabled || running || launching}>
+      <Button variant="outline" className="min-h-11" onClick={onLaunch} disabled={disabled || running || launching}>
         <Play className="h-4 w-4" />
-        {running ? "Corrida en curso…" : "Correr evaluación"}
+        {running ? "Prueba en curso…" : "Correr de nuevo"}
       </Button>
     </header>
   );
@@ -278,12 +297,21 @@ function HistoryList({
   );
 }
 
-function ScoreBadge({ run }: { run: Run }) {
+/**
+ * El color dice si la prueba PASÓ, no solo cuánto sacó: 80 o más y ningún caso
+ * en rojo. Un 83 con un caso grave no es verde.
+ */
+function ScoreBadge({ run, redCount }: { run: Run; redCount?: number }) {
   if (run.status === "running") return <Badge variant="secondary">En curso…</Badge>;
   if (run.status === "failed") return <Badge variant="destructive">Fallida</Badge>;
   const score = run.score ?? 0;
-  const variant = score >= 80 ? "success" : score >= 50 ? "warning" : "destructive";
-  return <Badge variant={variant}>Score {score}</Badge>;
+  const reds = redCount ?? run.redCount ?? 0;
+  const variant = passes(score, reds) ? "success" : score >= 50 ? "warning" : "destructive";
+  return (
+    <Badge variant={variant}>
+      {score} de 100{!passes(score, reds) && reds > 0 ? " · caso grave" : ""}
+    </Badge>
+  );
 }
 
 function Report({
@@ -300,7 +328,7 @@ function Report({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Reporte</CardTitle>
-            <ScoreBadge run={run} />
+            <ScoreBadge run={run} redCount={cases.filter((c) => c.veredicto === "rojo").length} />
           </div>
           {run.status === "failed" && (
             <p className="text-sm text-destructive">

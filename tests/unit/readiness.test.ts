@@ -60,7 +60,8 @@ describe("readiness", () => {
       input({ whatsappConnected: false, whatsappStatus: "reconnect_required" }),
     ).steps.find((step) => step.id === "whatsapp")!;
     expect(muerto.status).toBe("pending");
-    expect(muerto.detail).toMatch(/expiró o fue revocado/);
+    expect(muerto.detail).toMatch(/venció/);
+    expect(muerto.detail).not.toMatch(/token/i);
 
     const nunca = evaluateReadiness(
       input({ whatsappConnected: false, whatsappStatus: null }),
