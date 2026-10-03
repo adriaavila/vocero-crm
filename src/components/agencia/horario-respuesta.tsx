@@ -30,6 +30,11 @@ export type HoursSettings = {
   responseMode: "outside_hours" | "all_day";
 };
 
+// En el teléfono el selector de hora es la rueda del sistema: el icono del
+// reloj sobra y es lo que partía la fila a 375px.
+const TIME_INPUT =
+  "h-11 min-w-0 px-2 text-center max-sm:[&::-webkit-calendar-picker-indicator]:hidden sm:h-9 sm:w-28 sm:px-3 sm:text-left";
+
 const DAYS: { key: WeekdayKey; label: string; short: string }[] = [
   { key: "mon", label: "Lunes", short: "L" },
   { key: "tue", label: "Martes", short: "M" },
@@ -259,7 +264,7 @@ export function HorarioRespuesta({
                           disabled={disabled}
                           value={interval?.start ?? "09:00"}
                           onChange={(event) => setDayTime(day.key, "start", event.target.value)}
-                          className="h-11 min-w-0 px-2 sm:h-9 sm:w-28 sm:px-3"
+                          className={TIME_INPUT}
                         />
                         <span className="text-center text-xs text-text-3">a</span>
                         <Input
@@ -268,7 +273,7 @@ export function HorarioRespuesta({
                           disabled={disabled}
                           value={interval?.end ?? "18:00"}
                           onChange={(event) => setDayTime(day.key, "end", event.target.value)}
-                          className="h-11 min-w-0 px-2 sm:h-9 sm:w-28 sm:px-3"
+                          className={TIME_INPUT}
                         />
                       </>
                     )}

@@ -53,10 +53,18 @@ const json = { "content-type": "application/json" };
 function GrowingTextarea({ value, ...props }: React.ComponentProps<typeof Textarea> & { value: string }) {
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const el = box.current?.querySelector("textarea");
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight + 2}px`;
+    const wrapper = box.current;
+    const el = wrapper?.querySelector("textarea");
+    if (!wrapper || !el) return;
+    const fit = () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight + 2}px`;
+    };
+    fit();
+    // Cambiar el ancho (girar el teléfono) cambia cuántos renglones ocupa.
+    const observer = new ResizeObserver(fit);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
   }, [value]);
   return (
     <div ref={box}>
