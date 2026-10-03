@@ -69,8 +69,8 @@ replayRawEvents({ organizationId?, statuses = ["failed","unrouted","unmatched"],
 
 Vuelve a enrutar y procesar cada fila, del más viejo al más nuevo, con el mismo
 procesador que el webhook. Con `organizationId` incluye también lo `unrouted`
-cuyo `account_ref` es el número de esa organización. Admin SaaS, auditado en
-`saas_admin_audit` (`replay_raw_events`):
+cuyo `account_ref` es el número de esa organización. El endpoint es solo del
+admin SaaS (auditado en `saas_admin_audit`); una instancia dedicada llama la función:
 
 ```bash
 curl -X POST https://admin.allok.fun/api/saas/raw-events/replay \
