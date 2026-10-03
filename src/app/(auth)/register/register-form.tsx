@@ -212,6 +212,9 @@ export default function RegisterForm({
           <Button type="submit" className="min-h-11 w-full" disabled={loading}>
             {loading ? "Creando tu espacio…" : <>Continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
           </Button>
+          {selfServe && (
+            <p className="text-center text-xs text-text-3">7 días gratis del plan Completo. Después eliges tu plan.</p>
+          )}
           <div className="grid gap-2 rounded-lg border bg-subtle p-3 text-xs text-text-3"><p className="flex items-center gap-2 font-medium text-text-2"><Check className="h-3.5 w-3.5 text-success" /> Después conectas tu WhatsApp</p><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-success" /> Ajustas horarios e información</p><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-success" /> Pruebas antes de activar respuestas</p></div>
           <p className="flex items-center justify-center gap-1.5 text-center text-xs leading-relaxed text-text-3"><ShieldCheck className="h-3.5 w-3.5 text-success" /> No se enviarán mensajes durante la configuración.</p>
           <p className="text-center text-sm text-muted-foreground">
