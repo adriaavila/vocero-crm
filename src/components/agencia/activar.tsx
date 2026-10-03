@@ -165,9 +165,18 @@ export function ActivarSection({
                         <p className="break-words text-xs leading-5 text-text-2">{blocker.detail}</p>
                       </div>
                       {blocker.href && blocker.cta && (
-                        <Link href={blocker.href} className={buttonVariants({ variant: "outline", className: "min-h-11 shrink-0" })}>
-                          {blocker.cta}
-                        </Link>
+                        // Un ancla de esta misma pantalla es un enlace normal: así el
+                        // navegador avisa del cambio de ancla y el cajón de destino
+                        // (Avanzado, Horario) se abre.
+                        blocker.href.startsWith("/agent#") ? (
+                          <a href={blocker.href.slice("/agent".length)} className={buttonVariants({ variant: "outline", className: "min-h-11 shrink-0" })}>
+                            {blocker.cta}
+                          </a>
+                        ) : (
+                          <Link href={blocker.href} className={buttonVariants({ variant: "outline", className: "min-h-11 shrink-0" })}>
+                            {blocker.cta}
+                          </Link>
+                        )
                       )}
                     </li>
                   ))}

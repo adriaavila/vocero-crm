@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
-import { ChevronRight, Clock3, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ChevronRight, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { TimezoneSelect } from "@/components/ui/timezone-select";
 import { Skeleton } from "@/components/ui/skeleton";
 // Capa de agencia (fork). Todo lo propio vive en components/agencia/ para que
 // la próxima fusión con upstream no toque este archivo más que en esta línea.
@@ -20,7 +19,7 @@ import {
 } from "@/components/agencia/agent-agency-cards";
 import { useSetup } from "@/components/agencia/activation-gate";
 import { ActivarSection } from "@/components/agencia/activar";
-import { AgentWeek } from "@/components/agencia/allok/agent-week";
+import { useBusinessHours } from "@/components/agencia/horario-respuesta";
 import { SetupProgressNav } from "@/components/agencia/setup-progress";
 import { TuNegocio } from "@/components/agencia/tu-negocio";
 import { postKbEntry, saveResult, type SaveResult } from "@/lib/negocio";
@@ -46,7 +45,6 @@ type KbEntry = {
 export function AgentClient({
   saasMode = false,
   externalBrainAlwaysOn = false,
-  brandName = "Allok",
   brandNameLower = "allok",
   initialProgress = null,
 }: {
@@ -58,8 +56,6 @@ export function AgentClient({
    * estado.ts` (`cerebroExternoLegadoSiempreOn`).
    */
   externalBrainAlwaysOn?: boolean;
-  /** "Allok" / "Rei", para el arranque de una oración. Resuelto en el servidor (`brand()` no es NEXT_PUBLIC_). */
-  brandName?: string;
   /** "allok" / "Rei", mención dentro de una oración (allok es en minúscula). */
   brandNameLower?: string;
   /** El avance de la puesta en marcha, resuelto en el servidor. */
@@ -73,6 +69,9 @@ export function AgentClient({
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // El horario (solo SaaS) se edita dentro de «Tu negocio» y se guarda con su botón.
+  const hours = useBusinessHours(saasMode);
+  const [hoursOpen, setHoursOpen] = useState(false);
   const { progress, gate, reload: reloadSetup, retry: retrySetup } = useSetup(initialProgress);
 
   const refetch = useCallback(async () => {
@@ -103,6 +102,7 @@ export function AgentClient({
   useEffect(() => {
     const open = () => {
       if (window.location.hash === "#avanzado") setAdvancedOpen(true);
+      if (window.location.hash === "#horario") setHoursOpen(true);
     };
     open();
     window.addEventListener("hashchange", open);
@@ -113,13 +113,12 @@ export function AgentClient({
   // sitio se mueve mientras cargan el horario y la lectura de «Activar»: el
   // salto se hace UNA vez, cuando ya no queda nada por cargar encima.
   const ready = profile !== null;
-  const [hoursLoaded, setHoursLoaded] = useState(false);
   const jumped = useRef(false);
   useEffect(() => {
-    if (jumped.current || !ready || gate.kind === "loading" || (saasMode && !hoursLoaded)) return;
+    if (jumped.current || !ready || gate.kind === "loading" || !hours.loaded) return;
     jumped.current = true;
     if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
-  }, [ready, gate.kind, hoursLoaded, saasMode]);
+  }, [ready, gate.kind, hours.loaded]);
 
   if (!profile) {
     return (
@@ -199,6 +198,9 @@ export function AgentClient({
   }
 
   const showProgress = progress?.active ?? false;
+  const hasAnyHours = hours.settings
+    ? hours.settings.responseMode === "all_day" || Object.values(hours.settings.weeklyHours).some((d) => d?.length)
+    : true;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -259,15 +261,13 @@ export function AgentClient({
           entries={entries}
           escalationRules={profile.escalationRules}
           progress={progress}
+          hours={saasMode ? hours : null}
+          hoursOpen={hoursOpen || (hours.loaded && !hasAnyHours)}
+          onHoursOpenChange={setHoursOpen}
+          brandName={brandNameLower}
           saveHandoff={(rules) => putProfile({ escalationRules: rules })}
           onChanged={refetch}
         />
-
-        {saasMode && (
-          <div id="horario" className="scroll-mt-4">
-            <BusinessHoursSection brandName={brandName} onSaved={() => void reloadSetup()} onLoaded={() => setHoursLoaded(true)} />
-          </div>
-        )}
 
         <ActivarSection
           enabled={profile.enabled}
@@ -313,147 +313,6 @@ export function AgentClient({
 }
 
 const GENERIC_ERROR = "No se pudo guardar. Revisa el texto y vuelve a intentarlo.";
-
-type BusinessDay = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
-type BusinessInterval = { start: string; end: string };
-type BusinessHoursSettings = {
-  weeklyHours: Partial<Record<BusinessDay, BusinessInterval[]>>;
-  timezone: string;
-  responseMode: "outside_hours" | "all_day";
-};
-
-const BUSINESS_DAYS: { key: BusinessDay; label: string; short: string }[] = [
-  { key: "mon", label: "Lunes", short: "L" },
-  { key: "tue", label: "Martes", short: "M" },
-  { key: "wed", label: "Miércoles", short: "X" },
-  { key: "thu", label: "Jueves", short: "J" },
-  { key: "fri", label: "Viernes", short: "V" },
-  { key: "sat", label: "Sábado", short: "S" },
-  { key: "sun", label: "Domingo", short: "D" },
-];
-
-function BusinessHoursSection({ brandName, onSaved, onLoaded }: { brandName: string; onSaved?: () => void; onLoaded?: () => void }) {
-  const [settings, setSettings] = useState<BusinessHoursSettings | null>(null);
-  const [canUseAllDay, setCanUseAllDay] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void fetch("/api/settings/business-hours")
-      .then(async (response) => {
-        const payload = (await response.json().catch(() => null)) as {
-          settings?: BusinessHoursSettings;
-          canUseAllDay?: boolean;
-        } | null;
-        if (!response.ok || !payload?.settings) throw new Error("No se pudo cargar el horario.");
-        setSettings(payload.settings);
-        setCanUseAllDay(payload.canUseAllDay === true);
-      })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "No se pudo cargar el horario."))
-      .finally(() => onLoaded?.());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!settings) {
-    return <Card><CardHeader><Skeleton className="h-5 w-44" /><Skeleton className="h-4 w-full max-w-md" /></CardHeader><CardContent><Skeleton className="h-32 w-full" /></CardContent></Card>;
-  }
-  const currentSettings = settings;
-
-  function toggleDay(day: BusinessDay) {
-    const next = { ...currentSettings.weeklyHours };
-    if (next[day]?.length) delete next[day];
-    else next[day] = [{ start: "09:00", end: "18:00" }];
-    setSettings({ ...currentSettings, weeklyHours: next });
-    setSaved(false);
-  }
-
-  function setDayTime(day: BusinessDay, field: keyof BusinessInterval, value: string) {
-    setSettings({
-      ...currentSettings,
-      weeklyHours: {
-        ...currentSettings.weeklyHours,
-        [day]: [{ ...(currentSettings.weeklyHours[day]?.[0] ?? { start: "09:00", end: "18:00" }), [field]: value }],
-      },
-    });
-    setSaved(false);
-  }
-
-  function setDayAllDay(day: BusinessDay, allDay: boolean) {
-    setSettings({
-      ...currentSettings,
-      weeklyHours: {
-        ...currentSettings.weeklyHours,
-        [day]: [allDay ? { start: "00:00", end: "00:00" } : { start: "09:00", end: "18:00" }],
-      },
-    });
-    setSaved(false);
-  }
-
-  async function save() {
-    setSaving(true);
-    setSaved(false);
-    setError(null);
-    const response = await fetch("/api/settings/business-hours", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(currentSettings),
-    }).catch(() => null);
-    const payload = (await response?.json().catch(() => null)) as { settings?: BusinessHoursSettings; error?: { message?: string } } | null;
-    if (!response?.ok || !payload?.settings) {
-      setError(payload?.error?.message ?? "No se pudo guardar el horario.");
-      setSaving(false);
-      return;
-    }
-    setSettings(payload.settings);
-    setSaved(true);
-    setSaving(false);
-    onSaved?.();
-  }
-
-  return (
-    <Card className="border-brand-soft">
-      <CardHeader>
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-tint text-brand-text"><Clock3 className="h-4 w-4" /></span>
-          <div><CardTitle>Horario de respuesta</CardTitle><CardDescription className="mt-1">{brandName} solo hablará por ti cuando esta regla lo permita. Es independiente del horario de citas.</CardDescription></div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Modo de atención">
-          <button type="button" onClick={() => setSettings({ ...settings, responseMode: "outside_hours" })} className={`rounded-md border p-3 text-left transition-colors ${settings.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
-            <span className="block text-sm font-semibold">Fuera de horario</span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Esencial: {brandName} cubre las horas en que tu equipo descansa.</span>
-          </button>
-          <button type="button" disabled={!canUseAllDay} onClick={() => setSettings({ ...settings, responseMode: "all_day" })} className={`rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${settings.responseMode === "all_day" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}>
-            <span className="flex items-center gap-2 text-sm font-semibold">Todo el día <Badge variant="success">Completo</Badge></span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Responde durante toda la jornada, con supervisión humana siempre disponible.</span>
-          </button>
-        </div>
-
-        <AgentWeek hours={currentSettings.weeklyHours} mode={settings.responseMode} timezone={settings.timezone} pro={canUseAllDay} />
-
-        {settings.responseMode === "outside_hours" && <div className="space-y-2 rounded-md border p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-3">Horario del negocio</p>
-          {BUSINESS_DAYS.map((day) => {
-            const interval = currentSettings.weeklyHours[day.key]?.[0];
-            const open = Boolean(interval);
-            const allDay = interval?.start === "00:00" && interval?.end === "00:00";
-            return <div key={day.key} className="flex flex-wrap items-center gap-2 py-1">
-              <button type="button" onClick={() => toggleDay(day.key)} aria-pressed={open} className={`flex h-11 w-28 items-center gap-2 rounded-md px-2 text-left text-sm font-medium sm:h-9 sm:w-24 ${open ? "bg-brand-tint text-brand-text" : "text-text-3 hover:bg-subtle"}`}><span className="grid h-5 w-5 place-items-center rounded-full border text-[10px]">{day.short}</span>{day.label}</button>
-              {open ? allDay ? <><span className="rounded-md bg-brand-tint px-3 py-2 text-sm font-semibold text-brand-text">24 horas</span><button type="button" onClick={() => setDayAllDay(day.key, false)} className="inline-flex min-h-11 items-center text-xs font-semibold text-text-3 hover:text-foreground sm:min-h-9">Definir horario</button></> : <><Input aria-label={`${day.label}: abre`} type="time" value={interval?.start ?? "09:00"} onChange={(event) => setDayTime(day.key, "start", event.target.value)} className="h-11 w-36 sm:h-9 sm:w-28" /><span className="text-xs text-text-3">a</span><Input aria-label={`${day.label}: cierra`} type="time" value={interval?.end ?? "18:00"} onChange={(event) => setDayTime(day.key, "end", event.target.value)} className="h-11 w-36 sm:h-9 sm:w-28" /><button type="button" onClick={() => setDayAllDay(day.key, true)} className="inline-flex min-h-11 items-center text-xs font-semibold text-brand-text hover:underline sm:min-h-9">24 h</button></> : <span className="text-sm text-text-3">Cerrado</span>}
-            </div>;
-          })}
-          <p className="mt-2 text-xs leading-5 text-text-3">Un cierre a las 00:00 termina al comenzar el día siguiente. Usa <strong className="font-semibold text-text-2">24 h</strong> para mantener ese día siempre abierto.</p>
-        </div>}
-
-        <div className="space-y-1.5"><Label htmlFor="business-timezone">Zona horaria</Label><TimezoneSelect id="business-timezone" value={settings.timezone} onValueChange={(timezone) => setSettings({ ...settings, timezone })} className="w-full" /><p className="text-xs text-text-3">Usa la zona del negocio, no la del servidor.</p></div>
-        {error && <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">{error}</p>}
-        <div className="flex items-center gap-3"><Button onClick={() => void save()} disabled={saving}>{saving ? "Guardando…" : "Guardar horario"}</Button>{saved && <span className="text-xs text-success-text">Guardado ✓</span>}</div>
-      </CardContent>
-    </Card>
-  );
-}
 
 function ProfileSection({
   profile,

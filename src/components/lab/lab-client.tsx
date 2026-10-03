@@ -17,6 +17,7 @@ import { useEvents } from "@/components/use-events";
 import { Badge } from "@/components/ui/badge";
 import { LiveWhatsappTest } from "@/components/agencia/live-whatsapp-test";
 import { ProbarPanel } from "@/components/agencia/probar";
+import { passes } from "@/lib/probar";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,8 @@ type Run = {
   status: "running" | "done" | "failed";
   score: number | null;
   error: string | null;
+  /** Casos en rojo de la corrida (la lista de corridas lo trae; el detalle lo cuenta de sus casos). */
+  redCount?: number;
   startedAt: string;
   finishedAt: string | null;
   delta: number | null;
@@ -294,12 +297,21 @@ function HistoryList({
   );
 }
 
-function ScoreBadge({ run }: { run: Run }) {
+/**
+ * El color dice si la prueba PASÓ, no solo cuánto sacó: 80 o más y ningún caso
+ * en rojo. Un 83 con un caso grave no es verde.
+ */
+function ScoreBadge({ run, redCount }: { run: Run; redCount?: number }) {
   if (run.status === "running") return <Badge variant="secondary">En curso…</Badge>;
   if (run.status === "failed") return <Badge variant="destructive">Fallida</Badge>;
   const score = run.score ?? 0;
-  const variant = score >= 80 ? "success" : score >= 50 ? "warning" : "destructive";
-  return <Badge variant={variant}>Score {score}</Badge>;
+  const reds = redCount ?? run.redCount ?? 0;
+  const variant = passes(score, reds) ? "success" : score >= 50 ? "warning" : "destructive";
+  return (
+    <Badge variant={variant}>
+      {score} de 100{!passes(score, reds) && reds > 0 ? " · caso grave" : ""}
+    </Badge>
+  );
 }
 
 function Report({
@@ -316,7 +328,7 @@ function Report({
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Reporte</CardTitle>
-            <ScoreBadge run={run} />
+            <ScoreBadge run={run} redCount={cases.filter((c) => c.veredicto === "rojo").length} />
           </div>
           {run.status === "failed" && (
             <p className="text-sm text-destructive">

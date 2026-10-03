@@ -23,7 +23,6 @@ export default async function AgentPage() {
     <AgentClient
       saasMode={isAllokSaaSMode()}
       externalBrainAlwaysOn={externalBrainAlwaysOn}
-      brandName={brand().Name}
       brandNameLower={brand().name}
       initialProgress={progress}
     />

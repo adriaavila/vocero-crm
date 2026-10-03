@@ -1,17 +1,13 @@
-import {
-  addDaysISO,
-  dayIsoInTz,
-  WEEKDAYS,
-  zonedWallClockToUtc,
-  type WeekdayKey,
-} from "@/lib/time/slots";
+import { describeTeamHours, timezoneLabel } from "@/lib/horario";
+import { addDaysISO, dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
 import {
   hasConfiguredBusinessHours,
   isBusinessHoursOpen,
   isOutsideBusinessHours,
   type BusinessHoursSettings,
-  type BusinessInterval,
 } from "@/server/business-hours";
+
+export { describeTeamHours, timezoneLabel };
 
 /**
  * Capa de agencia: el horario de respuesta en palabras de dueño, para la
@@ -19,61 +15,6 @@ import {
  * (`canAgentRespondNow`), dicha en una frase: «¿cuándo contesta mi agente?»
  * y «¿contesta ahora?». Puro: recibe el horario y el instante.
  */
-
-const DAY_NAME: Record<WeekdayKey, string> = {
-  mon: "lunes",
-  tue: "martes",
-  wed: "miércoles",
-  thu: "jueves",
-  fri: "viernes",
-  sat: "sábado",
-  sun: "domingo",
-};
-
-function isAllDay(interval: BusinessInterval): boolean {
-  return interval.start === "00:00" && interval.end === "00:00";
-}
-
-function intervalsText(intervals: BusinessInterval[]): string {
-  if (intervals.some(isAllDay)) return "todo el día";
-  return intervals.map((interval) => `de ${interval.start} a ${interval.end}`).join(" y ");
-}
-
-function daysText(days: WeekdayKey[]): string {
-  const names = days.map((day) => DAY_NAME[day]);
-  if (names.length === 1) return names[0]!;
-  if (names.length === 2) return `${names[0]} y ${names[1]}`;
-  return `${names[0]} a ${names[names.length - 1]}`;
-}
-
-/**
- * Cuándo atiende el equipo: «lunes a sábado, de 09:00 a 18:00». Los días
- * seguidos con las mismas horas se juntan; null si no hay ningún día con horas.
- */
-export function describeTeamHours(settings: BusinessHoursSettings): string | null {
-  const groups: { days: WeekdayKey[]; signature: string; text: string }[] = [];
-  for (const day of WEEKDAYS) {
-    const intervals = settings.weeklyHours[day];
-    if (!intervals?.length) continue;
-    const signature = JSON.stringify(intervals);
-    const last = groups[groups.length - 1];
-    const previousDay = last?.days[last.days.length - 1];
-    const consecutive = previousDay !== undefined && WEEKDAYS.indexOf(previousDay) === WEEKDAYS.indexOf(day) - 1;
-    if (last && last.signature === signature && consecutive) {
-      last.days.push(day);
-    } else {
-      groups.push({ days: [day], signature, text: intervalsText(intervals) });
-    }
-  }
-  if (groups.length === 0) return null;
-  return groups.map((group) => `${daysText(group.days)}, ${group.text}`).join("; ");
-}
-
-/** «America/Caracas» → «Caracas». */
-export function timezoneLabel(timezone: string): string {
-  const city = timezone.split("/").pop() ?? timezone;
-  return city.replace(/_/g, " ");
-}
 
 /**
  * El próximo instante (desde `now`) en que el agente puede responder, o null

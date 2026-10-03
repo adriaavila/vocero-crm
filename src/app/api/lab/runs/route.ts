@@ -1,4 +1,4 @@
-import { desc } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { apiError, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -17,6 +17,23 @@ export const GET = withOwner(async (session) => {
     .orderBy(desc(schema.agentTestRun.startedAt))
     .limit(50);
 
+  // Cuántos casos graves tuvo cada corrida: un 83/100 con un caso en rojo NO
+  // pasó, y el color del puntaje tiene que decirlo.
+  const redRows = runs.length
+    ? await db
+        .select({ runId: schema.agentTestCase.runId, n: count() })
+        .from(schema.agentTestCase)
+        .where(
+          and(
+            eq(schema.agentTestCase.organizationId, session.organizationId),
+            inArray(schema.agentTestCase.runId, runs.map((run) => run.id)),
+            eq(schema.agentTestCase.veredicto, "rojo"),
+          ),
+        )
+        .groupBy(schema.agentTestCase.runId)
+    : [];
+  const redByRun = new Map(redRows.map((row) => [row.runId, row.n]));
+
   const withDelta = runs.map((run, i) => {
     const prev = runs
       .slice(i + 1)
@@ -26,6 +43,7 @@ export const GET = withOwner(async (session) => {
       status: run.status,
       score: run.score,
       error: run.error,
+      redCount: redByRun.get(run.id) ?? 0,
       startedAt: run.startedAt.toISOString(),
       finishedAt: run.finishedAt?.toISOString() ?? null,
       delta:
