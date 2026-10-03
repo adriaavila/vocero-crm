@@ -13,6 +13,11 @@ import {
 } from "@/server/auth/on-signup";
 import { isPublicSignupAllowed, isSaaSSelfServe } from "@/server/auth/registration";
 import { brand } from "@/lib/brand";
+import { isEmailConfigured } from "@/server/agencia/email";
+import {
+  RESET_TOKEN_TTL_SECONDS,
+  sendPasswordResetEmail,
+} from "@/server/agencia/restablecer-contrasena";
 import {
   isAllokSaaSMode,
   isKnownAllokHost,
@@ -61,7 +66,12 @@ async function isSaaSAdminRequest(requestHeaders: Headers | undefined): Promise<
   return isSaaSAdminEmail(session?.user.email);
 }
 
-const RATE_LIMITED_PATHS = new Set(["/sign-in/email", "/sign-up/email"]);
+const RATE_LIMITED_PATHS = new Set([
+  "/sign-in/email",
+  "/sign-up/email",
+  "/request-password-reset",
+  "/reset-password",
+]);
 
 function createAuth() {
   const env = getEnv();
@@ -108,6 +118,23 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: false,
       minPasswordLength: 8,
+      // "Olvidé mi contraseña" existe solo con el conector de correo
+      // encendido (server/agencia/email.ts). Apagado, Better Auth contesta
+      // RESET_PASSWORD_DISABLED y el login conserva su "Escríbenos".
+      ...(isEmailConfigured()
+        ? {
+            resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
+            // Quien recupera el acceso porque alguien más entró no debe dejar
+            // esa sesión abierta.
+            revokeSessionsOnPasswordReset: true,
+            // Sin `await`: tardar más cuando la cuenta existe delataría qué
+            // correos tienen cuenta. Este proceso es un servidor Node
+            // persistente, no una función que se congela al responder.
+            sendResetPassword: async ({ user, url }: { user: { email: string }; url: string }) => {
+              void sendPasswordResetEmail({ to: user.email, url });
+            },
+          }
+        : {}),
     },
     plugins: [
       organization({
