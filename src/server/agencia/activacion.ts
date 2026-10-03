@@ -1,5 +1,6 @@
-import { count, eq } from "drizzle-orm";
+import { count } from "drizzle-orm";
 import { brand } from "@/lib/brand";
+import { isSuggestedHandoff } from "@/lib/negocio";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
@@ -249,8 +250,10 @@ export type ActivationSummary = {
   /** El número que va a contestar. */
   number: { display: string | null; name: string | null } | null;
   schedule: ScheduleDescription | null;
-  /** Cuándo el agente pasa la conversación a una persona, tal como lo escribió el dueño. */
+  /** Cuándo el agente pasa la conversación a una persona. */
   handoff: string | null;
+  /** Sigue siendo el texto sugerido con el que nació el negocio: no es todavía «su regla». */
+  handoffSuggested: boolean;
   /**
    * Límites que el dueño dejó puestos en Avanzado y que cambian a quién le
    * contesta el agente: encender no los quita, y no decirlo sería prometer más
@@ -309,7 +312,7 @@ export async function getActivationSummary(
     db
       .select({ n: count() })
       .from(schema.kbEntry)
-      .where(eq(schema.kbEntry.organizationId, organizationId)),
+      .where(scoped(schema.kbEntry.organizationId, organizationId)),
   ]);
 
   // Fuera del SaaS el servidor no bloquea: los pasos pendientes se muestran
@@ -336,8 +339,11 @@ export async function getActivationSummary(
     number: credentials
       ? { display: credentials.displayPhoneNumber ?? null, name: credentials.verifiedName ?? null }
       : null,
-    schedule: describeAgentSchedule(hours, now),
+    // Fuera del SaaS no hay horario de respuesta: contesta apenas llega el
+    // mensaje, y decir «sin horario» sería un aviso falso.
+    schedule: enforced ? describeAgentSchedule(hours, now) : null,
     handoff: profiles[0]?.escalationRules?.trim() || null,
+    handoffSuggested: isSuggestedHandoff(profiles[0]?.escalationRules),
     restrictions: restrictionsOf(profiles[0]),
     knowledgeCount: kb[0]?.n ?? 0,
   };

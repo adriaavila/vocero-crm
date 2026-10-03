@@ -16,6 +16,28 @@
 
 export type NegocioKey = "oferta" | "precios" | "zona";
 
+/**
+ * Con qué nace la regla «cuándo pasar con una persona»: escrita como la diría
+ * el dueño, y tratada como SUGERENCIA mientras no la cambie.
+ */
+export const SUGGESTED_HANDOFF =
+  "Cuando pidan hablar con una persona, tengan un reclamo o pregunten algo que no está aquí.";
+
+/** Los textos con los que nacieron los negocios anteriores (en voz del agente y con jerga): también son sugerencia. */
+const PREVIOUS_SUGGESTED_HANDOFFS = [
+  "Pasa la conversación a un humano si el cliente lo solicita, si pide una excepción o decisión que no esté documentada, si hay una queja sensible o si la información necesaria no está en la knowledge base.",
+  "Pasa la conversación a un humano si el cliente lo solicita, si pide una excepción o decisión que no esté documentada, si hay una queja sensible o si la información necesaria no está en lo que sabes del negocio.",
+];
+
+const squash = (text: string) => text.replace(/\s+/g, " ").trim();
+
+/** ¿Sigue siendo el texto sugerido, sin que el dueño lo haya hecho suyo? */
+export function isSuggestedHandoff(text: string | null | undefined): boolean {
+  if (!text) return false;
+  const normalized = squash(text);
+  return [SUGGESTED_HANDOFF, ...PREVIOUS_SUGGESTED_HANDOFFS].some((known) => squash(known) === normalized);
+}
+
 export type NegocioField = {
   key: NegocioKey;
   /** Lo que ve el dueño. */
@@ -120,7 +142,8 @@ export function planNegocioSave(current: NegocioCurrent, draft: NegocioDraft): N
   return ops;
 }
 
-export type SaveResult = { ok: true } | { ok: false; message: string };
+/** `network`: ni siquiera hubo respuesta del servidor (se cayó la conexión), a diferencia de un rechazo con motivo. */
+export type SaveResult = { ok: true } | { ok: false; message: string; network?: boolean };
 
 const GENERIC_SAVE_ERROR = "No se pudo guardar. Revisa el texto y vuelve a intentarlo.";
 
@@ -131,7 +154,8 @@ const GENERIC_SAVE_ERROR = "No se pudo guardar. Revisa el texto y vuelve a inten
 export async function saveResult(request: () => Promise<Response>): Promise<SaveResult> {
   const response = await request().catch(() => null);
   if (response?.ok) return { ok: true };
-  const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (!response) return { ok: false, message: GENERIC_SAVE_ERROR, network: true };
+  const payload = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
   return { ok: false, message: payload?.error?.message ?? GENERIC_SAVE_ERROR };
 }
 

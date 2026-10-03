@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isSuggestedHandoff,
+  SUGGESTED_HANDOFF,
   negocioBlockContent,
   negocioFromEntries,
   parseNegocioBlock,
@@ -88,5 +90,27 @@ describe("postKbEntry: un guardado que falla no se traga el texto", () => {
     const result = await postKbEntry({ kind: "block", content: "x" }, vi.fn(async () => { throw new Error("offline"); }) as never);
     expect(result.ok).toBe(false);
     expect((result as { message: string }).message).toMatch(/No se pudo guardar/);
+  });
+});
+
+describe("isSuggestedHandoff: la regla sugerida no es todavía «su regla»", () => {
+  it("el texto con el que nace un negocio nuevo es la sugerencia", () => {
+    expect(isSuggestedHandoff(SUGGESTED_HANDOFF)).toBe(true);
+    expect(isSuggestedHandoff(`  ${SUGGESTED_HANDOFF}\n`)).toBe(true);
+  });
+
+  it("los textos con los que nacieron los negocios anteriores también", () => {
+    expect(
+      isSuggestedHandoff(
+        "Pasa la conversación a un humano si el cliente lo solicita, si pide una excepción o decisión que no esté documentada, si hay una queja sensible o si la información necesaria no está en la knowledge base.",
+      ),
+    ).toBe(true);
+  });
+
+  it("lo que el dueño escribió o cambió ya es su regla", () => {
+    expect(isSuggestedHandoff("Avísame si piden un descuento.")).toBe(false);
+    expect(isSuggestedHandoff(`${SUGGESTED_HANDOFF} También los domingos.`)).toBe(false);
+    expect(isSuggestedHandoff("")).toBe(false);
+    expect(isSuggestedHandoff(null)).toBe(false);
   });
 });
