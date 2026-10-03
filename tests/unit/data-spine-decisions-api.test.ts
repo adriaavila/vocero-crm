@@ -26,11 +26,15 @@ vi.mock("@/server/agencia/decisions-read", async (importOriginal) => ({
 }));
 vi.mock("@/server/inbox/queries", () => ({ getConversation: mocks.getConversation }));
 
+import { UnauthorizedError } from "@/lib/auth/session";
+import { GET as listRoute } from "@/app/api/decisions/route";
+import { PATCH as patchRoute } from "@/app/api/decisions/[id]/route";
+import { GET as conversationRoute } from "@/app/api/conversations/[id]/decisions/route";
+
 const SESSION = { userId: "usr_1", organizationId: "org_A", role: "member" };
 
 const patch = async (body: unknown, id = "dec_1") => {
-  const { PATCH } = await import("@/app/api/decisions/[id]/route");
-  return PATCH(
+  return patchRoute(
     new Request(`http://x/api/decisions/${id}`, {
       method: "PATCH",
       body: typeof body === "string" ? body : JSON.stringify(body),
@@ -39,12 +43,10 @@ const patch = async (body: unknown, id = "dec_1") => {
   );
 };
 const getList = async (query = "") => {
-  const { GET } = await import("@/app/api/decisions/route");
-  return GET(new Request(`http://x/api/decisions${query}`));
+  return listRoute(new Request(`http://x/api/decisions${query}`));
 };
 const getConv = async (query = "", id = "cv_1") => {
-  const { GET } = await import("@/app/api/conversations/[id]/decisions/route");
-  return GET(new Request(`http://x/api/conversations/${id}/decisions${query}`), {
+  return conversationRoute(new Request(`http://x/api/conversations/${id}/decisions${query}`), {
     params: Promise.resolve({ id }),
   });
 };
@@ -110,7 +112,6 @@ describe("PATCH /api/decisions/[id]", () => {
   });
 
   it("401 sin sesión", async () => {
-    const { UnauthorizedError } = await import("@/lib/auth/session");
     mocks.requireSession.mockRejectedValue(new UnauthorizedError());
     expect((await patch({ verdict: "bien" })).status).toBe(401);
     expect(mocks.setVerdict).not.toHaveBeenCalled();
