@@ -9,6 +9,11 @@
  *   ALLOK_SAAS_MODE=true SAAS_SELF_SERVE=true node --env-file=.env scripts/saas-autoservicio-check.mjs
  * Requiere: WA_MOCK_ENABLED=true, META_GRAPH_BASE_URL → wa-mock,
  * META_APP_ID/META_ES_CONFIG_ID, BD migrada. Sale con 0 solo si todo pasa.
+ *
+ * El último tramo (8) recupera la contraseña desde el subdominio del negocio y
+ * solo corre con el conector de correo encendido (RESEND_API_KEY + EMAIL_FROM);
+ * apagado, lo anuncia y lo salta. Nunca manda correo de verdad: lee el token de
+ * la tabla `verification`, que es el mismo que viaja en el enlace.
  */
 import postgres from "postgres";
 
@@ -191,6 +196,75 @@ async function main() {
     where id = ${org.id}`;
   const expired = await owner(APP_HOST, `/api/whatsapp/embedded-signup/config?org=${slug}&mode=coexistence`);
   ok("config 402 con la prueba vencida", expired.res.status === 402, `${expired.res.status} ${JSON.stringify(expired.json)}`);
+
+  console.log("\n== 8. Olvidó la contraseña: pide desde el subdominio del negocio, abre el enlace, entra con la nueva ==");
+  const ownerEmail = `auto-${stamp}@vocero.test`;
+  const requestReset = (who, host, email) =>
+    who(host, "/api/auth/request-password-reset", {
+      method: "POST",
+      body: JSON.stringify({ email, redirectTo: "/reset-password" }),
+    });
+  const resetRows = async () => (await sql`select count(*)::int as n from verification where identifier like 'reset-password:%'`)[0].n;
+  const tokenFor = async (email) =>
+    (
+      await sql`
+        select v.identifier from verification v join "user" u on u.id = v.value
+        where u.email = ${email} and v.identifier like 'reset-password:%'
+        order by v.created_at desc limit 1`
+    )[0]?.identifier.slice("reset-password:".length) ?? null;
+
+  const stranger = client();
+  const unknownEmail = `nadie-${stamp}@vocero.test`;
+  const before = await resetRows();
+  const unknown = await requestReset(stranger, tenantHost, unknownEmail);
+  if (unknown.json?.code === "RESET_PASSWORD_DISABLED") {
+    console.log("  SKIP el conector de correo está apagado (RESEND_API_KEY + EMAIL_FROM): sin recuperación por correo");
+  } else {
+    ok("un correo sin cuenta recibe la misma respuesta 200", unknown.res.status === 200 && unknown.json?.status === true, JSON.stringify(unknown.json));
+    ok("y no deja ningún enlace pendiente", (await resetRows()) === before);
+
+    const asked = await requestReset(stranger, tenantHost, ownerEmail);
+    ok("el dueño pide el enlace desde su subdominio: misma respuesta 200", asked.res.status === 200 && asked.json?.status === true, JSON.stringify(asked.json));
+    const token = await tokenFor(ownerEmail);
+    ok("queda un enlace pendiente a su nombre", Boolean(token));
+
+    const callback = await stranger(tenantHost, `/api/auth/reset-password/${token}?callbackURL=%2Freset-password`);
+    const where = callback.res.headers.get("location") ?? "";
+    ok("abrir el enlace redirige a la pantalla de contraseña nueva con el token", callback.res.status === 302 && where.includes(`/reset-password?token=${token}`), `${callback.res.status} ${where}`);
+    const evil = await stranger(tenantHost, `/api/auth/reset-password/${token}?callbackURL=https%3A%2F%2Fevil.example%2F`);
+    ok("un callbackURL ajeno se rechaza", evil.res.status === 403, String(evil.res.status));
+
+    const sessionBefore = await owner(tenantHost, "/api/auth/get-session");
+    ok("antes del cambio, su sesión abierta sirve", sessionBefore.json?.user?.email === ownerEmail, JSON.stringify(sessionBefore.json));
+
+    const newPassword = "password-nuevo-456";
+    const reset = await stranger(tenantHost, "/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ newPassword, token }),
+    });
+    ok("cambia la contraseña con el token (200)", reset.res.status === 200 && reset.json?.status === true, JSON.stringify(reset.json));
+    const reused = await stranger(tenantHost, "/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ newPassword: "otra-password-789", token }),
+    });
+    ok("el mismo enlace no sirve dos veces (INVALID_TOKEN)", reused.res.status === 400 && reused.json?.code === "INVALID_TOKEN", JSON.stringify(reused.json));
+
+    const oldLogin = await client()(tenantHost, "/api/auth/sign-in/email", { method: "POST", body: JSON.stringify({ email: ownerEmail, password: "password-e2e-123" }) });
+    ok("la contraseña vieja ya no entra (401)", oldLogin.res.status === 401, String(oldLogin.res.status));
+    const fresh = client();
+    const newLogin = await fresh(tenantHost, "/api/auth/sign-in/email", { method: "POST", body: JSON.stringify({ email: ownerEmail, password: newPassword }) });
+    ok("la nueva entra en el subdominio del negocio (200)", newLogin.res.status === 200, `${newLogin.res.status} ${JSON.stringify(newLogin.json)}`);
+    const forwarded = await fresh(APP_HOST, "/api/saas/tenant");
+    ok("y el login lo reenvía a su negocio", forwarded.json?.url ? new URL(forwarded.json.url).hostname === tenantHost.split(":")[0] : false, JSON.stringify(forwarded.json));
+    const sessionAfter = await owner(tenantHost, "/api/auth/get-session");
+    ok("la sesión que tenía abierta se cerró", !sessionAfter.json?.user, JSON.stringify(sessionAfter.json));
+
+    await requestReset(stranger, tenantHost, ownerEmail);
+    const stale = await tokenFor(ownerEmail);
+    await sql`update verification set expires_at = now() - interval '1 minute' where identifier = ${`reset-password:${stale}`}`;
+    const expiredLink = await stranger(tenantHost, `/api/auth/reset-password/${stale}?callbackURL=%2Freset-password`);
+    ok("un enlace vencido lleva a error=INVALID_TOKEN", (expiredLink.res.headers.get("location") ?? "").includes("error=INVALID_TOKEN"), expiredLink.res.headers.get("location") ?? "");
+  }
 
   console.log(`\n${failures === 0 ? "TODO VERDE" : "CON FALLOS"} — ${checks - failures}/${checks} checks`);
 }
