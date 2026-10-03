@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +45,22 @@ type KbEntry = {
 };
 
 const json = { "content-type": "application/json" };
+
+/** Un campo de texto que crece con lo que se escribe: un texto largo no queda cortado a tres renglones. */
+function GrowingTextarea({ value, ...props }: React.ComponentProps<typeof Textarea> & { value: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current?.querySelector("textarea");
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return (
+    <div ref={box}>
+      <Textarea value={value} {...props} />
+    </div>
+  );
+}
 
 export function TuNegocio({
   entries,
@@ -147,7 +163,7 @@ export function TuNegocio({
           {NEGOCIO_FIELDS.map((field) => (
             <div key={field.key} className="space-y-1.5">
               <Label htmlFor={`negocio-${field.key}`}>{field.label}</Label>
-              <Textarea
+              <GrowingTextarea
                 id={`negocio-${field.key}`}
                 rows={field.rows}
                 maxLength={NEGOCIO_MAX_CHARS}
@@ -167,7 +183,7 @@ export function TuNegocio({
 
         <div className="space-y-1.5">
           <Label htmlFor="negocio-handoff">Cuándo pasar con una persona</Label>
-          <Textarea
+          <GrowingTextarea
             id="negocio-handoff"
             rows={3}
             maxLength={4000}

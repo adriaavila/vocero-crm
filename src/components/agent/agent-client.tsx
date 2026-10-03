@@ -488,6 +488,7 @@ function ProfileSection({
           <Label htmlFor="agent-name">Nombre del agente</Label>
           <Input
             id="agent-name"
+            className="min-h-11"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
@@ -496,6 +497,7 @@ function ProfileSection({
           <Label htmlFor="agent-tone">Tono</Label>
           <Input
             id="agent-tone"
+            className="min-h-11"
             placeholder="p. ej. cercano y directo, con usted"
             value={form.tone ?? ""}
             onChange={(e) => setForm({ ...form, tone: e.target.value })}
@@ -525,6 +527,7 @@ function ProfileSection({
           <Label htmlFor="agent-greeting">Saludo</Label>
           <Input
             id="agent-greeting"
+            className="min-h-11"
             placeholder="Saludo para conversaciones nuevas"
             value={form.greeting ?? ""}
             onChange={(e) => setForm({ ...form, greeting: e.target.value })}
@@ -626,6 +629,7 @@ function KbSection({
           />
           <Button
             size="sm"
+            className="min-h-11"
             onClick={() => void addQa()}
             disabled={!question.trim() || !answer.trim()}
           >
@@ -641,7 +645,7 @@ function KbSection({
             value={block}
             onChange={(e) => setBlock(e.target.value)}
           />
-          <Button size="sm" onClick={() => void addBlock()} disabled={!block.trim()}>
+          <Button size="sm" className="min-h-11" onClick={() => void addBlock()} disabled={!block.trim()}>
             <Plus className="h-4 w-4" /> Agregar bloque
           </Button>
         </div>

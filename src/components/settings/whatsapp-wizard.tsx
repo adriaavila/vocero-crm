@@ -531,6 +531,7 @@ function ConnectForm({
             <Label htmlFor="waba-id">WABA ID</Label>
             <Input
               id="waba-id"
+              className="min-h-11"
               placeholder="ID de la cuenta de WhatsApp Business"
               value={wabaId}
               onChange={(e) => setWabaId(e.target.value)}
@@ -540,6 +541,7 @@ function ConnectForm({
             <Label htmlFor="phone-number-id">Phone Number ID</Label>
             <Input
               id="phone-number-id"
+              className="min-h-11"
               placeholder="ID del número de teléfono"
               value={phoneNumberId}
               onChange={(e) => setPhoneNumberId(e.target.value)}
@@ -550,6 +552,7 @@ function ConnectForm({
           <Label htmlFor="token">Token de acceso</Label>
           <Input
             id="token"
+            className="min-h-11"
             type="password"
             placeholder={existing ? `Guardado (…${existing.tokenLast4}) — pega uno nuevo para cambiarlo` : "EAAG…"}
             value={token}
@@ -574,12 +577,14 @@ function ConnectForm({
         <div className="flex gap-2">
           <Button
             variant="outline"
+            className="min-h-11"
             disabled={!canTest || testing}
             onClick={() => void test()}
           >
             {testing ? "Probando…" : "Probar conexión"}
           </Button>
           <Button
+            className="min-h-11"
             disabled={!testResult?.ok || saving}
             onClick={() => void save()}
           >

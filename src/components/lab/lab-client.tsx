@@ -229,7 +229,7 @@ function Header({
           Simulación interna: no envía mensajes reales
         </p>
       </div>
-      <Button variant="outline" onClick={onLaunch} disabled={disabled || running || launching}>
+      <Button variant="outline" className="min-h-11" onClick={onLaunch} disabled={disabled || running || launching}>
         <Play className="h-4 w-4" />
         {running ? "Prueba en curso…" : "Correr de nuevo"}
       </Button>
