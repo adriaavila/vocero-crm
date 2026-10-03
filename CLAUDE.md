@@ -29,6 +29,16 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 
 ### Qué hace distinto este fork
 
+- **Todo negocio nuevo nace con el agente en pausa** (`server/agent/
+  default-profile.ts`), lo cree el alta pública o un admin; lo enciende el
+  dueño en «Activar». En allok el agente se llama «Asistente» (Rei conserva
+  «Rei»). Los negocios que ya existían no se tocan.
+- **La puesta en marcha son cuatro pasos** (Conectar WhatsApp, Tu negocio,
+  Probar, Activar), derivados de la preparación en `server/agencia/
+  setup-progress.ts`; `server/agencia/activacion.ts` es la ÚNICA lista de
+  bloqueos para activar (la usa la ruta que enciende y la pantalla «Activar»).
+  `agent_profile.updated_at` es la versión del CONTENIDO del agente: pausar o
+  encender no vuelve vieja la prueba.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.
