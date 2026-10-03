@@ -10,7 +10,9 @@ import { planMeetsTier } from "@/lib/saas-plans";
 import { getOrganizationBilling } from "@/server/saas/billing";
 import { getBranding } from "@/server/branding";
 import { brand } from "@/lib/brand";
-import { getCentro } from "@/server/agencia/estado";
+import { agentOn, getCentro } from "@/server/agencia/estado";
+import { getCentroMetricas, parsePeriod, pipelineNow } from "@/server/agencia/centro-metricas";
+import { getPrioridades } from "@/server/agencia/prioridades";
 import { ControlCenter } from "@/components/agencia/allok/control-center";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +20,15 @@ export const dynamic = "force-dynamic";
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ billing?: string; upgrade?: string }>;
+  searchParams: Promise<{ billing?: string; upgrade?: string; p?: string }>;
 }) {
   const params = await searchParams;
   const session = await requireSession();
-  // En el SaaS Inicio también arma el feed: la lista se carga una sola vez.
+  // En el SaaS la lista alimenta la línea del día: se carga una sola vez.
   const conversations = isAllokSaaSMode() ? await listConversations(session.organizationId) : undefined;
   const [overview, readiness, authSession, billing] = await Promise.all([
-    getOverview(session.organizationId, conversations),
+    // En el SaaS, Inicio ya no usa este resumen: sus cifras son de agencia/centro-metricas.
+    isAllokSaaSMode() ? Promise.resolve(null) : getOverview(session.organizationId),
     session.role === "owner" ? getReadiness(session.organizationId) : null,
     getAuth().api.getSession({ headers: await headers() }),
     isAllokSaaSMode() ? getOrganizationBilling(session.organizationId) : null,
@@ -41,15 +44,21 @@ export default async function OverviewPage({
       : null;
   if (isAllokSaaSMode()) {
     // Capa de agencia: en el SaaS, Inicio es el centro de control de allok.fun.
-    const [centro, branding] = await Promise.all([
-      getCentro(session.organizationId, conversations ?? []),
-      getBranding(session.organizationId),
+    const orgId = session.organizationId;
+    const [centro, branding, metricas, funnel, prioridades] = await Promise.all([
+      getCentro(orgId, conversations ?? []),
+      getBranding(orgId),
+      getCentroMetricas(orgId, parsePeriod(params.p)),
+      pipelineNow(orgId),
+      agentOn(orgId).then((agent) => getPrioridades(orgId, { agentOn: agent.on })),
     ]);
     const pro = planMeetsTier(billing?.plan, "pro") && (billing?.status === "active" || billing?.status === "trialing");
     return (
       <ControlCenter
         centro={centro}
-        overview={overview}
+        prioridades={prioridades}
+        metricas={metricas}
+        funnel={funnel}
         readiness={readiness}
         pro={pro}
         billingNotice={billingNotice}
@@ -61,5 +70,6 @@ export default async function OverviewPage({
       />
     );
   }
+  if (!overview) throw new Error("Inicio: falta el resumen fuera del SaaS");
   return <OverviewDashboard data={overview} readiness={readiness} billing={billing} billingNotice={billingNotice} userName={authSession?.user.name ?? ""} owner={session.role === "owner"} />;
 }
