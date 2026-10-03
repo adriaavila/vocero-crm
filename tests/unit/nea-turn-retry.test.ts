@@ -10,9 +10,18 @@ import { PENDING_LIMIT } from "@/server/ai/nea-payload";
  * respuesta (`llm`/`handoff`) se aplica.
  */
 
-const { dispatchToNea, buildNeaTurnSnapshot, markAiCredentialInvalidIfUnchanged, canAutomate, inArraySpy } =
-  vi.hoisted(() => ({
+const {
+  dispatchToNea,
+  buildNeaTurnSnapshot,
+  markAiCredentialInvalidIfUnchanged,
+  canAutomate,
+  inArraySpy,
+  recordNeaDecision,
+} = vi.hoisted(() => ({
     dispatchToNea: vi.fn(),
+    // Data spine: la fila agent_decision se prueba en data-spine-*.test.ts; aquí solo
+    // se verifica que el turno la pide con lo que sabe.
+    recordNeaDecision: vi.fn(async () => null),
     buildNeaTurnSnapshot: vi.fn(),
     markAiCredentialInvalidIfUnchanged: vi.fn(async () => {}),
     canAutomate: vi.fn(async () => true),
@@ -43,6 +52,10 @@ vi.mock("@/server/ai/nea-payload", async (importOriginal) => {
 vi.mock("@/server/ai/credentials", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai/credentials")>();
   return { ...actual, markAiCredentialInvalidIfUnchanged };
+});
+vi.mock("@/server/agencia/decisions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/agencia/decisions")>();
+  return { ...actual, recordNeaDecision };
 });
 vi.mock("@/server/agencia/entitlements", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/agencia/entitlements")>();
@@ -156,6 +169,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     markAiCredentialInvalidIfUnchanged.mockReset().mockResolvedValue(undefined);
     canAutomate.mockReset().mockResolvedValue(true);
     inArraySpy.mockClear();
+    recordNeaDecision.mockClear();
     vi.stubEnv("ALLOK_SAAS_MODE", "");
     vi.stubEnv("BOT_API_KEY", "clave-compartida-con-nea-larga");
     vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
@@ -175,6 +189,39 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(buildNeaTurnSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ dispatchId: "aj_job_123", attempt: 0 })
     );
+  });
+
+  it("data spine: un 2xx registra la decisión con el dispatchId, el cuerpo de Nea y los pendientes despachados", async () => {
+    pushGates();
+    pushAttempt();
+    const body = {
+      ok: true,
+      action: "replied",
+      decision: { model: "gpt-x", steps: [{ tool: "buscar_kb", summary: "ok", ok: true }] },
+    };
+    dispatchToNea.mockResolvedValue({ kind: "ok", body });
+
+    await runAgentTurn("cv_1", "aj_job_123");
+
+    expect(recordNeaDecision).toHaveBeenCalledTimes(1);
+    expect(recordNeaDecision).toHaveBeenCalledWith({
+      organizationId: "org_1",
+      conversationId: "cv_1",
+      isTest: false,
+      dispatchId: "aj_job_123",
+      body,
+      triggerMessageIds: ["msg_pending_1"],
+    });
+  });
+
+  it("data spine: un fallo del despacho (4xx) no registra decisión", async () => {
+    pushGates();
+    pushAttempt();
+    dispatchToNea.mockResolvedValue({ kind: "client_error", status: 422, message: "Nea devolvió 422" });
+
+    await expect(runAgentTurn("cv_1", "aj_job_123")).rejects.toThrow();
+
+    expect(recordNeaDecision).not.toHaveBeenCalled();
   });
 
   it("sin dispatchId (debounce/Laboratorio) genera uno `dsp_…` y lo REUSA en todos los intentos del mismo turno", async () => {
