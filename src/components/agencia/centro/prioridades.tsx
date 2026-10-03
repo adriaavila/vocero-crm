@@ -74,11 +74,11 @@ function PrioridadCard({ card, productLabel }: { card: PriorityCard; productLabe
       {card.reasonDetail && <p className="text-[12.5px] leading-snug text-text-3">{card.reasonDetail}</p>}
       {card.preview && <p className="mt-2 line-clamp-2 break-words text-[13.5px] leading-snug text-text-2">{card.preview}</p>}
       <div className="mt-auto flex items-center justify-between gap-3 pt-4">
-        <span className="kicker">{card.handler === "agente" ? `${productLabel} atiende` : "Tú atiendes"}</span>
+        <span className="min-w-0 truncate text-[12.5px] text-text-3">{card.handler === "agente" ? `${productLabel} atiende` : "Tú atiendes"}</span>
         <Link
           href={`/inbox?contact=${card.contactId}`}
           aria-label={`Responder a ${card.name}`}
-          className={`${buttonVariants({ size: "lg" })} min-h-11 shrink-0 after:absolute after:inset-0 after:content-[''] md:min-h-10`}
+          className={`${buttonVariants({ size: "lg" })} min-h-11 shrink-0 px-4 after:absolute after:inset-0 after:content-[''] md:min-h-10`}
         >
           Responder
         </Link>

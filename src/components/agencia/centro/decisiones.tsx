@@ -371,7 +371,7 @@ function DecisionRow({
             {whenLabel(row.createdAt, timezone, now)}
           </span>
           {row.contactId ? (
-            <Link href={`/inbox?contact=${row.contactId}`} title="Abrir la conversación" className="truncate text-[15px] font-semibold tracking-[-0.01em] hover:underline">
+            <Link href={`/inbox?contact=${row.contactId}`} title="Abrir la conversación" className="-my-3 truncate py-3 text-[15px] font-semibold tracking-[-0.01em] hover:underline">
               {who}
             </Link>
           ) : (

@@ -80,7 +80,7 @@ export function AskBox({ productLabel }: { productLabel: string }) {
           autoComplete="off"
           placeholder="Pregunta por tu día o tus leads"
           onChange={(e) => setValue(e.target.value)}
-          className="h-11 flex-1 rounded-[10px] text-[15px]"
+          className="h-11 rounded-[10px] text-[15px] sm:flex-1"
         />
         <Button type="submit" size="lg" disabled={busy || blocked || value.trim().length < 2} className="h-11 sm:w-32">
           {busy ? "Mirando…" : "Preguntar"}
