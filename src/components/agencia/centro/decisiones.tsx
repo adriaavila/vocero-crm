@@ -108,6 +108,9 @@ export function DecisionesClient({
       setErrors(({ [id]: _drop, ...rest }) => rest);
       const rollback = (message: string) => {
         patchRow(id, { verdict: before.verdict, verdictNote: before.verdictNote });
+        // Si lo que falló fue la marca misma, la nota no tiene a qué colgarse; si fue
+        // guardar la nota, se queda abierta para no perder lo escrito.
+        if (before.verdict !== "fallo") setNoteFor((open) => (open === id ? null : open));
         setErrors((e) => ({ ...e, [id]: message }));
         notify(message, "error");
       };
