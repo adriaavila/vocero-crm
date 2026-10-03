@@ -7,6 +7,7 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
 import { SETUP_STEP_META, SETUP_STEP_ORDER } from "@/lib/setup-steps";
 import { signUp } from "@/lib/auth/client";
+import { registerFailure, type RegisterFailure } from "@/lib/auth/register-error";
 import { isSaaSPlan, PLAN_CATALOG } from "@/lib/saas-plans";
 import type { SaaSPlan } from "@/server/saas/billing";
 import type { Brand } from "@/lib/brand";
@@ -44,6 +45,8 @@ export default function RegisterForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Un correo que ya tiene cuenta no es un fallo: el siguiente paso es entrar.
+  const [existingAccount, setExistingAccount] = useState(false);
   const [loading, setLoading] = useState(false);
   const defaultPlan = soldPlans[0] ?? "basic";
   const [plan, setPlan] = useState<SaaSPlan>(defaultPlan);
@@ -54,9 +57,15 @@ export default function RegisterForm({
     setPlan(requestedPlan && isSaaSPlan(requestedPlan) && soldPlans.includes(requestedPlan) ? requestedPlan : defaultPlan);
   }, [soldPlans, defaultPlan]);
 
+  function setFailure(failure: RegisterFailure) {
+    setError(failure.message);
+    setExistingAccount(failure.existingAccount);
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setExistingAccount(false);
     setLoading(true);
     if (adminMode) {
       // Alta hecha por allok: el servidor crea la cuenta sin tocar la sesión
@@ -78,25 +87,20 @@ export default function RegisterForm({
       setCreated({ email, url: payload?.url ?? null });
       return;
     }
-    const { error: err } = await signUp.email(
-      { name, email, password },
-      // El horario de respuesta del negocio nace en la zona del navegador.
-      { headers: { "x-timezone": browserTimeZone() } },
-    );
+    let err: Awaited<ReturnType<typeof signUp.email>>["error"] | { status: number } | null;
+    try {
+      ({ error: err } = await signUp.email(
+        { name, email, password },
+        // El horario de respuesta del negocio nace en la zona del navegador.
+        { headers: { "x-timezone": browserTimeZone() } },
+      ));
+    } catch {
+      // Sin respuesta del servidor (sin internet, servidor caído).
+      err = { status: 0 };
+    }
     if (err) {
       setLoading(false);
-      if (err.status === 403) {
-        // El prefijo es estable entre marcas (ver lib/auth/index.ts): el
-        // nombre de marca va DESPUÉS, y el cliente no puede leer `BRAND`
-        // (no es NEXT_PUBLIC_) para reconstruirlo él mismo.
-        setError(err.message?.startsWith("El registro de ")
-          ? err.message
-          : "El registro está cerrado: esta instancia ya tiene su organización. Pide acceso al propietario.");
-      } else if (err.status === 429) {
-        setError("Demasiados intentos. Espera unos minutos.");
-      } else {
-        setError(err.message ?? "No se pudo crear la cuenta.");
-      }
+      setFailure(registerFailure(err));
       return;
     }
     if (selfServe) {
@@ -198,6 +202,8 @@ export default function RegisterForm({
               type="email"
               autoComplete="email"
               required
+              aria-invalid={existingAccount || undefined}
+              aria-describedby={existingAccount ? "register-error" : undefined}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -215,7 +221,19 @@ export default function RegisterForm({
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p id="register-error" role="alert" className="text-sm text-destructive">
+              {error}
+              {existingAccount && (
+                <>
+                  {" "}
+                  <Link href="/login" className="inline-flex min-h-11 items-center font-medium underline underline-offset-2">
+                    Inicia sesión
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
           <Button type="submit" className="min-h-11 w-full" disabled={loading}>
             {loading ? "Creando tu espacio…" : <>Continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
           </Button>
