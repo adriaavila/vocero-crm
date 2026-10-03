@@ -44,6 +44,9 @@ const prefixes = {
   propertyPhoto: "pph",
   requirement: "req",
   propertyMatch: "pma",
+  // Data spine — evento crudo del webhook y decisión del agente.
+  rawEvent: "rev",
+  agentDecision: "dec",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
