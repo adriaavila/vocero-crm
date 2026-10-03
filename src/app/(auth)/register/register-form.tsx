@@ -13,6 +13,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function browserTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 export default function RegisterForm({
   adminMode = false,
   soldPlans,
@@ -57,7 +61,9 @@ export default function RegisterForm({
       // del admin y sin abrir el checkout.
       const response = await fetch("/api/saas/businesses", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // La ruta reenvía los headers a Better Auth: con la zona del navegador
+        // el horario del negocio nace en ella y no en Ciudad de México.
+        headers: { "content-type": "application/json", "x-timezone": browserTimeZone() },
         body: JSON.stringify({ name, email, password }),
       }).catch(() => null);
       const payload = (await response?.json().catch(() => null)) as
@@ -73,7 +79,7 @@ export default function RegisterForm({
     const { error: err } = await signUp.email(
       { name, email, password },
       // El horario de respuesta del negocio nace en la zona del navegador.
-      { headers: { "x-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone } },
+      { headers: { "x-timezone": browserTimeZone() } },
     );
     if (err) {
       setLoading(false);
