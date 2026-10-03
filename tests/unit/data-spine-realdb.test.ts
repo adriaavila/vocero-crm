@@ -393,6 +393,30 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       expect(ev.payload).toMatchObject({ value: { name: "Negocio" } });
     });
 
+    it("safeErrorText con un error REAL de Drizzle/Postgres: ni el SQL ni los parámetros (el contenido del mensaje) llegan a `error`", async () => {
+      let caught: unknown;
+      try {
+        await m.db.insert(m.schema.message).values({
+          id: m.ids.newId("message"),
+          organizationId: ORG_A,
+          conversationId: "cv_que_no_existe",
+          direction: "in",
+          text: `contenido-secreto-${SFX}`,
+        });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(Error);
+      // Sin la sanitización, el mensaje de Drizzle trae el SQL y los parámetros.
+      expect((caught as Error).message).toContain(`contenido-secreto-${SFX}`);
+
+      const text = m.raw.safeErrorText(caught);
+      expect(text).not.toContain("secreto");
+      expect(text).not.toMatch(/Failed query|params|\$1/);
+      expect(text).toMatch(/^PostgresError 23503: /); // violación de llave foránea
+      expect(text.length).toBeLessThanOrEqual(200);
+    });
+
     it("CTWA: el referral sigue entrando a ad_attribution y además queda en el evento crudo", async () => {
       const phone = nextPhone();
       const wamid = `wamid.in.${SFX}.ctwa`;

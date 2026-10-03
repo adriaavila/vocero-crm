@@ -254,7 +254,7 @@ async function processChange(
 /** El cuerpo ilegible (o sin cambios) también se guarda: jamás se pierde en silencio. */
 async function storeUnparsed(rawBody: string, status: "failed" | "ignored", error: string) {
   try {
-    const { row } = await insertRawEvent({
+    const { row, created } = await insertRawEvent({
       channel: CHANNEL,
       organizationId: null,
       accountRef: null,
@@ -264,7 +264,7 @@ async function storeUnparsed(rawBody: string, status: "failed" | "ignored", erro
       status,
       error,
     });
-    console.warn(logLine("stored", { rev: row.id, field: UNPARSED_FIELD, org: null }));
+    if (created) console.warn(logLine("stored", { rev: row.id, field: UNPARSED_FIELD, org: null }));
   } catch (err) {
     console.error(logLine("store_failed", { field: UNPARSED_FIELD, err: safeErrorText(err) }));
   }
