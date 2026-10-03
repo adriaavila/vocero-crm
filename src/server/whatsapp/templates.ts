@@ -275,6 +275,8 @@ export async function sendTemplate(input: {
   conversationId: string;
   templateId: string;
   variables?: string[];
+  /** Data spine: el usuario del CRM que la manda. */
+  senderUserId?: string;
 }): Promise<{ messageId: string }> {
   const db = getDb();
 
@@ -385,6 +387,7 @@ export async function sendTemplate(input: {
       text: renderBody(template.body, values),
       status: "pending",
       origin: "template",
+      senderUserId: input.senderUserId ?? null,
     })
     .returning();
   const message = inserted[0]!;
