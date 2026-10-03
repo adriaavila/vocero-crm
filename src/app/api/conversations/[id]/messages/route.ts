@@ -85,6 +85,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
             conversationId: id,
             organizationId: session.organizationId,
             text: data.text,
+            senderUserId: session.userId,
           })
         : data.type === "location"
           ? await sendStructured({
@@ -92,12 +93,14 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
               organizationId: session.organizationId,
               kind: "location",
               location: data.location,
+              senderUserId: session.userId,
             })
           : await sendStructured({
               conversationId: id,
               organizationId: session.organizationId,
               kind: "contacts",
               contacts: data.contacts,
+              senderUserId: session.userId,
             });
     return Response.json({ messageId: result.messageId });
   } catch (err) {

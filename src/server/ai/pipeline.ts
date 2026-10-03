@@ -35,6 +35,13 @@ import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAgentRespondNow } from "@/server/business-hours";
+import {
+  inboundSinceLastReply,
+  promptVersionOf,
+  recordAgentDecision,
+  recordNeaDecision,
+  type DecisionInput,
+} from "@/server/agencia/decisions";
 
 /** Reintentos del turno ante 5xx/red: ~2s y luego ~5s. */
 const TURN_RETRY_DELAYS_MS = [2_000, 5_000];
@@ -237,15 +244,34 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
   const lastInbound = [...history].reverse().find((m) => m.direction === "in");
   if (!lastInbound) return;
 
+  // Data spine: desde aquí cada salida es un turno real y deja su decisión
+  // (mejor esfuerzo, nunca lanza). `llmMeta` se llena tras llamar al modelo.
+  let llmMeta: Partial<DecisionInput> = {};
+  const decide = (
+    d: Pick<DecisionInput, "action"> &
+      Partial<Pick<DecisionInput, "handoffReason" | "steps" | "replyMessageIds">>
+  ) =>
+    recordAgentDecision({
+      organizationId,
+      conversationId,
+      isTest: conversation.isTest,
+      brain: "rei",
+      triggerMessageIds: inboundSinceLastReply(history),
+      ...llmMeta,
+      ...d,
+    });
+
   // Ventana cerrada: el agente JAMÁS envía texto libre → handoff 'ventana'.
   if (!conversation.isTest && !isWindowOpen(conversation.lastInboundAt)) {
     await applyHandoff(conversationId, organizationId, "ventana");
+    await decide({ action: "handoff", handoffReason: "ventana" });
     return;
   }
 
   // Patrón de respaldo ANTES del LLM (FR-022).
   if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
     await applyHandoff(conversationId, organizationId, "cliente");
+    await decide({ action: "handoff", handoffReason: "cliente" });
     return;
   }
 
@@ -265,19 +291,17 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
 
   const agenda = proEnabled && agendaEnabled();
   const settings = await getSettings(organizationId);
+  const systemPrompt = buildAgentSystemPrompt({
+    profile,
+    kb,
+    stages,
+    agenda,
+    // Sin fecha de referencia el modelo no puede resolver "el jueves" ni
+    // "mañana", y termina eligiendo un instante que no se le ofreció.
+    timezone: settings.timezone,
+  });
   const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: buildAgentSystemPrompt({
-        profile,
-        kb,
-        stages,
-        agenda,
-        // Sin fecha de referencia el modelo no puede resolver "el jueves" ni
-        // "mañana", y termina eligiendo un instante que no se le ofreció.
-        timezone: settings.timezone,
-      }),
-    },
+    { role: "system", content: systemPrompt },
     ...history
       .filter((m) => m.text)
       .map((m) => ({
@@ -286,15 +310,22 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
       })),
   ];
 
+  const llmStartedAt = Date.now();
   const result = await chatJson(agentActionSchema(agenda), messages, {
     provider: profile.aiProvider,
     credentials: aiConfig.providers,
   });
+  llmMeta = {
+    promptVersion: promptVersionOf(systemPrompt),
+    latencyMs: Date.now() - llmStartedAt,
+    ...(result.ok ? { model: result.model, tokens: result.usage } : {}),
+  };
   if (!result.ok) {
     if (result.error === "not_configured") return;
     // Fallo persistente del proveedor o salida imposible → escalar (FR-022).
     console.error(`[agente] fallo del proveedor (raw): ${result.detail}`);
     await applyHandoff(conversationId, organizationId, "error");
+    await decide({ action: "handoff", handoffReason: "error" });
     return;
   }
 
@@ -320,13 +351,18 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
                 startUtc: action.startUtc,
                 confirmation: action.reply,
               });
-        await deliverReply(conversation, turn.text);
+        const replyId = await deliverReply(conversation, turn.text);
         if (turn.ok) {
           publish(organizationId, {
             type: "conversation.updated",
             data: { conversation: { id: conversationId } },
           });
         }
+        await decide({
+          action: action.action,
+          steps: [{ tool: action.action, summary: "", ok: turn.ok }],
+          replyMessageIds: replyId ? [replyId] : [],
+        });
         return;
       } catch (err) {
         console.error(`[agente] el motor de agenda falló: ${err}`);
@@ -345,29 +381,43 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
         type: "conversation.updated",
         data: { conversation: { id: conversationId } },
       });
-      if (action.reply) {
-        await deliverReply(conversation, action.reply);
-      }
+      const replyId = action.reply ? await deliverReply(conversation, action.reply) : null;
+      await decide({
+        action: "move_stage",
+        steps: [{ tool: "move_stage", summary: stage.name, ok: true }],
+        replyMessageIds: replyId ? [replyId] : [],
+      });
       return;
     }
   }
 
   switch (action.action) {
     case "none":
+      await decide({ action: "none" });
       return;
-    case "reply":
-      await deliverReply(conversation, action.text);
+    case "reply": {
+      const replyId = await deliverReply(conversation, action.text);
+      await decide({ action: "reply", replyMessageIds: replyId ? [replyId] : [] });
       return;
+    }
     case "update_lead": {
       await appendLeadNote(organizationId, conversation.contactId, action.note);
-      if (action.reply) await deliverReply(conversation, action.reply);
+      const replyId = action.reply ? await deliverReply(conversation, action.reply) : null;
+      await decide({
+        action: "update_lead",
+        steps: [{ tool: "update_lead", summary: "", ok: true }],
+        replyMessageIds: replyId ? [replyId] : [],
+      });
       return;
     }
     case "handoff": {
-      if (action.farewell) {
-        await deliverReply(conversation, action.farewell);
-      }
+      const replyId = action.farewell ? await deliverReply(conversation, action.farewell) : null;
       await applyHandoff(conversationId, organizationId, "modelo");
+      await decide({
+        action: "handoff",
+        handoffReason: "modelo",
+        replyMessageIds: replyId ? [replyId] : [],
+      });
       return;
     }
   }
@@ -482,6 +532,17 @@ async function runNeaAgentTurn(
         if (firstPostedPendingIds) {
           await advanceCursor(organizationId, conversationId, firstPostedPendingIds);
         }
+        // Data spine: Nea sí contestó (se perdió el 2xx): la decisión queda
+        // registrada con lo que consta, marcada `recovered`.
+        await recordNeaDecision({
+          organizationId,
+          conversationId,
+          isTest: conversation.isTest,
+          dispatchId: effectiveDispatchId,
+          body: { ok: true, action: "replied" },
+          triggerMessageIds: firstPostedPendingIds ?? [],
+          recovered: true,
+        });
         return { leftover: true };
       }
     }
@@ -491,6 +552,7 @@ async function runNeaAgentTurn(
     if (attempt === 0) firstPostedPendingIds = thisAttemptPendingIds;
     if (result.kind === "ok") {
       let pendingIdsToAdvance = thisAttemptPendingIds;
+      let recovered = false; // el 2xx es el eco de una respuesta de un intento anterior
       let leftover = thisAttemptPendingIds.length >= PENDING_LIMIT; // item 2: pudo cortarse en 10.
       if (attempt > 0) {
         // Re-chequeo (fix-27b, review de la segunda vuelta): cierra la
@@ -502,6 +564,7 @@ async function runNeaAgentTurn(
         if (await neaReplyExists(organizationId, conversationId, replyId, conversation.isTest)) {
           pendingIdsToAdvance = firstPostedPendingIds ?? [];
           leftover = true;
+          recovered = true;
         }
       }
       // Chat pausado sin frase activadora: Nea calla sin leer lo pendiente.
@@ -519,6 +582,17 @@ async function runNeaAgentTurn(
         body: result.body,
         sentLlmProvider: snapshot.payload.llm?.provider ?? null,
         orgCredential: snapshot.orgCredential,
+      });
+      // Data spine: la decisión de Nea queda registrada (mejor esfuerzo, nunca lanza).
+      await recordNeaDecision({
+        organizationId,
+        conversationId,
+        isTest: conversation.isTest,
+        dispatchId: effectiveDispatchId,
+        body: result.body,
+        // Lo que de verdad contestó la respuesta: en un eco, el intento 0.
+        triggerMessageIds: pendingIdsToAdvance,
+        ...(recovered ? { recovered: true } : {}),
       });
       return { leftover };
     }
@@ -809,25 +883,25 @@ type Conversation = typeof schema.conversation.$inferSelect;
 async function deliverReply(
   conversation: Conversation,
   text: string
-): Promise<void> {
+): Promise<string | null> {
   if (conversation.isTest) {
-    await persistTestOutbound(conversation, text);
-    return;
+    return (await persistTestOutbound(conversation, text)).messageId;
   }
   try {
-    await sendText({
+    const sent = await sendText({
       conversationId: conversation.id,
       organizationId: conversation.organizationId,
       text,
       aiGenerated: true,
     });
+    return sent.messageId;
   } catch (err) {
-    if (err instanceof SendError && err.code === "ai_disabled") return;
-    if (err instanceof SendError && err.code === "billing_inactive") return;
-    if (err instanceof SendError && err.code === "outside_hours") return;
+    if (err instanceof SendError && err.code === "ai_disabled") return null;
+    if (err instanceof SendError && err.code === "billing_inactive") return null;
+    if (err instanceof SendError && err.code === "outside_hours") return null;
     if (err instanceof SendError && err.code === "window_closed") {
       await applyHandoff(conversation.id, conversation.organizationId, "ventana");
-      return;
+      return null;
     }
     throw err;
   }

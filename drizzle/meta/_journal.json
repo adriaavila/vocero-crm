@@ -183,6 +183,13 @@
       "when": 1790820155167,
       "tag": "9013_vertical_inmobiliario",
       "breakpoints": true
+    },
+    {
+      "idx": 9014,
+      "version": "7",
+      "when": 1791050237919,
+      "tag": "9014_data_spine",
+      "breakpoints": true
     }
   ]
 }

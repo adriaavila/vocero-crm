@@ -10,9 +10,18 @@ import { PENDING_LIMIT } from "@/server/ai/nea-payload";
  * respuesta (`llm`/`handoff`) se aplica.
  */
 
-const { dispatchToNea, buildNeaTurnSnapshot, markAiCredentialInvalidIfUnchanged, canAutomate, inArraySpy } =
-  vi.hoisted(() => ({
+const {
+  dispatchToNea,
+  buildNeaTurnSnapshot,
+  markAiCredentialInvalidIfUnchanged,
+  canAutomate,
+  inArraySpy,
+  recordNeaDecision,
+} = vi.hoisted(() => ({
     dispatchToNea: vi.fn(),
+    // Data spine: la fila agent_decision se prueba en data-spine-*.test.ts; aquí solo
+    // se verifica que el turno la pide con lo que sabe.
+    recordNeaDecision: vi.fn(async (_input: Record<string, unknown>) => null as string | null),
     buildNeaTurnSnapshot: vi.fn(),
     markAiCredentialInvalidIfUnchanged: vi.fn(async () => {}),
     canAutomate: vi.fn(async () => true),
@@ -43,6 +52,10 @@ vi.mock("@/server/ai/nea-payload", async (importOriginal) => {
 vi.mock("@/server/ai/credentials", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai/credentials")>();
   return { ...actual, markAiCredentialInvalidIfUnchanged };
+});
+vi.mock("@/server/agencia/decisions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/agencia/decisions")>();
+  return { ...actual, recordNeaDecision };
 });
 vi.mock("@/server/agencia/entitlements", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/agencia/entitlements")>();
@@ -156,6 +169,7 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     markAiCredentialInvalidIfUnchanged.mockReset().mockResolvedValue(undefined);
     canAutomate.mockReset().mockResolvedValue(true);
     inArraySpy.mockClear();
+    recordNeaDecision.mockClear();
     vi.stubEnv("ALLOK_SAAS_MODE", "");
     vi.stubEnv("BOT_API_KEY", "clave-compartida-con-nea-larga");
     vi.stubEnv("NEA_DISPATCH_URL", "http://nea-agent:8000/dispatch");
@@ -175,6 +189,39 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(buildNeaTurnSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ dispatchId: "aj_job_123", attempt: 0 })
     );
+  });
+
+  it("data spine: un 2xx registra la decisión con el dispatchId, el cuerpo de Nea y los pendientes despachados", async () => {
+    pushGates();
+    pushAttempt();
+    const body = {
+      ok: true,
+      action: "replied",
+      decision: { model: "gpt-x", steps: [{ tool: "buscar_kb", summary: "ok", ok: true }] },
+    };
+    dispatchToNea.mockResolvedValue({ kind: "ok", body });
+
+    await runAgentTurn("cv_1", "aj_job_123");
+
+    expect(recordNeaDecision).toHaveBeenCalledTimes(1);
+    expect(recordNeaDecision).toHaveBeenCalledWith({
+      organizationId: "org_1",
+      conversationId: "cv_1",
+      isTest: false,
+      dispatchId: "aj_job_123",
+      body,
+      triggerMessageIds: ["msg_pending_1"],
+    });
+  });
+
+  it("data spine: un fallo del despacho (4xx) no registra decisión", async () => {
+    pushGates();
+    pushAttempt();
+    dispatchToNea.mockResolvedValue({ kind: "client_error", status: 422, message: "Nea devolvió 422" });
+
+    await expect(runAgentTurn("cv_1", "aj_job_123")).rejects.toThrow();
+
+    expect(recordNeaDecision).not.toHaveBeenCalled();
   });
 
   it("sin dispatchId (debounce/Laboratorio) genera uno `dsp_…` y lo REUSA en todos los intentos del mismo turno", async () => {
@@ -266,6 +313,17 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     // nunca hasta el pendiente fresco completo del intento 1.
     expect(inArraySpy).toHaveBeenCalledTimes(1);
     expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]);
+    // Data spine: Nea sí contestó (se perdió el 2xx) → decisión `recovered`,
+    // contestando a lo que el intento 0 mandó, una sola vez.
+    expect(recordNeaDecision).toHaveBeenCalledTimes(1);
+    expect(recordNeaDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dispatchId: "aj_1",
+        recovered: true,
+        triggerMessageIds: ["msg_a"],
+        body: { ok: true, action: "replied" },
+      })
+    );
   });
 
   it("fix-27b item 1 (tres intentos): un eco de la respuesta del intento 0 llega recién en el intento 2 → avanza hasta lo del intento 0 (firstPostedPendingIds), NUNCA hasta lo del intento 1 (que ya no se recuerda)", async () => {
@@ -348,6 +406,33 @@ describe("runNeaAgentTurn — loop de reintentos (dispatch v2)", () => {
     expect(inArraySpy).toHaveBeenCalledTimes(1);
     // pero el avance queda LIMITADO a lo del intento 0 — B nunca se le mandó de verdad.
     expect(inArraySpy).toHaveBeenCalledWith(expect.anything(), ["msg_a"]);
+    // Data spine: el 2xx es el eco de la respuesta del intento 0 → `recovered`, a lo del intento 0.
+    expect(recordNeaDecision).toHaveBeenCalledTimes(1);
+    expect(recordNeaDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ recovered: true, triggerMessageIds: ["msg_a"] })
+    );
+  });
+
+  it("data spine: un 2xx limpio en el intento 1 (sin eco) NO se marca recovered", async () => {
+    vi.useFakeTimers();
+    pushGates();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a"] });
+    dispatchToNea.mockResolvedValueOnce({ kind: "retryable", status: 500, message: "500" });
+    pushAttempt();
+    pushGateReread();
+    buildNeaTurnSnapshot.mockResolvedValueOnce({ ...snapshotWith(), pendingIds: ["msg_a", "msg_b"] });
+    pushAttempt([INBOUND_MESSAGE], []);
+    dispatchToNea.mockResolvedValueOnce({ kind: "ok", body: { ok: true, action: "replied" } });
+    selectQueue.push([]);
+
+    const turn = runAgentTurn("cv_1", "aj_1");
+    await vi.advanceTimersByTimeAsync(2_000);
+    await turn;
+
+    expect(recordNeaDecision).toHaveBeenCalledTimes(1);
+    const call = recordNeaDecision.mock.calls[0]![0] as Record<string, unknown>;
+    expect(call).not.toHaveProperty("recovered");
+    expect(call.triggerMessageIds).toEqual(["msg_a", "msg_b"]);
   });
 
   it("nada pendiente (buildNeaTurnSnapshot → null) → no despacha, sin importar el intento", async () => {

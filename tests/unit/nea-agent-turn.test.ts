@@ -31,6 +31,11 @@ vi.mock("@/server/ai/nea-payload", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/ai/nea-payload")>();
   return { ...actual, buildNeaTurnSnapshot };
 });
+// Data spine: la fila agent_decision se prueba aparte; aquí la BD es un mock sin insert.
+vi.mock("@/server/agencia/decisions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/agencia/decisions")>();
+  return { ...actual, recordNeaDecision: vi.fn(async () => null) };
+});
 vi.mock("@/server/agencia/entitlements", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/agencia/entitlements")>();
   return { ...actual, canAutomate };
