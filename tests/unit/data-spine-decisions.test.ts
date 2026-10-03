@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
   selectRows: [] as { id: string }[],
   failInsert: false,
   failSelect: false,
+  /** El índice único (conversación, dispatch_id) rechaza la fila: ON CONFLICT DO NOTHING no devuelve nada. */
+  conflict: false,
 }));
 
 vi.mock("@/lib/db", () => {
@@ -27,11 +29,16 @@ vi.mock("@/lib/db", () => {
     getDb: () => ({
       select: selectChain,
       insert: () => ({
-        values: (v: Record<string, unknown>) => {
-          if (state.failInsert) return Promise.reject(new Error("insert roto"));
-          state.inserts.push(v);
-          return Promise.resolve();
-        },
+        values: (v: Record<string, unknown>) => ({
+          onConflictDoNothing: () => ({
+            returning: () => {
+              if (state.failInsert) return Promise.reject(new Error("insert roto"));
+              if (state.conflict) return Promise.resolve([]);
+              state.inserts.push(v);
+              return Promise.resolve([{ id: v.id }]);
+            },
+          }),
+        }),
       }),
     }),
     schema: new Proxy(
@@ -60,6 +67,7 @@ beforeEach(() => {
   state.selectRows = [];
   state.failInsert = false;
   state.failSelect = false;
+  state.conflict = false;
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -225,6 +233,37 @@ describe("recordNeaDecision", () => {
       body: { ok: true, action: "silent", handoff: { reason: "porque se enojó", applied: false } },
     });
     expect(state.inserts.map((i) => i.handoffReason)).toEqual(["hostilidad", "modelo"]);
+  });
+
+  it("un despacho = una decisión: si el índice único ya la tiene, no duplica y devuelve null", async () => {
+    state.conflict = true;
+    const id = await recordNeaDecision({ ...base, body: { ok: true, action: "replied" } });
+    expect(id).toBeNull();
+    expect(state.inserts).toHaveLength(0);
+  });
+
+  it("recovered (se perdió el 2xx pero Nea sí contestó): acción replied, paso `recovered`, sin modelo ni tokens, y enlaza la respuesta", async () => {
+    const replyId = neaMessageId("org_1", "cv_1", "aj_1", 0);
+    state.selectRows = [{ id: replyId }];
+
+    const id = await recordNeaDecision({
+      ...base,
+      // El cuerpo del eco NO manda: lo que dijo el 2xx de un reintento no es de este turno.
+      body: { ok: true, action: "noop", handoff: { reason: "cliente", applied: true }, decision: { model: "x" } },
+      recovered: true,
+    });
+
+    expect(id).toMatch(/^dec_/);
+    expect(state.inserts[0]).toMatchObject({
+      brain: "nea",
+      dispatchId: "aj_1",
+      action: "replied",
+      handoffReason: null,
+      model: null,
+      steps: [{ tool: "recovered", summary: expect.any(String), ok: true }],
+      replyMessageIds: [replyId],
+      triggerMessageIds: ["msg_in_1"],
+    });
   });
 
   it("las conversaciones del Laboratorio no se registran", async () => {

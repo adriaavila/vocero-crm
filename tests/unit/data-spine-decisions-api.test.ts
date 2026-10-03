@@ -31,7 +31,8 @@ import { GET as listRoute } from "@/app/api/decisions/route";
 import { PATCH as patchRoute } from "@/app/api/decisions/[id]/route";
 import { GET as conversationRoute } from "@/app/api/conversations/[id]/decisions/route";
 
-const SESSION = { userId: "usr_1", organizationId: "org_A", role: "member" };
+const OWNER = { userId: "usr_1", organizationId: "org_A", role: "owner" };
+const MEMBER = { userId: "usr_2", organizationId: "org_A", role: "member" };
 
 const patch = async (body: unknown, id = "dec_1") => {
   return patchRoute(
@@ -54,7 +55,7 @@ const getConv = async (query = "", id = "cv_1") => {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
-  mocks.requireSession.mockResolvedValue(SESSION);
+  mocks.requireSession.mockResolvedValue(OWNER);
   mocks.setVerdict.mockResolvedValue({
     id: "dec_1",
     verdict: "fallo",
@@ -111,6 +112,13 @@ describe("PATCH /api/decisions/[id]", () => {
     expect((await res.json()).error.code).toBe("not_found");
   });
 
+  it("un miembro (no propietario) no califica: 403 y no toca nada", async () => {
+    mocks.requireSession.mockResolvedValue(MEMBER);
+    const res = await patch({ verdict: "bien" });
+    expect(res.status).toBe(403);
+    expect(mocks.setVerdict).not.toHaveBeenCalled();
+  });
+
   it("401 sin sesión", async () => {
     mocks.requireSession.mockRejectedValue(new UnauthorizedError());
     expect((await patch({ verdict: "bien" })).status).toBe(401);
@@ -119,6 +127,13 @@ describe("PATCH /api/decisions/[id]", () => {
 });
 
 describe("GET /api/decisions", () => {
+  it("un miembro (no propietario) SÍ puede leer", async () => {
+    mocks.requireSession.mockResolvedValue(MEMBER);
+    expect((await getList()).status).toBe(200);
+    mocks.getConversation.mockResolvedValue({ conversation: { id: "cv_1" } });
+    expect((await getConv()).status).toBe(200);
+  });
+
   it("lista con la organización de la sesión y los defaults", async () => {
     const res = await getList();
     expect(res.status).toBe(200);

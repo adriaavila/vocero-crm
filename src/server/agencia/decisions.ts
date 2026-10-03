@@ -134,12 +134,17 @@ export type DecisionInput = {
   replyMessageIds?: string[];
 };
 
-/** Devuelve el id de la decisión, o null si no se registró (prueba, o fallo ya anotado en el log). */
+/**
+ * Devuelve el id de la decisión, o null si no se registró (prueba, fallo ya
+ * anotado en el log, o ya había una para ese despacho). Un despacho = una
+ * decisión: el índice único (conversación, dispatch_id) más `ON CONFLICT DO
+ * NOTHING` hacen que un reintento nunca la duplique.
+ */
 export async function recordAgentDecision(input: DecisionInput): Promise<string | null> {
   if (input.isTest) return null;
   try {
     const id = newId("agentDecision");
-    await getDb()
+    const inserted = await getDb()
       .insert(schema.agentDecision)
       .values({
         id,
@@ -157,7 +162,15 @@ export async function recordAgentDecision(input: DecisionInput): Promise<string 
         outputTokens: input.tokens?.output ?? null,
         triggerMessageIds: (input.triggerMessageIds ?? []).slice(0, MAX_TRIGGER_IDS),
         replyMessageIds: (input.replyMessageIds ?? []).slice(0, MAX_REPLY_IDS),
-      });
+      })
+      .onConflictDoNothing()
+      .returning({ id: schema.agentDecision.id });
+    if (inserted.length === 0) {
+      console.log(
+        `[spine] decision_duplicate conv=${input.conversationId} dispatch=${input.dispatchId ?? "-"}`
+      );
+      return null;
+    }
     console.log(
       `[spine] decision id=${id} brain=${input.brain} action=${input.action} conv=${input.conversationId}`
     );
@@ -208,11 +221,19 @@ export async function recordNeaDecision(input: {
   dispatchId: string;
   body: NeaResponseBody;
   triggerMessageIds: string[];
+  /**
+   * Un reintento encontró que Nea YA había contestado este despacho y el 2xx se
+   * perdió: el cuerpo (acción, handoff, `decision`) no se conoce. Se registra lo
+   * que sí consta (contestó, y a qué) con un paso `recovered` que lo delata; el
+   * modelo, los pasos y los tokens del turno se pierden con el 2xx.
+   */
+  recovered?: boolean;
 }): Promise<string | null> {
   if (input.isTest) return null;
   try {
-    const { body } = input;
-    const decision = parseNeaDecision(body.decision);
+    const recovered = input.recovered === true;
+    const body: NeaResponseBody = recovered ? { ok: true, action: "replied" } : input.body;
+    const decision = recovered ? null : parseNeaDecision(body.decision);
     let replyMessageIds: string[] = [];
     if (body.action === "replied") {
       replyMessageIds = await findNeaReplyIds(
@@ -229,7 +250,9 @@ export async function recordNeaDecision(input: {
       dispatchId: input.dispatchId,
       action: typeof body.action === "string" && body.action ? body.action : "noop",
       handoffReason: body.handoff ? toHandoffReason(body.handoff.reason) : null,
-      steps: decision?.steps,
+      steps: recovered
+        ? [{ tool: "recovered", summary: "respuesta ya enviada; se perdió el 2xx de Nea", ok: true }]
+        : decision?.steps,
       model: decision?.model,
       promptVersion: decision?.promptVersion,
       latencyMs: decision?.latencyMs,

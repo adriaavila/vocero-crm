@@ -35,6 +35,12 @@ import {
  */
 
 const CHANNEL = "whatsapp";
+/**
+ * Intentos tras los que dejamos de pedirle reintentos a Meta (503). Un evento
+ * que falla siempre (veneno) no puede mantener un reintento eterno y poner en
+ * riesgo la suscripción del webhook: queda `failed` (replayable) y se responde 200.
+ */
+export const MAX_WEBHOOK_ATTEMPTS = 3;
 const TEMPLATE_FIELD = "message_template_status_update";
 const UNPARSED_FIELD = "_unparsed";
 
@@ -158,15 +164,19 @@ async function routeChange(change: WaChange): Promise<Route> {
 
 /* ---------- Proceso de un cambio ---------- */
 
+/** Cómo se procesa: entrega en vivo de Meta, o reproceso de un evento viejo. */
+type RunOptions = { replay?: boolean; receivedAt?: Date };
+
 async function runChange(
   change: WaChange,
   route: Route,
-  rawEventId: string | undefined
+  rawEventId: string | undefined,
+  run: RunOptions
 ): Promise<RawOutcome> {
   if (route.error) throw route.error;
   const value = change.value;
   if (!value || typeof value !== "object") return "ignored";
-  const ctx = { rawEventId };
+  const ctx = { rawEventId, ...(run.replay ? { replay: true, receivedAt: run.receivedAt } : {}) };
 
   switch (change.field) {
     case "messages": {
@@ -182,7 +192,11 @@ async function runChange(
     }
     case TEMPLATE_FIELD:
       if (!route.organizationId) return "unrouted";
-      await processTemplateStatusValue(change.entryId, value as WebhookValue);
+      await processTemplateStatusValue(
+        change.entryId,
+        value as WebhookValue,
+        run.replay && run.receivedAt ? { notAfter: run.receivedAt } : {}
+      );
       return "processed";
     // Fork — Embedded Signup: estos dos jamás se ven como un mensaje nuevo.
     case "history":
@@ -210,7 +224,8 @@ function logLine(stage: string, fields: Record<string, string | number | null | 
 async function processChange(
   row: RawEventRow | null,
   change: WaChange,
-  route: Route
+  route: Route,
+  run: RunOptions = {}
 ): Promise<{ outcome: RawOutcome; retry: boolean }> {
   const started = Date.now();
   const rev = row?.id ?? "-";
@@ -218,12 +233,18 @@ async function processChange(
   let error: string | null = null;
   let retry = false;
   try {
-    outcome = await runChange(change, route, row?.id);
+    outcome = await runChange(change, route, row?.id, run);
     if (outcome === "failed") error = "echo_ingest_failed";
   } catch (err) {
     outcome = "failed";
     error = safeErrorText(err);
-    retry = true;
+    // Se pide reintento a Meta (503) solo mientras al evento le queden intentos;
+    // agotados queda `failed` (replayable) y se responde 200. En un replay no hay
+    // Meta a quien pedirle nada.
+    retry = !run.replay && (row === null || row.attempts + 1 < MAX_WEBHOOK_ATTEMPTS);
+    if (!retry && !run.replay) {
+      console.error(logLine("poison", { rev, attempts: (row?.attempts ?? 0) + 1 }));
+    }
   }
 
   if (row) {
@@ -302,10 +323,14 @@ export async function receiveWhatsAppWebhook(rawBody: string): Promise<{ retry: 
   type Item = { change: WaChange; route: Route; row: RawEventRow | null };
   const items: Item[] = [];
   const seen = new Set<string>();
-  for (const change of changes) {
-    const dedupeKey = dedupeKeyFor(change.field, change.value);
+  for (const original of changes) {
+    // La llave es del cambio TAL COMO LLEGÓ; lo que se guarda y se procesa ya va
+    // sin NUL ni sustitutos sueltos (jsonb los rechaza y un `text` de Postgres
+    // también): un mensaje con uno no puede ser un veneno eterno.
+    const dedupeKey = dedupeKeyFor(original.field, original.value);
     if (seen.has(dedupeKey)) continue; // el mismo cambio dos veces en un POST
     seen.add(dedupeKey);
+    const change: WaChange = { ...original, value: jsonbSafe(original.value) };
 
     const route = await routeChange(change);
     let row: RawEventRow | null = null;
@@ -316,7 +341,7 @@ export async function receiveWhatsAppWebhook(rawBody: string): Promise<{ retry: 
         accountRef: route.accountRef,
         field: change.field,
         dedupeKey,
-        payload: jsonbSafe({ entryId: change.entryId, field: change.field, value: change.value }),
+        payload: { entryId: change.entryId, field: change.field, value: change.value },
       });
       row = stored.row;
       if (stored.created) {
@@ -326,6 +351,11 @@ export async function receiveWhatsAppWebhook(rawBody: string): Promise<{ retry: 
       } else if (row.status === "processed") {
         console.log(logLine("duplicate", { rev: row.id, status: row.status }));
         continue; // ya se procesó: nada que repetir
+      } else if (row.status === "failed" && row.attempts >= MAX_WEBHOOK_ATTEMPTS) {
+        // Veneno: ya falló todas las veces que le tocaban. Se responde 200 para
+        // que Meta lo suelte; sigue `failed` y se repite con el replay.
+        console.warn(logLine("poison_skipped", { rev: row.id, attempts: row.attempts }));
+        continue;
       }
     } catch (err) {
       console.error(logLine("store_failed", { field: change.field, err: safeErrorText(err) }));
@@ -405,7 +435,12 @@ export async function replayRawEvents(
     };
     // Se vuelve a enrutar: el número pudo conectarse después de que llegó.
     const route = await routeChange(change);
-    const { outcome } = await processChange(row, change, route);
+    // `replay`: se guarda lo que llegó, pero jamás se le escribe al cliente ni se
+    // mueve un reloj hacia atrás (ver SpineContext).
+    const { outcome } = await processChange(row, change, route, {
+      replay: true,
+      receivedAt: row.receivedAt,
+    });
     summary[outcome]++;
   }
   return summary;

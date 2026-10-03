@@ -49,7 +49,9 @@ ALTER TABLE "agent_decision" ADD CONSTRAINT "agent_decision_conversation_id_conv
 ALTER TABLE "raw_event" ADD CONSTRAINT "raw_event_organization_id_organization_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organization"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "agent_decision_org_created_idx" ON "agent_decision" USING btree ("organization_id","created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX "agent_decision_conv_created_idx" ON "agent_decision" USING btree ("conversation_id","created_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE UNIQUE INDEX "agent_decision_dispatch_uq" ON "agent_decision" USING btree ("conversation_id","dispatch_id") WHERE "agent_decision"."dispatch_id" is not null;--> statement-breakpoint
 CREATE INDEX "raw_event_status_received_idx" ON "raw_event" USING btree ("status","received_at");--> statement-breakpoint
 CREATE INDEX "raw_event_org_received_idx" ON "raw_event" USING btree ("organization_id","received_at");--> statement-breakpoint
 ALTER TABLE "message" ADD CONSTRAINT "message_raw_event_id_raw_event_id_fk" FOREIGN KEY ("raw_event_id") REFERENCES "public"."raw_event"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "message" ADD CONSTRAINT "message_sender_user_id_user_id_fk" FOREIGN KEY ("sender_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;
+ALTER TABLE "message" ADD CONSTRAINT "message_sender_user_id_user_id_fk" FOREIGN KEY ("sender_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "message_raw_event_idx" ON "message" USING btree ("raw_event_id") WHERE "message"."raw_event_id" is not null;

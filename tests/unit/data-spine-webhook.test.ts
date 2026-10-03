@@ -249,9 +249,10 @@ describe("enrutado: unrouted y unmatched se guardan para el replay", () => {
 
     expect(summary).toMatchObject({ scanned: 1, processed: 1, unrouted: 0 });
     expect(memoryStore.rows[0]).toMatchObject({ status: "processed", organizationId: "org_9", attempts: 3 });
-    expect(mocks.processMessagesValue).toHaveBeenCalledWith(expect.anything(), {
-      rawEventId: memoryStore.rows[0]!.id,
-    });
+    expect(mocks.processMessagesValue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ rawEventId: memoryStore.rows[0]!.id, replay: true })
+    );
   });
 
   it("un messages sin phone_number_id no se puede enrutar → unrouted", async () => {
@@ -277,7 +278,7 @@ describe("enrutado: unrouted y unmatched se guardan para el replay", () => {
       body({ field: "message_template_status_update", value: { event: "APPROVED" } })
     );
     expect(memoryStore.rows[0]).toMatchObject({ status: "processed", organizationId: "org_1", accountRef: "WABA-1" });
-    expect(mocks.processTemplateStatusValue).toHaveBeenCalledWith("WABA-1", { event: "APPROVED" });
+    expect(mocks.processTemplateStatusValue).toHaveBeenCalledWith("WABA-1", { event: "APPROVED" }, {});
   });
 });
 
@@ -330,6 +331,144 @@ describe("replay", () => {
     expect(await replayRawEvents({ statuses: ["failed"] })).toMatchObject({ scanned: 0 });
     expect(await replayRawEvents({ limit: 2 })).toMatchObject({ scanned: 2, processed: 2 });
     expect(memoryStore.rows.map((r) => r.status)).toEqual(["processed", "processed", "unrouted"]);
+  });
+});
+
+describe("replay: nunca le escribe al cliente ni mueve el pasado", () => {
+  it("el replay marca `replay: true` (y cuándo llegó el evento) a messages y echoes; la entrega en vivo NO", async () => {
+    const withPn = { metadata: { phone_number_id: PN } };
+    mocks.processMessagesValue.mockRejectedValueOnce(new Error("boom"));
+    mocks.processEchoesValue.mockResolvedValueOnce("failed");
+    await receiveWhatsAppWebhook(body(messagesChange(), { field: "smb_message_echoes", value: withPn }));
+    // En vivo: sin `replay`.
+    expect(mocks.processMessagesValue.mock.calls[0]![1]).toEqual({ rawEventId: "rev_mem1" });
+    expect(mocks.processEchoesValue.mock.calls[0]![1]).toEqual({ rawEventId: "rev_mem2" });
+
+    await replayRawEvents();
+
+    const liveReceivedAt = memoryStore.rows[0]!.receivedAt;
+    expect(mocks.processMessagesValue.mock.calls[1]![1]).toEqual({
+      rawEventId: "rev_mem1",
+      replay: true,
+      receivedAt: liveReceivedAt,
+    });
+    expect(mocks.processEchoesValue.mock.calls[1]![1]).toMatchObject({ replay: true });
+  });
+
+  it("un evento de plantilla en replay solo se aplica si nada cambió la plantilla después de que llegó (notAfter)", async () => {
+    mocks.processTemplateStatusValue.mockRejectedValueOnce(new Error("boom"));
+    await receiveWhatsAppWebhook(
+      body({ field: "message_template_status_update", value: { event: "APPROVED" } })
+    );
+    await replayRawEvents();
+    expect(mocks.processTemplateStatusValue).toHaveBeenLastCalledWith(
+      "WABA-1",
+      { event: "APPROVED" },
+      { notAfter: memoryStore.rows[0]!.receivedAt }
+    );
+  });
+
+  it("un fallo en el replay no pide reintento a nadie y deja el evento failed", async () => {
+    mocks.processMessagesValue.mockRejectedValue(new Error("sigue"));
+    await receiveWhatsAppWebhook(body(messagesChange()));
+    const summary = await replayRawEvents();
+    expect(summary.failed).toBe(1);
+    expect(memoryStore.rows[0]).toMatchObject({ status: "failed", attempts: 2 });
+  });
+});
+
+describe("veneno: tras 3 intentos fallidos se responde 200 y el evento queda failed", () => {
+  it("503, 503, 200 (el 3º intento agota los intentos); un 4º POST ni lo procesa", async () => {
+    mocks.processMessagesValue.mockRejectedValue(new Error("siempre falla"));
+    const raw = body(messagesChange());
+
+    expect(await receiveWhatsAppWebhook(raw)).toEqual({ retry: true }); // attempts 1
+    expect(await receiveWhatsAppWebhook(raw)).toEqual({ retry: true }); // attempts 2
+    expect(await receiveWhatsAppWebhook(raw)).toEqual({ retry: false }); // attempts 3: Meta lo suelta
+    expect(memoryStore.rows[0]).toMatchObject({ status: "failed", attempts: 3 });
+    expect(mocks.processMessagesValue).toHaveBeenCalledTimes(3);
+
+    expect(await receiveWhatsAppWebhook(raw)).toEqual({ retry: false });
+    expect(mocks.processMessagesValue).toHaveBeenCalledTimes(3); // sin procesar
+    expect(memoryStore.rows[0]).toMatchObject({ status: "failed", attempts: 3 });
+  });
+
+  it("sigue replayable: el replay lo procesa aunque ya no se le pida nada a Meta", async () => {
+    mocks.processMessagesValue.mockRejectedValue(new Error("siempre falla"));
+    const raw = body(messagesChange());
+    for (let i = 0; i < 3; i++) await receiveWhatsAppWebhook(raw);
+    mocks.processMessagesValue.mockResolvedValue("processed");
+
+    const summary = await replayRawEvents();
+
+    expect(summary).toMatchObject({ scanned: 1, processed: 1 });
+    expect(memoryStore.rows[0]).toMatchObject({ status: "processed", attempts: 4 });
+  });
+
+  it("un veneno no frena a los demás cambios del mismo POST, que se procesan y no piden reintento", async () => {
+    const withPn = { metadata: { phone_number_id: PN } };
+    mocks.processHistoryValue.mockRejectedValue(new Error("veneno"));
+    const raw = body({ field: "history", value: withPn }, messagesChange());
+    await receiveWhatsAppWebhook(raw);
+    await receiveWhatsAppWebhook(raw);
+    const third = await receiveWhatsAppWebhook(raw);
+
+    expect(third).toEqual({ retry: false });
+    expect(memoryStore.byField("messages")[0]).toMatchObject({ status: "processed", attempts: 1 });
+    expect(mocks.processMessagesValue).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin fila (falló guardar) no hay cuenta de intentos: se sigue pidiendo reintento", async () => {
+    mocks.processMessagesValue.mockRejectedValue(new Error("boom"));
+    memoryStore.failNextInsert = true;
+    expect(await receiveWhatsAppWebhook(body(messagesChange()))).toEqual({ retry: true });
+  });
+});
+
+describe("NUL: los procesadores reciben el valor ya limpio", () => {
+  it("texto, nombre y caption sin \u0000; la llave de dedupe sigue siendo la del cambio original", async () => {
+    const value = {
+      metadata: { phone_number_id: PN },
+      contacts: [{ profile: { name: "Ana\u0000 Pérez" }, wa_id: "58412" }],
+      messages: [
+        { id: "w1", type: "text", text: { body: "ho\u0000la" } },
+        { id: "w2", type: "image", image: { id: "m1", caption: "foto\u0000 buena" } },
+        { id: "w3", type: "location", location: { latitude: 1, longitude: 2, name: "Ofi\u0000cina" } },
+      ],
+    };
+
+    await receiveWhatsAppWebhook(body({ field: "messages", value }));
+
+    const seen = mocks.processMessagesValue.mock.calls[0]![0] as typeof value;
+    expect(JSON.stringify(seen)).not.toContain("\\u0000");
+    expect(seen.contacts[0]!.profile.name).toBe("Ana Pérez");
+    expect(seen.messages[0]!.text!.body).toBe("hola");
+    expect(seen.messages[1]!.image!.caption).toBe("foto buena");
+    expect(seen.messages[2]!.location!.name).toBe("Oficina");
+    expect(memoryStore.rows[0]!.dedupeKey).toBe(dedupeKeyFor("messages", value));
+  });
+});
+
+describe("replay: orden justo", () => {
+  it("los eventos menos intentados van primero: unmatched que nunca coinciden no dejan sin turno al lote", async () => {
+    // 3 viejos que ya se intentaron muchas veces y no coinciden; luego 2 nuevos.
+    for (const id of ["old1", "old2", "old3", "new1", "new2"]) {
+      mocks.processMessagesValue.mockResolvedValueOnce("unmatched");
+      await receiveWhatsAppWebhook(body(messagesChange({ messages: [{ id }] })));
+    }
+    for (const row of memoryStore.rows.slice(0, 3)) row.attempts = 9;
+    mocks.processMessagesValue.mockImplementation(async (v: { messages: { id: string }[] }) =>
+      v.messages[0]!.id.startsWith("new") ? "processed" : "unmatched"
+    );
+
+    const summary = await replayRawEvents({ limit: 2 });
+
+    expect(summary).toMatchObject({ scanned: 2, processed: 2, unmatched: 0 });
+    expect(memoryStore.rows.map((r) => r.status)).toEqual([
+      "unmatched", "unmatched", "unmatched", "processed", "processed",
+    ]);
+    // El siguiente lote retoma a los viejos (nadie queda fuera para siempre).
+    expect(await replayRawEvents({ limit: 5 })).toMatchObject({ scanned: 3, unmatched: 3 });
   });
 });
 

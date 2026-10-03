@@ -532,6 +532,17 @@ async function runNeaAgentTurn(
         if (firstPostedPendingIds) {
           await advanceCursor(organizationId, conversationId, firstPostedPendingIds);
         }
+        // Data spine: Nea sí contestó (se perdió el 2xx): la decisión queda
+        // registrada con lo que consta, marcada `recovered`.
+        await recordNeaDecision({
+          organizationId,
+          conversationId,
+          isTest: conversation.isTest,
+          dispatchId: effectiveDispatchId,
+          body: { ok: true, action: "replied" },
+          triggerMessageIds: firstPostedPendingIds ?? [],
+          recovered: true,
+        });
         return { leftover: true };
       }
     }
@@ -541,6 +552,7 @@ async function runNeaAgentTurn(
     if (attempt === 0) firstPostedPendingIds = thisAttemptPendingIds;
     if (result.kind === "ok") {
       let pendingIdsToAdvance = thisAttemptPendingIds;
+      let recovered = false; // el 2xx es el eco de una respuesta de un intento anterior
       let leftover = thisAttemptPendingIds.length >= PENDING_LIMIT; // item 2: pudo cortarse en 10.
       if (attempt > 0) {
         // Re-chequeo (fix-27b, review de la segunda vuelta): cierra la
@@ -552,6 +564,7 @@ async function runNeaAgentTurn(
         if (await neaReplyExists(organizationId, conversationId, replyId, conversation.isTest)) {
           pendingIdsToAdvance = firstPostedPendingIds ?? [];
           leftover = true;
+          recovered = true;
         }
       }
       // Chat pausado sin frase activadora: Nea calla sin leer lo pendiente.
@@ -577,7 +590,9 @@ async function runNeaAgentTurn(
         isTest: conversation.isTest,
         dispatchId: effectiveDispatchId,
         body: result.body,
-        triggerMessageIds: thisAttemptPendingIds,
+        // Lo que de verdad contestó la respuesta: en un eco, el intento 0.
+        triggerMessageIds: pendingIdsToAdvance,
+        ...(recovered ? { recovered: true } : {}),
       });
       return { leftover };
     }

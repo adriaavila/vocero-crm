@@ -580,6 +580,12 @@ export const message = pgTable(
       t.conversationId,
       t.createdAt
     ),
+    // Data spine: "¿qué mensajes salieron de este evento?" y el ON DELETE SET
+    // NULL de raw_event no recorren toda la tabla. Parcial: casi todo mensaje
+    // saliente y los de antes de la columna no la llevan.
+    index("message_raw_event_idx")
+      .on(t.rawEventId)
+      .where(sql`${t.rawEventId} is not null`),
   ]
 );
 
@@ -622,6 +628,11 @@ export const agentDecision = pgTable(
   (t) => [
     index("agent_decision_org_created_idx").on(t.organizationId, t.createdAt.desc()),
     index("agent_decision_conv_created_idx").on(t.conversationId, t.createdAt.desc()),
+    // Un despacho = una decisión: un reintento nunca duplica la fila. Rei no
+    // tiene dispatch_id (null) y puede tener varias por conversación.
+    uniqueIndex("agent_decision_dispatch_uq")
+      .on(t.conversationId, t.dispatchId)
+      .where(sql`${t.dispatchId} is not null`),
   ]
 );
 

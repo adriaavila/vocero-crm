@@ -61,6 +61,10 @@ vi.mock("@/server/inbox/identity", async (importOriginal) => ({
 }));
 vi.mock("@/server/agencia/ia-inicial", () => ({ iaInicialPara: async () => true }));
 vi.mock("@/server/inbox/lead-activity", () => ({ onLeadActivity: vi.fn() }));
+// La BD de este archivo es un arreglo en memoria que solo asigna el parche: el
+// GREATEST real (que un evento viejo no mueva el reloj hacia atrás) se prueba
+// contra Postgres en data-spine-realdb.test.ts. Aquí queda el instante.
+vi.mock("@/lib/db/monotonic", () => ({ notBefore: (_column: unknown, at: Date) => at }));
 vi.mock("@/server/events/bus", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/events/bus")>()),
   publish,

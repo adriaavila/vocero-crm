@@ -93,7 +93,12 @@ export type ReplayFilter = {
   limit: number;
 };
 
-/** Los eventos a repetir, del más viejo al más nuevo (el orden en que llegaron). */
+/**
+ * Los eventos a repetir: los MENOS intentados primero y, entre iguales, del más
+ * viejo al más nuevo (el orden en que llegaron). Así un `unmatched` que nunca va
+ * a coincidir (su intento número 40) se hunde solo y no deja sin turno a los
+ * eventos nuevos dentro de un lote de `limit`.
+ */
 export async function listReplayableRawEvents(filter: ReplayFilter): Promise<RawEventRow[]> {
   const conditions: (SQL | undefined)[] = [
     inArray(schema.rawEvent.status, filter.statuses),
@@ -118,6 +123,6 @@ export async function listReplayableRawEvents(filter: ReplayFilter): Promise<Raw
     .select()
     .from(schema.rawEvent)
     .where(where)
-    .orderBy(asc(schema.rawEvent.receivedAt), asc(schema.rawEvent.id))
+    .orderBy(asc(schema.rawEvent.attempts), asc(schema.rawEvent.receivedAt), asc(schema.rawEvent.id))
     .limit(filter.limit);
 }

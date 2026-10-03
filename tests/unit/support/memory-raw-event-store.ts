@@ -73,7 +73,8 @@ export const memoryStoreModule = {
           r.organizationId === filter.organizationId ||
           (r.organizationId === null && !!r.accountRef && (filter.accountRefs ?? []).includes(r.accountRef))
       )
-      .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())
+      // Menos intentados primero, luego el orden de llegada (como la tienda real).
+      .sort((a, b) => a.attempts - b.attempts || a.receivedAt.getTime() - b.receivedAt.getTime())
       .slice(0, filter.limit);
   },
 };

@@ -1,5 +1,5 @@
 {
-  "id": "e2a3ac9d-69d1-433e-8808-eaad09b63745",
+  "id": "0b3b9601-9ced-4600-8253-0830f11479c0",
   "prevId": "a5e61b5d-085d-4b85-b7a2-e117a74a84ce",
   "version": "7",
   "dialect": "postgresql",
@@ -609,6 +609,28 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "agent_decision_dispatch_uq": {
+          "name": "agent_decision_dispatch_uq",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "dispatch_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"agent_decision\".\"dispatch_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3867,6 +3889,22 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "message_raw_event_idx": {
+          "name": "message_raw_event_idx",
+          "columns": [
+            {
+              "expression": "raw_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"message\".\"raw_event_id\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

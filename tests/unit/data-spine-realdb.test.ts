@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Data spine contra Postgres DE VERDAD (opcional — se salta sin
@@ -22,7 +22,8 @@ const describeReal = REALDB_URL ? describe : describe.skip;
 const hoisted = vi.hoisted(() => ({
   maybeRunAgentTurn: vi.fn(),
   session: { current: null as null | { userId: string; organizationId: string; role: string } },
-  failMessages: { next: false },
+  /** Hace fallar los próximos N `processMessagesValue` y cuenta cuántas veces se llamó. */
+  failMessages: { remaining: 0, calls: 0 },
 }));
 
 // El agente no es el sujeto de estas pruebas: solo importa SI se le pidió un turno.
@@ -43,8 +44,9 @@ vi.mock("@/server/inbox/ingest", async (importOriginal) => {
   return {
     ...actual,
     processMessagesValue: async (...args: Parameters<typeof actual.processMessagesValue>) => {
-      if (hoisted.failMessages.next) {
-        hoisted.failMessages.next = false;
+      hoisted.failMessages.calls++;
+      if (hoisted.failMessages.remaining > 0) {
+        hoisted.failMessages.remaining--;
         throw new Error("boom-simulated");
       }
       return actual.processMessagesValue(...args);
@@ -152,6 +154,42 @@ async function conversationOf(phone: string) {
   return rows[0]?.cv;
 }
 
+async function seedConversation(
+  org: string,
+  tag: string,
+  name = `Contacto ${tag}`,
+  identity = `58499${SFX.replace(/\D/g, "").padStart(3, "0").slice(-3)}${tag}`
+) {
+  const contactId = m.ids.newId("contact");
+  const conversationId = m.ids.newId("conversation");
+  await m.db.insert(m.schema.contact).values({
+    id: contactId,
+    organizationId: org,
+    waIdentity: identity,
+    phone: null,
+    name,
+  });
+  await m.db
+    .insert(m.schema.conversation)
+    .values({ id: conversationId, organizationId: org, contactId, aiEnabled: true });
+  return conversationId;
+}
+async function seedMessage(org: string, conversationId: string, direction: "in" | "out", text: string, id?: string) {
+  const mid = id ?? m.ids.newId("message");
+  await m.db.insert(m.schema.message).values({
+    id: mid,
+    organizationId: org,
+    conversationId,
+    direction,
+    type: "text",
+    text,
+    status: direction === "in" ? "delivered" : "sent",
+    origin: direction === "in" ? "operator" : "ai",
+  });
+  return mid;
+}
+
+
 // Las rutas se importan en frío dentro de las pruebas: el primer import tarda.
 describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
   beforeAll(async () => {
@@ -203,9 +241,21 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
     });
   }, 60_000);
 
+  beforeEach(() => {
+    // Lo que haría `scheduleAgentTurn` en SaaS: un agent_job en cola. Así "no se
+    // creó un agent_job" es verificable en la tabla, no solo en la llamada.
+    hoisted.maybeRunAgentTurn.mockImplementation(async (conversationId: string, organizationId: string) => {
+      await m.db
+        .insert(m.schema.agentJob)
+        .values({ id: m.ids.newId("agentJob"), organizationId, conversationId })
+        .onConflictDoNothing();
+    });
+    hoisted.failMessages.calls = 0;
+  });
+
   afterEach(() => {
-    hoisted.maybeRunAgentTurn.mockClear();
-    hoisted.failMessages.next = false;
+    hoisted.maybeRunAgentTurn.mockReset();
+    hoisted.failMessages.remaining = 0;
     hoisted.session.current = null;
     vi.restoreAllMocks();
   });
@@ -277,7 +327,7 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       const wamid = `wamid.in.${SFX}.retry`;
       const change = inbound(wamid, nextPhone());
       const raw = waBody([change]);
-      hoisted.failMessages.next = true;
+      hoisted.failMessages.remaining = 1;
 
       const first = await deliver(raw);
 
@@ -572,6 +622,270 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
     });
   });
 
+  /* ---------------- Replay seguro ---------------- */
+
+  describe("replay seguro: jamás le escribe al cliente ni mueve el pasado", () => {
+    // Un día fijo en el pasado: lo que importa es el ORDEN entre las dos horas.
+    const at = (h: number, min: number) => String(Math.floor(Date.UTC(2026, 9, 1, h, min) / 1000));
+    const date = (h: number, min: number) => new Date(Number(at(h, min)) * 1000);
+    const recent = () => new Date(Date.now() - 10 * 60_000);
+    async function leadOf(contactId: string) {
+      return (await m.db.select().from(m.schema.lead).where(m.eq(m.schema.lead.contactId, contactId)))[0];
+    }
+    async function jobsOf(conversationId: string) {
+      return m.db.select().from(m.schema.agentJob).where(m.eq(m.schema.agentJob.conversationId, conversationId));
+    }
+
+    it("entrega en vivo (también un reintento tardío de Meta): un entrante de las 09:00 que llega DESPUÉS de uno de las 12:05 no mueve last_inbound_at, last_message_at ni lead.last_activity_at", async () => {
+      const phone = nextPhone();
+      await deliver(waBody([inbound(`wamid.${SFX}.g12`, phone, { timestamp: at(12, 5) })]));
+      await deliver(waBody([inbound(`wamid.${SFX}.g09`, phone, { timestamp: at(9, 0) })]));
+
+      const cv = (await conversationOf(phone))!;
+      expect(cv.lastInboundAt).toEqual(date(12, 5));
+      expect(cv.lastMessageAt).toEqual(date(12, 5));
+      expect((await leadOf(cv.contactId))!.lastActivityAt).toEqual(date(12, 5));
+      // Las dos entraron al hilo y a las dos se les pidió turno (es la entrega en vivo).
+      expect(await messageByWamid(`wamid.${SFX}.g09`)).toBeDefined();
+      expect(hoisted.maybeRunAgentTurn).toHaveBeenCalledTimes(2);
+    });
+
+    it("replay de un entrante de las 09:00 tras uno de las 12:05: se guarda, pero sin agent_job ni turno, sin pausar la IA y sin mover ningún reloj", async () => {
+      const phone = nextPhone();
+      const old = inbound(`wamid.${SFX}.p09`, phone, { timestamp: at(9, 0) });
+      hoisted.failMessages.remaining = 1;
+      expect((await deliver(waBody([old]))).status).toBe(503); // las 09:00 quedan failed
+      await deliver(waBody([inbound(`wamid.${SFX}.p12`, phone, { timestamp: at(12, 5) })]));
+      let cv = (await conversationOf(phone))!;
+      await m.db.update(m.schema.conversation).set({ aiEnabled: true }).where(m.eq(m.schema.conversation.id, cv.id));
+      await m.db.update(m.schema.agentJob).set({ status: "done" }).where(m.eq(m.schema.agentJob.conversationId, cv.id));
+      hoisted.maybeRunAgentTurn.mockClear();
+      const before = await jobsOf(cv.id);
+
+      const summary = await m.raw.replayRawEvents({ organizationId: ORG_A, statuses: ["failed"], since: recent() });
+
+      expect(summary.processed).toBeGreaterThanOrEqual(1);
+      expect(await eventFor("messages", old.value)).toMatchObject({ status: "processed", attempts: 2 });
+      expect(await messageByWamid(`wamid.${SFX}.p09`)).toMatchObject({ direction: "in", text: "hola" });
+      expect(hoisted.maybeRunAgentTurn).not.toHaveBeenCalled();
+      expect(await jobsOf(cv.id)).toHaveLength(before.length); // ningún agent_job nuevo
+      expect((await jobsOf(cv.id)).filter((j) => j.status === "queued")).toHaveLength(0);
+      cv = (await conversationOf(phone))!;
+      expect(cv).toMatchObject({ aiEnabled: true, handoffAt: null, handoffReason: null });
+      expect(cv.lastInboundAt).toEqual(date(12, 5));
+      expect(cv.lastMessageAt).toEqual(date(12, 5));
+      expect((await leadOf(cv.contactId))!.lastActivityAt).toEqual(date(12, 5));
+    });
+
+    it("replay de un echo viejo: se guarda el mensaje manual, pero NO pausa la IA", async () => {
+      const phone = nextPhone();
+      const cvB = await seedConversation(ORG_B, "e01", "Cliente del eco", phone);
+      const PN_ECHO = `PN-ECHO-${SFX}`;
+      const wamid = `wamid.echo.${SFX}.old`;
+      const change = {
+        field: "smb_message_echoes",
+        value: {
+          messaging_product: "whatsapp",
+          metadata: meta(PN_ECHO),
+          message_echoes: [
+            { from: "584120000000", to: phone, id: wamid, timestamp: at(9, 0), type: "text", text: { body: "te escribo luego" } },
+          ],
+        },
+      };
+      expect((await deliver(waBody([change], `WABA-ECHO-${SFX}`))).status).toBe(200);
+      expect(await eventFor("smb_message_echoes", change.value)).toMatchObject({ status: "unrouted" });
+
+      await m.creds.saveCredentials({
+        organizationId: ORG_B,
+        wabaId: `WABA-ECHO-${SFX}`,
+        phoneNumberId: PN_ECHO,
+        token: "token-eco",
+      });
+      await m.raw.replayRawEvents({ organizationId: ORG_B, statuses: ["unrouted"], since: recent() });
+
+      expect(await eventFor("smb_message_echoes", change.value)).toMatchObject({ status: "processed", organizationId: ORG_B });
+      expect(await messageByWamid(wamid)).toMatchObject({ direction: "out", origin: "manual", text: "te escribo luego" });
+      const cv = (await m.db.select().from(m.schema.conversation).where(m.eq(m.schema.conversation.id, cvB)))[0]!;
+      expect(cv).toMatchObject({ aiEnabled: true, handoffAt: null, handoffReason: null });
+      expect(hoisted.maybeRunAgentTurn).not.toHaveBeenCalled();
+    });
+
+    it("replay de un evento de plantilla: no revierte una plantilla que cambió DESPUÉS de que llegó el evento", async () => {
+      const WABA_T = `WABA-TPL-${SFX}`;
+      const ev = (name: string) => ({
+        field: "message_template_status_update",
+        value: { event: "APPROVED", message_template_id: 1, message_template_name: name, message_template_language: "es" },
+      });
+      const stale = ev(`stale_${SFX}`);
+      const fresh = ev(`fresh_${SFX}`);
+      expect((await deliver(waBody([stale, fresh], WABA_T))).status).toBe(200);
+      expect(await eventFor("message_template_status_update", stale.value)).toMatchObject({ status: "unrouted", accountRef: WABA_T });
+
+      await m.creds.saveCredentials({
+        organizationId: ORG_B,
+        wabaId: WABA_T,
+        phoneNumberId: `PN-TPL-${SFX}`,
+        token: "token-tpl",
+      });
+      const row = (name: string, status: "pending" | "rejected", updatedAt: Date) =>
+        m.db.insert(m.schema.template).values({
+          id: m.ids.newId("template"),
+          organizationId: ORG_B,
+          name,
+          language: "es",
+          category: "UTILITY",
+          body: "Hola",
+          status,
+          updatedAt,
+        });
+      await row(`fresh_${SFX}`, "pending", new Date(Date.now() - 3600_000)); // nada la tocó desde que llegó el evento
+      await row(`stale_${SFX}`, "rejected", new Date(Date.now() + 3600_000)); // un sync/evento posterior la dejó así
+
+      await m.raw.replayRawEvents({ organizationId: ORG_B, statuses: ["unrouted"], since: recent() });
+
+      const status = async (name: string) =>
+        (await m.db.select().from(m.schema.template).where(m.eq(m.schema.template.name, name)))[0]!.status;
+      expect(await status(`fresh_${SFX}`)).toBe("approved");
+      expect(await status(`stale_${SFX}`)).toBe("rejected");
+    });
+  });
+
+  /* ---------------- Veneno y NUL ---------------- */
+
+  describe("veneno y NUL", () => {
+    const since = () => new Date(Date.now() - 10 * 60_000);
+
+    it("NUL en texto, nombre de contacto, caption y payload estructurado: el mensaje entra limpio y el webhook responde 200", async () => {
+      const phone = nextPhone();
+      const [wText, wImg, wLoc] = [`wamid.${SFX}.nul-t`, `wamid.${SFX}.nul-i`, `wamid.${SFX}.nul-l`];
+      const change = messagesChange(PN_A, {
+        contacts: [{ profile: { name: "Ana\u0000 Pérez" }, wa_id: phone }],
+        messages: [
+          { from: phone, id: wText, timestamp: nowSecs(), type: "text", text: { body: "ho\u0000la" } },
+          { from: phone, id: wImg, timestamp: nowSecs(), type: "image", image: { id: `media-${SFX}`, mime_type: "image/jpeg", caption: "foto\u0000 buena" } },
+          {
+            from: phone,
+            id: wLoc,
+            timestamp: nowSecs(),
+            type: "location",
+            location: { latitude: 10.5, longitude: -66.9, name: "Ofi\u0000cina", address: "Av.\u0000 1" },
+          },
+        ],
+      });
+
+      expect((await deliver(waBody([change]))).status).toBe(200);
+
+      expect(await eventFor("messages", change.value)).toMatchObject({ status: "processed", attempts: 1 });
+      expect(await messageByWamid(wText)).toMatchObject({ text: "hola" });
+      const contact = (await m.db.select().from(m.schema.contact).where(m.eq(m.schema.contact.waIdentity, phone)))[0]!;
+      expect(contact.name).toBe("Ana Pérez");
+      const assetOf = async (wamid: string) => {
+        const msg = (await messageByWamid(wamid))!;
+        return (await m.db.select().from(m.schema.mediaAsset).where(m.eq(m.schema.mediaAsset.id, msg.mediaAssetId!)))[0]!;
+      };
+      expect((await assetOf(wImg)).caption).toBe("foto buena");
+      expect((await assetOf(wLoc)).payload).toMatchObject({ name: "Oficina", address: "Av. 1" });
+    });
+
+    it("un evento que falla SIEMPRE: 503, 503 y al 3er intento 200 (failed, replayable); un 4º POST ni se procesa; el replay lo cierra", async () => {
+      const wamid = `wamid.in.${SFX}.poison`;
+      const change = inbound(wamid, nextPhone());
+      const raw = waBody([change]);
+      hoisted.failMessages.remaining = 99;
+
+      expect((await deliver(raw)).status).toBe(503);
+      expect((await deliver(raw)).status).toBe(503);
+      expect((await deliver(raw)).status).toBe(200); // Meta suelta el evento
+      const ev = (await eventFor("messages", change.value))!;
+      expect(ev).toMatchObject({ status: "failed", attempts: 3 });
+      expect(ev.error).toContain("boom-simulated");
+
+      const calls = hoisted.failMessages.calls;
+      expect((await deliver(raw)).status).toBe(200);
+      expect(hoisted.failMessages.calls).toBe(calls); // el 4º no llegó al procesador
+      expect(await eventFor("messages", change.value)).toMatchObject({ status: "failed", attempts: 3 });
+      expect(await messageByWamid(wamid)).toBeUndefined();
+
+      hoisted.failMessages.remaining = 0; // el bug se arregló
+      await m.raw.replayRawEvents({ organizationId: ORG_A, statuses: ["failed"], since: since() });
+      expect(await eventFor("messages", change.value)).toMatchObject({ status: "processed", attempts: 4, error: null });
+      expect(await messageByWamid(wamid)).toMatchObject({ rawEventId: ev.id });
+    });
+  });
+
+  /* ---------------- Orden del replay ---------------- */
+
+  describe("replay: orden justo", () => {
+    it("los menos intentados primero: unmatched que nunca coinciden no dejan sin turno al lote de `limit`", async () => {
+      const startedAt = new Date(Date.now() - 10_000);
+      const phone = nextPhone();
+      await deliver(waBody([inbound(`wamid.in.${SFX}.ord`, phone)]));
+      const cv = (await conversationOf(phone))!;
+      const status = (wamid: string) =>
+        messagesChange(PN_A, { statuses: [{ id: wamid, status: "sent", timestamp: nowSecs(), recipient_id: "x" }] });
+      const olds = [0, 1, 2].map((i) => status(`wamid.out.${SFX}.never${i}`));
+      const news = [0, 1].map((i) => status(`wamid.out.${SFX}.soon${i}`));
+      for (const c of olds) await deliver(waBody([c]));
+      for (const c of olds) {
+        // los viejos ya se intentaron muchas veces
+        await m.db
+          .update(m.schema.rawEvent)
+          .set({ attempts: 9 })
+          .where(m.eq(m.schema.rawEvent.dedupeKey, m.raw.dedupeKeyFor("messages", c.value)));
+      }
+      for (const c of news) await deliver(waBody([c]));
+      for (const i of [0, 1]) await seedOutbound(cv.id, `wamid.out.${SFX}.soon${i}`); // ahora sí coinciden
+
+      const summary = await m.raw.replayRawEvents({ organizationId: ORG_A, statuses: ["unmatched"], since: startedAt, limit: 2 });
+
+      expect(summary).toMatchObject({ scanned: 2, processed: 2, unmatched: 0 });
+      for (const c of news) expect(await eventFor("messages", c.value)).toMatchObject({ status: "processed" });
+      for (const c of olds) expect(await eventFor("messages", c.value)).toMatchObject({ status: "unmatched", attempts: 9 });
+
+      // El siguiente lote retoma a los viejos: nadie queda fuera para siempre.
+      const next = await m.raw.replayRawEvents({ organizationId: ORG_A, statuses: ["unmatched"], since: startedAt, limit: 10 });
+      expect(next).toMatchObject({ scanned: 3, unmatched: 3 });
+      for (const c of olds) expect(await eventFor("messages", c.value)).toMatchObject({ attempts: 10 });
+    });
+  });
+
+  /* ---------------- Concurrencia ---------------- */
+
+  describe("concurrencia", () => {
+    it("el mismo POST dos veces A LA VEZ: las dos responden 200, un solo mensaje, un solo raw_event, un solo turno", async () => {
+      for (let i = 0; i < 5; i++) {
+        const phone = nextPhone();
+        const wamid = `wamid.in.${SFX}.conc${i}`;
+        const change = inbound(wamid, phone);
+        const raw = waBody([change]);
+        hoisted.maybeRunAgentTurn.mockClear();
+
+        const [a, b] = await Promise.all([deliver(raw), deliver(raw)]);
+
+        expect([a.status, b.status]).toEqual([200, 200]);
+        const messages = await m.db.select().from(m.schema.message).where(m.eq(m.schema.message.waMessageId, wamid));
+        expect(messages).toHaveLength(1);
+        const events = await m.db
+          .select()
+          .from(m.schema.rawEvent)
+          .where(m.eq(m.schema.rawEvent.dedupeKey, m.raw.dedupeKeyFor("messages", change.value)));
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({ status: "processed" });
+        expect(events[0]!.attempts).toBeGreaterThanOrEqual(1);
+        expect(events[0]!.attempts).toBeLessThanOrEqual(2);
+        expect(messages[0]!.rawEventId).toBe(events[0]!.id);
+        // Ni contacto, ni conversación, ni lead duplicados por la carrera.
+        const contacts = await m.db.select().from(m.schema.contact).where(m.eq(m.schema.contact.waIdentity, phone));
+        expect(contacts).toHaveLength(1);
+        const convs = await m.db.select().from(m.schema.conversation).where(m.eq(m.schema.conversation.contactId, contacts[0]!.id));
+        expect(convs).toHaveLength(1);
+        const leads = await m.db.select().from(m.schema.lead).where(m.eq(m.schema.lead.contactId, contacts[0]!.id));
+        expect(leads).toHaveLength(1);
+        expect(hoisted.maybeRunAgentTurn).toHaveBeenCalledTimes(1);
+      }
+    });
+  });
+
   /* ---------------- sender_user_id ---------------- */
 
   describe("remitente del operador", () => {
@@ -605,36 +919,6 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
   /* ---------------- Decisiones ---------------- */
 
   describe("decisiones del agente", () => {
-    async function seedConversation(org: string, tag: string, name = `Contacto ${tag}`) {
-      const contactId = m.ids.newId("contact");
-      const conversationId = m.ids.newId("conversation");
-      await m.db.insert(m.schema.contact).values({
-        id: contactId,
-        organizationId: org,
-        waIdentity: `58499${SFX.replace(/\D/g, "").padStart(3, "0").slice(-3)}${tag}`,
-        phone: null,
-        name,
-      });
-      await m.db
-        .insert(m.schema.conversation)
-        .values({ id: conversationId, organizationId: org, contactId, aiEnabled: true });
-      return conversationId;
-    }
-    async function seedMessage(org: string, conversationId: string, direction: "in" | "out", text: string, id?: string) {
-      const mid = id ?? m.ids.newId("message");
-      await m.db.insert(m.schema.message).values({
-        id: mid,
-        organizationId: org,
-        conversationId,
-        direction,
-        type: "text",
-        text,
-        status: direction === "in" ? "delivered" : "sent",
-        origin: direction === "in" ? "operator" : "ai",
-      });
-      return mid;
-    }
-
     it("Nea CON `decision`: la fila guarda modelo, prompt, pasos, tokens y enlaza lo que contestó", async () => {
       const cv = await seedConversation(ORG_A, "n01");
       const trigger = await seedMessage(ORG_A, cv, "in", "cuánto cuesta?");
@@ -730,6 +1014,66 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       expect(row.promptVersion).toMatch(/^[0-9a-f]{12}$/);
     });
 
+    it("un despacho = una decisión: registrar dos veces el mismo (conversación, dispatch_id) deja UNA fila; sin dispatch_id (Rei) puede haber varias", async () => {
+      const cv = await seedConversation(ORG_A, "u01");
+      const dispatchId = `aj_${SFX}_once`;
+      const body = { ok: true as const, action: "replied" as const };
+      const base = { organizationId: ORG_A, conversationId: cv, isTest: false, dispatchId, triggerMessageIds: [], body };
+
+      const first = await m.decisions.recordNeaDecision(base);
+      const second = await m.decisions.recordNeaDecision(base); // p. ej. dos intentos que ven el mismo 2xx
+      const third = await m.decisions.recordNeaDecision({ ...base, recovered: true });
+
+      expect(first).toMatch(/^dec_/);
+      expect(second).toBeNull();
+      expect(third).toBeNull();
+      const rows = await m.db.select().from(m.schema.agentDecision).where(m.eq(m.schema.agentDecision.conversationId, cv));
+      expect(rows).toHaveLength(1);
+
+      // Mismo dispatch_id en OTRA conversación sí es otra decisión; el Rei sin dispatch_id puede repetirse.
+      const other = await seedConversation(ORG_A, "u02");
+      expect(await m.decisions.recordNeaDecision({ ...base, conversationId: other })).toMatch(/^dec_/);
+      const rei = { organizationId: ORG_A, conversationId: other, isTest: false, brain: "rei" as const, action: "reply" };
+      expect(await m.decisions.recordAgentDecision(rei)).toMatch(/^dec_/);
+      expect(await m.decisions.recordAgentDecision(rei)).toMatch(/^dec_/);
+    });
+
+    it("recovered: Nea contestó pero se perdió el 2xx → una fila `replied` con el paso `recovered` y la respuesta enlazada", async () => {
+      const cv = await seedConversation(ORG_A, "u03");
+      const trigger = await seedMessage(ORG_A, cv, "in", "hola");
+      const dispatchId = `aj_${SFX}_rec`;
+      const replyId = m.ids.neaMessageId(ORG_A, cv, dispatchId, 0);
+      await seedMessage(ORG_A, cv, "out", "respuesta", replyId);
+
+      const id = await m.decisions.recordNeaDecision({
+        organizationId: ORG_A,
+        conversationId: cv,
+        isTest: false,
+        dispatchId,
+        triggerMessageIds: [trigger],
+        body: { ok: true, action: "replied" },
+        recovered: true,
+      });
+
+      const row = (await m.db.select().from(m.schema.agentDecision).where(m.eq(m.schema.agentDecision.id, id!)))[0]!;
+      expect(row).toMatchObject({
+        action: "replied",
+        model: null,
+        steps: [{ tool: "recovered", ok: true }],
+        triggerMessageIds: [trigger],
+        replyMessageIds: [replyId],
+      });
+    });
+
+    it("los índices de la migración existen: message.raw_event_id y el único de agent_decision", async () => {
+      const rows = await m.db.execute(
+        m.sql`select indexname, indexdef from pg_indexes where indexname in ('message_raw_event_idx', 'agent_decision_dispatch_uq')`
+      );
+      const defs = Object.fromEntries((rows as unknown as { indexname: string; indexdef: string }[]).map((r) => [r.indexname, r.indexdef]));
+      expect(defs.message_raw_event_idx).toMatch(/\(raw_event_id\)/);
+      expect(defs.agent_decision_dispatch_uq).toMatch(/UNIQUE.*\(conversation_id, dispatch_id\)/);
+    });
+
     describe("API (aislamiento de tenant)", () => {
       let cvA: string;
       let cvB: string;
@@ -769,8 +1113,8 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
         });
       });
 
-      const as = (org: string, user: string) => {
-        hoisted.session.current = { userId: user, organizationId: org, role: "member" };
+      const as = (org: string, user: string, role: "owner" | "member" = "member") => {
+        hoisted.session.current = { userId: user, organizationId: org, role };
       };
       const list = async (query = "") => {
         const { GET } = await import("@/app/api/decisions/route");
@@ -813,8 +1157,17 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
         expect(body.decisions.find((d) => d.id === decB)!.contactName).toBe("Beto de B");
       });
 
-      it("B no puede calificar la decisión de A: 404 y el veredicto de A queda intacto", async () => {
-        as(ORG_B, USER_B);
+      it("un MIEMBRO (no propietario) lee pero no califica: 403 y el veredicto no cambia", async () => {
+        as(ORG_A, USER_A, "member");
+        expect((await list()).status).toBe(200);
+        const res = await patch(decA[0]!, { verdict: "bien" });
+        expect(res.status).toBe(403);
+        const row = (await m.db.select().from(m.schema.agentDecision).where(m.eq(m.schema.agentDecision.id, decA[0]!)))[0]!;
+        expect(row.verdict).toBeNull();
+      });
+
+      it("B (aunque sea propietario) no puede calificar la decisión de A: 404 y el veredicto de A queda intacto", async () => {
+        as(ORG_B, USER_B, "owner");
         const res = await patch(decA[0]!, { verdict: "bien", note: "intento ajeno" });
         expect(res.status).toBe(404);
         const row = (await m.db.select().from(m.schema.agentDecision).where(m.eq(m.schema.agentDecision.id, decA[0]!)))[0]!;
@@ -830,8 +1183,8 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
         expect(((await ok.json()) as { decisions: unknown[] }).decisions).toHaveLength(4);
       });
 
-      it("A califica: queda quién y cuándo; validación de verdict y nota; null lo borra", async () => {
-        as(ORG_A, USER_A);
+      it("A (propietario) califica: queda quién y cuándo; validación de verdict y nota; null lo borra", async () => {
+        as(ORG_A, USER_A, "owner");
         const target = decA[2]!;
 
         const bad = await patch(target, { verdict: "regular" });
@@ -857,7 +1210,7 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       });
 
       it("filtro por veredicto y paginación por cursor sin perder ni repetir filas del mismo instante", async () => {
-        as(ORG_A, USER_A);
+        as(ORG_A, USER_A, "owner");
         await patch(decA[3]!, { verdict: "bien" });
 
         const seen: string[] = [];

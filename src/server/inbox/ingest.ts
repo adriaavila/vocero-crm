@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { markFirstMessage } from "@/server/onboarding/whatsapp-onboarding";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { notBefore } from "@/lib/db/monotonic";
 import { normalizeMx } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
@@ -241,8 +242,15 @@ export async function getOrCreateConversation(
   return existing;
 }
 
-/** Data spine: el evento crudo del que sale lo que se está procesando. */
-export type SpineContext = { rawEventId?: string };
+/**
+ * Data spine: el evento crudo del que sale lo que se está procesando.
+ *
+ * `replay` = es un reproceso de un evento VIEJO (admin), no una entrega en vivo:
+ * jamás le escribe al cliente (ni turno del agente ni `agent_job`) ni pausa la
+ * IA por un echo. El mensaje igual se guarda, para que un humano lo vea.
+ * `receivedAt` = cuándo llegó el evento (lo usa la plantilla para no retroceder).
+ */
+export type SpineContext = { rawEventId?: string; replay?: boolean; receivedAt?: Date };
 
 /**
  * Procesa el `value` de un cambio `messages` del webhook: mensajes entrantes
@@ -305,6 +313,7 @@ export async function processMessagesValue(
       anuncio: anuncioDeWhatsapp(msg.referral),
       replyToWaId: msg.context?.id ?? null,
       rawEventId: ctx.rawEventId ?? null,
+      replay: ctx.replay ?? false,
     });
     ingested = true;
   }
@@ -353,7 +362,7 @@ export async function processEchoesValue(
       continue;
     }
     try {
-      await ingestManualEcho(credentials.organizationId, echo, ctx.rawEventId ?? null);
+      await ingestManualEcho(credentials.organizationId, echo, ctx);
     } catch (err) {
       // Un echo malformado jamás tumba el webhook (edge case del spec).
       console.error(`[webhook] error procesando echo ${echo.id}:`, err);
@@ -366,7 +375,7 @@ export async function processEchoesValue(
 async function ingestManualEcho(
   organizationId: string,
   echo: WebhookMessage,
-  rawEventId: string | null
+  ctx: SpineContext
 ): Promise<void> {
   const db = getDb();
   const identity = normalizeMx(echo.to!);
@@ -399,7 +408,7 @@ async function ingestManualEcho(
       // El echo ya es un enviado: su marca de envío es la de WhatsApp.
       sentAt: waTimestamp,
       replyToWaId: echo.context?.id ?? null,
-      rawEventId,
+      rawEventId: ctx.rawEventId ?? null,
     })
     .onConflictDoNothing({ target: [schema.message.waMessageId] })
     .returning();
@@ -412,31 +421,39 @@ async function ingestManualEcho(
     : null;
 
   // Solo lastMessageAt: un mensaje del negocio NUNCA abre la ventana de 24 h.
+  // Nunca hacia atrás: un echo viejo (replay) no mueve el reloj.
   await db
     .update(schema.conversation)
-    .set({ lastMessageAt: waTimestamp, updatedAt: new Date() })
+    .set({
+      lastMessageAt: notBefore(schema.conversation.lastMessageAt, waTimestamp),
+      updatedAt: new Date(),
+    })
     .where(eq(schema.conversation.id, conversation.id));
 
   // Pausa automática de la IA, idempotente y atómica (solo si no hay handoff).
-  const paused = await db
-    .update(schema.conversation)
-    .set({
-      aiEnabled: false,
-      handoffAt: new Date(),
-      handoffReason: "manual_reply",
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(schema.conversation.id, conversation.id),
-        sql`${schema.conversation.handoffAt} is null`
+  // Un replay reproduce el pasado: la conversación pudo haber seguido su curso
+  // (el dueño reactivó la IA, entró otro mensaje...), así que NO la pausa.
+  if (!ctx.replay) {
+    const paused = await db
+      .update(schema.conversation)
+      .set({
+        aiEnabled: false,
+        handoffAt: new Date(),
+        handoffReason: "manual_reply",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.conversation.id, conversation.id),
+          sql`${schema.conversation.handoffAt} is null`
+        )
       )
-    )
-    .returning();
-  if (paused[0]) {
-    console.log(
-      `[webhook] respuesta manual del dueño en ${conversation.id} — IA pausada (manual_reply)`
-    );
+      .returning();
+    if (paused[0]) {
+      console.log(
+        `[webhook] respuesta manual del dueño en ${conversation.id} — IA pausada (manual_reply)`
+      );
+    }
   }
 
   publish(organizationId, {
@@ -467,6 +484,8 @@ export async function ingestInboundMessage(input: {
   /** Data spine: wamid al que responde (`context.id`) y evento crudo de origen. */
   replyToWaId?: string | null;
   rawEventId?: string | null;
+  /** Reproceso de un evento viejo: se guarda el mensaje, pero no se le responde. */
+  replay?: boolean;
 }): Promise<void> {
   const db = getDb();
   const { organizationId } = input;
@@ -535,8 +554,10 @@ export async function ingestInboundMessage(input: {
   await db
     .update(schema.conversation)
     .set({
-      lastInboundAt: waTimestamp,
-      lastMessageAt: waTimestamp,
+      // Nunca hacia atrás: un entrante viejo (replay, reintento tardío de Meta)
+      // no mueve la ventana de 24 h ni el orden de la bandeja.
+      lastInboundAt: notBefore(schema.conversation.lastInboundAt, waTimestamp),
+      lastMessageAt: notBefore(schema.conversation.lastMessageAt, waTimestamp),
       unreadCount: sql`${schema.conversation.unreadCount} + 1`,
       updatedAt: new Date(),
     })
@@ -556,6 +577,8 @@ export async function ingestInboundMessage(input: {
     data: { conversation: { id: conversation.id } },
   });
 
+  // Un replay jamás le escribe al cliente: sin turno del agente (ni agent_job).
+  if (input.replay) return;
   await maybeRunAgentTurn(conversation.id, organizationId);
 }
 

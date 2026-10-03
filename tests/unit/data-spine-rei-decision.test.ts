@@ -29,11 +29,19 @@ vi.mock("@/lib/db", () => {
       select: () => thenable(state.selectQueue.shift() ?? []),
       insert: () => ({
         values: (values: Record<string, unknown>) => {
-          if (state.failInsert) return Promise.reject(new Error("insert roto"));
           state.inserts.push({ values });
-          // `persistTestOutbound` encadena onConflictDoNothing().returning().
+          // `persistTestOutbound` y `recordAgentDecision` encadenan onConflictDoNothing().returning().
           return Object.assign(Promise.resolve(), {
-            onConflictDoNothing: () => ({ returning: () => Promise.resolve([{ id: "msg_test_1" }]) }),
+            onConflictDoNothing: () => ({
+              returning: () => {
+                // Un insert que rechaza (BD caída, veneno…) no debe asomar al turno.
+                if (state.failInsert && "brain" in values) {
+                  state.inserts.pop();
+                  return Promise.reject(new Error("insert roto"));
+                }
+                return Promise.resolve([{ id: (values.id as string) ?? "msg_test_1" }]);
+              },
+            }),
           });
         },
       }),
