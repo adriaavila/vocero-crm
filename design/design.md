@@ -63,12 +63,23 @@ itálicas de adorno.
   símbolo de la pestaña lleva el mismo punto. Un icono subido en Marca le gana.
 - **Cromo en tinta**: la barra lateral (`data-allok-nav`) y la tarjeta de estado
   de Inicio (`.ak-ink`) son tinta en los dos temas: es donde el punto se lee.
-- **Inicio** (`control-center.tsx`): la primera línea contesta «¿está
-  funcionando?»; debajo, **la línea del día** (`day-line.tsx`, la firma de la
-  pantalla: un punto por conversación de hoy a su hora, el horario del equipo
-  y el turno del agente), lo de hoy (conversaciones, atendidas solas de las de
-  hoy con su anillo, leads, esperan por ti) y las conversaciones, primero las
-  que esperan.
+- **Inicio** (`control-center.tsx`): el centro de mando. Su trabajo es
+  contestar «¿qué atiendo ahora?». De arriba abajo: el saludo y **una línea
+  que cuenta** cuántas conversaciones te necesitan (o «Todo al día»), con su
+  punto; la tarjeta de estado **compacta** en tinta (estado, número y la única
+  acción del sistema); **«Por dónde arrancar»**, tarjetas con la ventana de 24 h
+  que le queda a cada una (deslizables en el teléfono, rejilla en escritorio) y
+  un solo botón, «Responder»; **«Pregúntale a allok»**; **«Cómo va»** con las
+  cifras de Hoy · 7 · 30 · 90 días; y **la línea del día** (`day-line.tsx`, la
+  firma de la pantalla: un punto por conversación de hoy a su hora, el horario
+  del equipo y el turno del agente). La puesta en marcha queda al final.
+  - La tarjeta de «Por dónde arrancar» es punto + palabra: el punto es el
+    estado (`atencion` con la ventana abierta, `pausado` con la ventana
+    cerrada, `atendiendo` si el agente la está contestando) y la palabra es lo
+    que le queda: «Quedan 3 h», «Ventana cerrada: solo con plantilla».
+  - El orden es el de la urgencia: las que se cierran antes primero, después
+    las cerradas. La razón (pidió una persona, preguntó el precio, llegó por un
+    anuncio, sin respuesta) etiqueta; no ordena.
 - **Embudo** (`embudo.tsx`, a partir del de rei-crm): cuántos llegaron al
   menos a cada etapa y qué parte pasó desde la anterior; por el centro bajan
   puntos. Vertical en Inicio, acostado arriba del tablero. Sin Pro, la forma

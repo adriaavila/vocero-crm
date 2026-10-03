@@ -116,6 +116,9 @@ Una fila por turno real del agente (los del Laboratorio no se registran), en
 - **Rei**: acción ejecutada, motivo del handoff, modelo y tokens que reporta el
   proveedor, y `prompt_version` (12 hex del sha256 del prompt compilado).
 - **Veredicto**: `verdict` `bien | fallo`, nota (<= 500), quién y cuándo.
+  La pantalla `/decisiones` («Cómo decidió el agente») los lista y los califica
+  (j/k mover, b bien, f falló); también se abre por conversación con
+  `/decisiones?c=<conversationId>`. Calificar es del propietario.
 
 API (tenant-scoped; leen los miembros, solo el propietario califica):
 `GET /api/decisions?limit&cursor&verdict`, `GET /api/conversations/[id]/decisions`,
