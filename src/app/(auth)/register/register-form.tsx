@@ -162,7 +162,7 @@ export default function RegisterForm({
       <CardHeader>
         <CardTitle>Empieza con tu negocio</CardTitle>
         <CardDescription>
-          En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar {brand.Name}.
+          En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar tu agente.
         </CardDescription>
       </CardHeader>
       <CardContent>

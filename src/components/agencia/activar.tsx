@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
 import type { GateState } from "@/components/agencia/activation-gate";
@@ -30,7 +30,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function Summary({ activation }: { activation: ActivationSummary }) {
-  const { number, schedule, handoff, restrictions, knowledgeCount } = activation;
+  const { number, schedule, handoff, handoffSuggested, restrictions, knowledgeCount, enforced } = activation;
   return (
     <dl className="divide-y divide-border rounded-md border border-border px-4">
       <Row label="Número">
@@ -51,8 +51,11 @@ function Summary({ activation }: { activation: ActivationSummary }) {
               {schedule.now} <span className="text-text-3">({schedule.timezone})</span>
             </p>
           </>
-        ) : (
+        ) : enforced ? (
           <span className="text-text-2">Todavía sin horario.</span>
+        ) : (
+          // Fuera del SaaS no hay horario de respuesta: contesta apenas llega.
+          <span>Responde apenas llega el mensaje.</span>
         )}
       </Row>
       <Row label="Qué hará">
@@ -63,7 +66,13 @@ function Summary({ activation }: { activation: ActivationSummary }) {
           </li>
           {handoff && (
             <li>
-              Te pasa la conversación según tu regla:{" "}
+              {handoffSuggested ? (
+                <>
+                  Te pasa la conversación en estos casos, que es una sugerencia que puedes cambiar en «Tu negocio»:{" "}
+                </>
+              ) : (
+                <>Te pasa la conversación según tu regla: </>
+              )}
               <span className="text-text-2">«{handoff.length > 220 ? `${handoff.slice(0, 220).trimEnd()}…` : handoff}»</span>
             </li>
           )}
@@ -93,6 +102,8 @@ export function ActivarSection({
 }) {
   const [busy, setBusy] = useState<"activar" | "pausar" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [justActivated, setJustActivated] = useState(false);
+  const pauseButton = useRef<HTMLButtonElement>(null);
 
   async function activate() {
     setBusy("activar");
@@ -100,14 +111,25 @@ export function ActivarSection({
     const reason = await onActivate();
     setBusy(null);
     if (reason) setError(reason);
+    else setJustActivated(true);
   }
 
   async function pause() {
     setBusy("pausar");
     setError(null);
+    setJustActivated(false);
     await onPause();
     setBusy(null);
   }
+
+  // Al activar, el botón que se oprimió desaparece: el foco pasa a «Pausar», que
+  // es lo que ahora hay que poder hacer, y no se pierde en el documento.
+  useEffect(() => {
+    if (enabled && justActivated) pauseButton.current?.focus();
+  }, [enabled, justActivated]);
+
+  const activation = gate.kind === "blocked" || gate.kind === "ready" ? gate.activation : null;
+  const blockers = activation?.blockers ?? [];
 
   return (
     <Card id="activar" tabIndex={-1} className="scroll-mt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -126,6 +148,13 @@ export function ActivarSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Lo que se acaba de hacer, dicho en voz alta para quien no ve la pantalla. */}
+        <p role="status" className={justActivated && enabled ? "text-sm font-medium" : "sr-only"}>
+          {justActivated && enabled
+            ? `Tu agente está activo. ${activation?.schedule?.now ?? "Responde apenas llega un mensaje."}`
+            : ""}
+        </p>
+
         {gate.kind === "loading" && (
           <div className="space-y-2" aria-busy="true" aria-label="Revisando tu configuración">
             <Skeleton className="h-4 w-48" />
@@ -137,7 +166,9 @@ export function ActivarSection({
           <div role="alert" className="space-y-3 rounded-md border border-danger-soft bg-danger-tint p-4">
             <p className="flex items-start gap-2 text-sm font-medium text-danger-text">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-              No pudimos revisar tu configuración, así que no se puede activar todavía.
+              {enabled
+                ? "No pudimos revisar tu configuración. Tu agente sigue como estaba."
+                : "No pudimos revisar tu configuración, así que no se puede activar todavía."}
             </p>
             <Button type="button" variant="outline" className="min-h-11" onClick={onRetry}>
               Reintentar
@@ -145,17 +176,21 @@ export function ActivarSection({
           </div>
         )}
 
-        {(gate.kind === "blocked" || gate.kind === "ready") && (
+        {activation && (
           <>
-            {enabled && <Summary activation={gate.activation} />}
+            {enabled && <Summary activation={activation} />}
 
-            {gate.activation.blockers.length > 0 && (
+            {blockers.length > 0 && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">
-                  {gate.kind === "blocked" ? "Antes de activar falta:" : "Te recomendamos revisar:"}
+                  {enabled
+                    ? "Tu agente sigue activo, pero conviene revisar:"
+                    : gate.kind === "blocked"
+                      ? "Antes de activar falta:"
+                      : "Te recomendamos revisar:"}
                 </p>
                 <ul className="space-y-2">
-                  {gate.activation.blockers.map((blocker) => (
+                  {blockers.map((blocker) => (
                     <li
                       key={`${blocker.code}-${blocker.title}`}
                       className="flex flex-col gap-2 rounded-md border border-warning-soft bg-warning-tint p-3 sm:flex-row sm:items-center sm:justify-between"
@@ -184,38 +219,45 @@ export function ActivarSection({
               </div>
             )}
 
-            {!enabled && gate.kind === "ready" && gate.activation.blockers.length === 0 && (
+            {!enabled && gate.kind === "ready" && blockers.length === 0 && (
               <p className="text-sm text-text-2">Todo está listo. Esto es lo que va a pasar cuando actives:</p>
             )}
-            {!enabled && gate.kind === "ready" && <Summary activation={gate.activation} />}
-
-            {error && (
-              <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
-                {error}
-              </p>
-            )}
-
-            {enabled ? (
-              <Button type="button" variant="outline" className="min-h-11" disabled={busy !== null} onClick={() => void pause()}>
-                {busy === "pausar" ? "Pausando…" : "Pausar mi agente"}
-              </Button>
-            ) : (
-              gate.kind === "ready" && (
-                <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={busy !== null} onClick={() => void activate()}>
-                  {busy === "activar" ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Activando…
-                    </>
-                  ) : (
-                    <>
-                      {gate.activation.blockers.length > 0 ? "Activar de todas formas" : "Activar mi agente"}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </>
-                  )}
-                </Button>
-              )
-            )}
+            {!enabled && gate.kind === "ready" && <Summary activation={activation} />}
           </>
+        )}
+
+        {error && (
+          <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
+            {error}
+          </p>
+        )}
+
+        {/* Pausar nunca depende de la lectura: frenar al agente tiene que poder hacerse siempre. */}
+        {enabled && (
+          <Button
+            ref={pauseButton}
+            type="button"
+            variant="outline"
+            className="min-h-11"
+            disabled={busy !== null}
+            onClick={() => void pause()}
+          >
+            {busy === "pausar" ? "Pausando…" : "Pausar mi agente"}
+          </Button>
+        )}
+        {!enabled && gate.kind === "ready" && (
+          <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={busy !== null} onClick={() => void activate()}>
+            {busy === "activar" ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Activando…
+              </>
+            ) : (
+              <>
+                {blockers.length > 0 ? "Activar de todas formas" : "Activar mi agente"}
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </>
+            )}
+          </Button>
         )}
       </CardContent>
     </Card>

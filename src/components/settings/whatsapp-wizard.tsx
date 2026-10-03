@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WhatsappOnboardingPanel, type OnboardingPanelView } from "@/components/settings/whatsapp-onboarding-panel";
 import { AlertTriangle, ArrowRight, Copy, Info, Sparkles, ShieldCheck } from "lucide-react";
 import { ConnectionCard, type ConnectionEvidence } from "@/components/agencia/whatsapp-conexion";
@@ -105,11 +105,32 @@ export function WhatsappWizard({
   }, [refetch]);
 
   // Que llegue un mensaje, o que WhatsApp entregue una respuesta, es justo la
-  // prueba que esta pantalla muestra: se refresca sola, sin recargar.
+  // prueba que esta pantalla muestra: se refresca sola, sin recargar. Una sola
+  // lectura por ráfaga (un mensaje trae varios eventos) y de lo único que
+  // cambia, la evidencia; y deja de preguntar cuando las dos ya están
+  // verificadas, para que un negocio con mucho tráfico no repita la consulta
+  // en cada mensaje mientras la pantalla está abierta.
+  const evidenceDone = Boolean(evidence?.lastInboundAt && evidence?.lastDeliveredAt);
+  const evidenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshEvidence = useCallback(() => {
+    if (evidenceTimer.current) clearTimeout(evidenceTimer.current);
+    evidenceTimer.current = setTimeout(async () => {
+      const c = await fetch("/api/settings/whatsapp").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+      if (c) {
+        setConnection(c.connection);
+        setEvidence(c.evidence ?? null);
+      }
+    }, 1500);
+  }, []);
+  useEffect(() => () => {
+    if (evidenceTimer.current) clearTimeout(evidenceTimer.current);
+  }, []);
   useEvents({
-    onMessageNew: () => void refetch(),
+    onMessageNew: () => {
+      if (!evidenceDone) refreshEvidence();
+    },
     onMessageStatus: ({ status }) => {
-      if (status === "delivered" || status === "read") void refetch();
+      if (!evidenceDone && (status === "delivered" || status === "read")) refreshEvidence();
     },
   });
 
@@ -150,14 +171,14 @@ export function WhatsappWizard({
         <h1 className="text-2xl font-[680] tracking-tight">
           {connected ? "Tu WhatsApp está conectado" : reconnect ? "Reconecta tu WhatsApp" : "Conecta el WhatsApp de tu negocio"}
         </h1>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-text-2">
+        <p className={`mt-2 max-w-xl text-sm leading-6 text-text-2 ${connected ? "hidden sm:block" : ""}`}>
           {connected
             ? "Revisa que los mensajes lleguen y que tus respuestas salgan. Cada cosa se confirma sola."
             : reconnect
               ? "La conexión venció y tus respuestas están en pausa. Vuelve a conectar el mismo número; tus conversaciones siguen aquí."
               : "Un solo paso: eliges tu número en la ventana de Meta. Si ya usas WhatsApp Business en tu teléfono, lo sigues usando igual."}
         </p>
-        {progress && <SetupProgressNav progress={progress} page="whatsapp" className="mt-6 max-w-2xl" />}
+        {progress && <SetupProgressNav progress={progress} page="whatsapp" className="mt-3 max-w-2xl sm:mt-6" />}
       </header>
 
       {saasMode && bridgeUrl && (
@@ -229,6 +250,13 @@ export function WhatsappWizard({
         />
       )}
 
+      {/* El override de Embedded Signup y el enlace guiado ya mueven el
+          webhook solos; en SaaS mostrar el verify token de la instancia
+          entera es una superficie que sobra (y hoy la ve cualquier miembro, ver
+          el fix owner-only en la ruta). Fuera del SaaS quien instala lo
+          necesita a la vista para pegarlo en Meta: no va plegado en soporte. */}
+      {webhook && !saasMode && <WebhookCard webhook={webhook} />}
+
       <details open={manualOpen || undefined} className="group rounded-lg border border-border bg-card">
         <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 text-sm font-medium text-text-2 [&::-webkit-details-marker]:hidden">
           <span>Conexión manual (soporte)</span>
@@ -245,11 +273,6 @@ export function WhatsappWizard({
             onSaved={() => void refetch()}
             hasGuidedOption={hasGuidedOption}
           />
-          {/* El override de Embedded Signup y el enlace guiado ya mueven el
-              webhook solos; en SaaS mostrar el verify token de la instancia
-              entera es una superficie que sobra (y hoy la ve cualquier
-              miembro, ver el fix owner-only en la ruta). */}
-          {webhook && !saasMode && <WebhookCard webhook={webhook} />}
         </div>
       </details>
     </div>
@@ -554,7 +577,7 @@ function ConnectForm({
             id="token"
             className="min-h-11"
             type="password"
-            placeholder={existing ? `Guardado (…${existing.tokenLast4}) — pega uno nuevo para cambiarlo` : "EAAG…"}
+            placeholder={existing ? `Guardado (…${existing.tokenLast4}). Pega uno nuevo para cambiarlo` : "EAAG…"}
             value={token}
             onChange={(e) => {
               setToken(e.target.value);
@@ -574,7 +597,7 @@ function ConnectForm({
         )}
         {saveError && <p className="text-sm text-destructive">{saveError}</p>}
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             className="min-h-11"

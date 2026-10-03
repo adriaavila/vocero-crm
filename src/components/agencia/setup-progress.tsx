@@ -1,26 +1,41 @@
 import Link from "next/link";
 import { StateDot } from "@/components/agencia/allok/mark";
 import type { SystemState } from "@/lib/estado";
+import type { SetupProgress, SetupStepKey } from "@/lib/setup-steps";
 import { cn } from "@/lib/utils";
-import type { SetupStepKey } from "@/lib/setup-steps";
-import type { SetupProgress } from "@/server/agencia/setup-progress";
 
 /**
  * Capa de agencia: el avance de la puesta en marcha, el mismo en toda pantalla
- * de configuración (no incluye Inicio). Los cuatro pasos salen de
- * `server/agencia/setup-progress.ts`; aquí solo se dibujan.
+ * de configuración y en Inicio. Los cuatro pasos salen de `lib/setup-steps`
+ * (derivados de la preparación del servidor); aquí solo se dibujan.
  *
- * Cada paso es un estado de la marca, siempre punto + palabra: listo es
- * «all ok» (verde), el que toca ahora «te toca a ti» (ámbar) y los demás
- * quedan quietos (gris). Sin cifras: «paso 2 de 4» no dice nada que el punto
- * no diga, y era justo el contador que se desactualizaba.
+ * Cada paso es punto + palabra: listo es *all ok* (verde, «Listo»), el que toca
+ * es un punto de tinta («Ahora») y los demás quedan quietos (gris,
+ * «Pendiente»). El de ahora NO va en ámbar: el ámbar es «algo espera por una
+ * persona» y aquí no hay nada roto. Sin cifras («paso 2 de 4» no dice nada que
+ * el punto no diga, y era justo el contador que se desactualizaba).
+ *
+ * En el teléfono es una sola fila: los cuatro puntos y el nombre del paso de
+ * ahora. Cuatro celdas con rótulo empujaban la acción principal bajo el pliegue.
  */
 
-const STATE: Record<"done" | "current" | "later", { state: SystemState; word: string }> = {
-  done: { state: "activo", word: "Listo" },
-  current: { state: "atencion", word: "Ahora" },
-  later: { state: "pausado", word: "Pendiente" },
-};
+type Kind = "done" | "current" | "later";
+const WORD: Record<Kind, string> = { done: "Listo", current: "Ahora", later: "Pendiente" };
+
+/** El punto de un paso: verde de estado si está listo, tinta si toca, gris si falta. */
+function StepDot({ kind, size = 8 }: { kind: Kind; size?: number }) {
+  if (kind === "current") {
+    return (
+      <span
+        aria-hidden
+        className="inline-block shrink-0 rounded-full bg-foreground"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  const state: SystemState = kind === "done" ? "activo" : "pausado";
+  return <StateDot state={state} size={size} decorative className="shrink-0" />;
+}
 
 export function SetupProgressNav({
   progress,
@@ -34,12 +49,41 @@ export function SetupProgressNav({
 }) {
   // Con el agente activo ya no hay puesta en marcha que dibujar.
   if (!progress.active) return null;
+  const kindOf = (step: SetupProgress["steps"][number]): Kind =>
+    step.done ? "done" : step.key === progress.current ? "current" : "later";
+  const current = progress.steps.find((step) => step.key === progress.current);
+
   return (
     <nav aria-label="Pasos para activar tu agente" className={className}>
-      <ol className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+      {/* Teléfono: una fila, cuatro puntos y el paso de ahora. */}
+      <ol className="flex items-center sm:hidden">
         {progress.steps.map((step) => {
-          const kind = step.done ? "done" : step.key === progress.current ? "current" : "later";
-          const { state, word } = STATE[kind];
+          const kind = kindOf(step);
+          return (
+            <li key={step.key}>
+              <Link
+                href={step.href}
+                aria-label={`${step.label}: ${WORD[kind].toLowerCase()}`}
+                aria-current={page === step.key ? "page" : undefined}
+                className="flex h-11 w-9 items-center justify-center rounded-sm"
+              >
+                <StepDot kind={kind} size={kind === "current" ? 12 : 10} />
+              </Link>
+            </li>
+          );
+        })}
+        {current && (
+          <li className="ml-2 min-w-0 text-[13.5px] leading-5">
+            <span className="font-semibold">{current.label}</span>
+            <span className="text-text-3"> · {WORD.current}</span>
+          </li>
+        )}
+      </ol>
+
+      {/* Tableta y escritorio: los cuatro pasos con su palabra. */}
+      <ol className="hidden grid-cols-4 gap-x-4 sm:grid">
+        {progress.steps.map((step) => {
+          const kind = kindOf(step);
           return (
             <li key={step.key} className="min-w-0">
               <Link
@@ -57,18 +101,19 @@ export function SetupProgressNav({
                   )}
                 />
                 <span className="mt-2 flex items-start gap-2">
-                  <StateDot state={state} size={8} decorative className="mt-[7px] shrink-0" />
+                  <span className="mt-[7px] flex shrink-0">
+                    <StepDot kind={kind} />
+                  </span>
                   <span className="min-w-0">
                     <span
                       className={cn(
-                        "block text-[13.5px] font-semibold leading-5",
+                        "block text-[13.5px] font-semibold leading-5 group-hover:underline",
                         kind === "later" ? "text-text-3" : "text-foreground",
-                        "group-hover:underline",
                       )}
                     >
                       {step.label}
                     </span>
-                    <span className="block text-xs text-text-3">{word}</span>
+                    <span className="block text-xs text-text-3">{WORD[kind]}</span>
                   </span>
                 </span>
               </Link>
