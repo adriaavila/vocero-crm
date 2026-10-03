@@ -5,7 +5,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { organization } from "better-auth/plugins";
 import { getDb, schema } from "@/lib/db";
 import { getEnv, isMockEnabled } from "@/lib/env";
-import { AUTH_RATE_LIMIT, checkRateLimit } from "@/lib/rate-limit";
+import { AUTH_RATE_LIMIT, CLIENT_IP_HEADERS, checkRateLimit, clientIp } from "@/lib/rate-limit";
 import {
   onUserCreated,
   resolveActiveOrganizationId,
@@ -93,6 +93,9 @@ function createAuth() {
       return origin ? [origin] : [];
     },
     advanced: {
+      // La misma IP que usa nuestro tope de arriba (ver `clientIp`), para el
+      // limitador propio de Better Auth: sin esto lee solo X-Forwarded-For.
+      ipAddress: { ipAddressHeaders: [...CLIENT_IP_HEADERS] },
       // The SaaS app host and negocio.allok.fun must share the same session,
       // but legacy deployments keep host-only cookies exactly as before.
       crossSubDomainCookies: isAllokSaaSMode()
@@ -172,11 +175,7 @@ function createAuth() {
         // fallaba con 429 y parecía un fallo del producto. En producción el
         // límite no se toca — y ahí el gate es imposible de encender.
         if (RATE_LIMITED_PATHS.has(ctx.path) && !isMockEnabled()) {
-          const ip =
-            ctx.headers?.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-            ctx.headers?.get("x-real-ip") ||
-            "local";
-          const result = checkRateLimit(`${ctx.path}:${ip}`, AUTH_RATE_LIMIT);
+          const result = checkRateLimit(`${ctx.path}:${clientIp(ctx.headers)}`, AUTH_RATE_LIMIT);
           if (!result.allowed) {
             throw new APIError("TOO_MANY_REQUESTS", {
               message: "Demasiados intentos; espera unos minutos",

@@ -110,6 +110,7 @@ describe("Better Auth wiring", { timeout: 30_000 }, () => {
       resetPasswordTokenExpiresIn?: number;
       revokeSessionsOnPasswordReset?: boolean;
     };
+    advanced: { ipAddress?: { ipAddressHeaders?: string[] } };
     hooks: { before: (ctx: unknown) => Promise<unknown> };
   };
 
@@ -170,5 +171,25 @@ describe("Better Auth wiring", { timeout: 30_000 }, () => {
     // Otra IP y el otro endpoint llevan su propia cuenta.
     await expect(call("/request-password-reset", "203.0.113.8")).resolves.not.toThrow();
     await expect(call("/reset-password", "203.0.113.7")).resolves.not.toThrow();
+  });
+
+  it("cuenta por CF-Connecting-IP aunque X-Forwarded-For cambie entre peticiones", async () => {
+    const auth = await loadAuth();
+    // Detrás de Cloudflare la primera entrada de X-Forwarded-For es un borde, no la persona.
+    const call = (edge: string, client: string) =>
+      auth.hooks.before({
+        path: "/request-password-reset",
+        headers: new Headers({ "x-forwarded-for": edge, "cf-connecting-ip": client }),
+      });
+
+    for (let i = 0; i < 10; i += 1) await call(`172.70.0.${i}`, "198.51.100.7");
+    await expect(call("172.70.0.99", "198.51.100.7")).rejects.toMatchObject({ status: "TOO_MANY_REQUESTS" });
+    // Otra persona detrás del mismo borde no paga por la primera.
+    await expect(call("172.70.0.1", "198.51.100.8")).resolves.not.toThrow();
+  });
+
+  it("le dice a Better Auth que lea la misma cabecera para su propio limitador", async () => {
+    const auth = await loadAuth();
+    expect(auth.advanced.ipAddress?.ipAddressHeaders).toEqual(["cf-connecting-ip", "x-forwarded-for"]);
   });
 });
