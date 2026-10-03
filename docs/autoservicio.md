@@ -26,8 +26,10 @@ los admins de allok y a nadie más.
    - `EMAIL_FROM`: remitente de un dominio verificado en Resend (Domains, con
      sus registros SPF y DKIM en el DNS), por ejemplo
      `allok <no-reply@allok.fun>`.
-   - Confirma que `APP_BASE_URL` es el host de la app: el enlace del correo se
-     arma con él.
+   - `APP_BASE_URL`: déjalo como está (en producción es `crm.allok.fun`, que
+     además es la base del webhook de cada negocio). El enlace del correo se
+     arma con él: llega a `crm.allok.fun/reset-password` y, al entrar con la
+     contraseña nueva, el login reenvía al subdominio del negocio.
 
    Cambia: `/login` pasa de "Escríbenos por WhatsApp" a "¿Olvidaste tu
    contraseña?", que lleva a `/forgot-password`. El enlace vale 1 hora, se usa
@@ -71,11 +73,15 @@ los admins de allok y a nadie más.
    no participa: su alta sigue pasando por el checkout.
 
 6. **Encender los botones públicos.** Fusionar el PR de allok.fun (repo
-   `creativ3`, rama `feat/self-serve-open`) y desplegar.
-   Cambia: `SELF_SERVE` en `src/lib/plans.ts` pasa a `true`; los dos planes
-   del sitio apuntan a `<CRM_APP_URL>/register?plan=...` en vez de "Hablemos".
-   Hasta este paso nadie nuevo llega solo, así que es el interruptor de
-   entrada.
+   `creativ3`, rama `feat/self-serve-open`) no cambia nada por sí solo. Lo
+   enciende la variable `NEXT_PUBLIC_SELF_SERVE=true` en el proyecto de
+   allok.fun, más un redeploy (Next la lee en el build).
+   Cambia: los dos planes de `/` pasan de "Hablemos" a "Crear mi cuenta"
+   (`<CRM_APP_URL>/register?plan=...`), con la nota de los 7 días de Completo,
+   y el cierre de la página ofrece el registro con WhatsApp como segunda
+   opción. `/rei` sigue en WhatsApp: a las inmobiliarias las atiende una
+   persona. Hasta este paso nadie nuevo llega solo, así que es el interruptor
+   de entrada.
 
 7. **Una prueba real, de punta a punta, en un teléfono.**
    - Desde allok.fun, tocar un plan y registrarse con un correo propio.
@@ -90,9 +96,10 @@ los admins de allok y a nadie más.
 ## Apagarlo
 
 Se apaga en el mismo orden inverso y sin tocar datos:
-`SAAS_SELF_SERVE=false` (o quitar la variable) y redeploy cierra el registro
-público; `SELF_SERVE = false` en allok.fun devuelve los botones a "Hablemos".
-Las cuentas ya creadas siguen funcionando.
+quitar `NEXT_PUBLIC_SELF_SERVE` (o ponerla en otro valor) en allok.fun y
+redeploy devuelve los botones a "Hablemos"; `SAAS_SELF_SERVE=false` (o quitar
+la variable) en el CRM y redeploy cierra el registro público. Las cuentas ya
+creadas siguen funcionando.
 
 ## Pendiente a propósito
 
@@ -100,5 +107,10 @@ Las cuentas ya creadas siguen funcionando.
   en `false` (R1 de `specs/019-allok-producto/auditoria.md`): alguien puede
   registrarse con el correo de otra persona. El conector de correo ya permite
   resolverlo; falta decidir si bloquea el acceso hasta verificar.
+- **El registro revela correos existentes.** Con `SAAS_SELF_SERVE=true`,
+  `POST /api/auth/sign-up/email` contesta 422 `USER_ALREADY_EXISTS` si el
+  correo ya tiene cuenta, así que cualquiera puede comprobar si una persona es
+  cliente. La pantalla de recuperación no lo hace (contesta igual exista o no),
+  pero el registro sí. Se cierra junto con la verificación de correo.
 - **Plantilla de correo por negocio.** El correo sale con la marca del
   despliegue (`BRAND`), no con la del negocio.

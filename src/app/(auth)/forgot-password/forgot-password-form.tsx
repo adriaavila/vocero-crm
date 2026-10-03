@@ -54,7 +54,11 @@ export default function ForgotPasswordForm({
           <CardTitle>Restablecer contraseña</CardTitle>
           <CardDescription>
             {helpUrl
-              ? "Por ahora lo hacemos contigo. Escríbenos desde el correo de tu cuenta y te devolvemos el acceso."
+              ? `Por ahora lo hacemos contigo. ${
+                  channelSuffix === "por correo"
+                    ? "Escríbenos desde el correo de tu cuenta"
+                    : `Escríbenos ${channelSuffix} con el correo de tu cuenta`
+                } y te devolvemos el acceso.`
               : "Pide al propietario de la instancia que restablezca tu contraseña."}
           </CardDescription>
         </CardHeader>
