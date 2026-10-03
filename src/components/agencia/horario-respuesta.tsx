@@ -293,7 +293,7 @@ export function HorarioRespuesta({
             id="business-timezone"
             value={current.timezone}
             onValueChange={(timezone) => setSettings({ ...current, timezone })}
-            className="w-full"
+            className="w-full max-sm:h-11"
           />
           <p className="text-xs text-text-3">Usa la zona del negocio, no la del servidor.</p>
         </div>
