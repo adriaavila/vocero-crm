@@ -29,6 +29,8 @@ export type PlanCatalogEntry = {
   name: string;
   priceUsd: number;
   tagline: string;
+  /** Cuándo contesta el agente con este plan, dicho sin rodeos (lo que el dueño compra). */
+  answers: string;
   features: readonly string[];
   /** Usuarios incluidos (propietario incluido). Hoy solo enforced en el equipo de Configuración. */
   seats: number;
@@ -45,6 +47,7 @@ export const PLAN_CATALOG: Record<SaaSPlan, PlanCatalogEntry> = {
     name: "Esencial",
     priceUsd: 49,
     tagline: "Que nadie se quede sin respuesta.",
+    answers: "Solo fuera de tu horario. Dentro de tu horario contestas tú.",
     features: [
       "Tu número de siempre, sin cambiar nada",
       "Contesta fuera de tu horario",
@@ -57,7 +60,8 @@ export const PLAN_CATALOG: Record<SaaSPlan, PlanCatalogEntry> = {
     id: "pro",
     name: "Completo",
     priceUsd: 99,
-    tagline: "Cuando la consulta ya vale plata. 7 días de prueba gratis.",
+    tagline: "Cuando la consulta ya vale plata.",
+    answers: "Todo el día, también dentro de tu horario.",
     features: [
       "Todo lo de Esencial",
       "Tus ventas en etapas y agenda de citas",
@@ -71,6 +75,7 @@ export const PLAN_CATALOG: Record<SaaSPlan, PlanCatalogEntry> = {
     name: "Agencia",
     priceUsd: 299,
     tagline: "Para inmobiliarias con varios asesores vendiendo a la vez.",
+    answers: "Todo el día, también dentro de tu horario.",
     features: [
       "Tus ventas en etapas y agenda de citas",
       "Responde todo el día",

@@ -2,7 +2,7 @@ import { apiError, parseBody, withOwner } from "@/lib/api";
 import { soldSaaSPlans } from "@/lib/saas-plans";
 import {
   appOrigin,
-  checkoutBlocked,
+  checkoutBlockedReason,
   getOrganizationBilling,
   getOrganizationForBilling,
   hadPriorSubscription,
@@ -38,8 +38,13 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
   const current = await getOrganizationBilling(session.organizationId);
   // Durante la prueba de autoservicio (sin Stripe) sí puede pagar: es lo que
   // se le pide. `hadPriorSubscription` ya evita una segunda prueba en Stripe.
-  if (checkoutBlocked(current)) {
+  const blocked = checkoutBlockedReason(current);
+  if (blocked === "active") {
     return apiError(409, "billing_active", "Gestiona el cambio de plan desde tu portal de facturación.");
+  }
+  if (blocked === "payment_failed") {
+    // Es la misma suscripción: un checkout nuevo la dejaría cobrando dos veces.
+    return apiError(409, "billing_payment_failed", "Tu último cobro falló. Actualiza tu método de pago desde el portal de facturación.");
   }
 
   const customer = current.customerId

@@ -32,8 +32,8 @@ function noteFor(state: SystemState, productLabel: string): string {
 function sentence(day: Day, now: number | null): string {
   if (!day.configured) return "Sin horario de respuesta, tu agente no contesta.";
   if (!day.agentOn) return "Tu agente está apagado: hoy contestas tú.";
-  if (!day.billingActive) return "Tu plan no está activo: tu agente no contesta.";
-  if (day.allDay) return day.agent.length ? "Tu agente contesta todo el día." : "«Todo el día» es del plan Pro: con tu plan, tu agente no contesta.";
+  if (!day.billingActive) return "Tu agente está en pausa por tu plan.";
+  if (day.allDay) return "Tu agente contesta todo el día.";
   if (day.agent.length === 0) return "Hoy tu equipo atiende todo el día.";
   if (now === null) return "Tu agente contesta cuando tu equipo no está.";
   const shift = day.agent.find(([a, b]) => now >= a && now < b);
@@ -101,8 +101,8 @@ export function DayLine({ day, timezone, owner, productLabel = "allok" }: { day:
   let action: { href: string; label: string } | null = null;
   if (owner && !day.configured) action = { href: "/agent", label: "Definir horario" };
   else if (owner && !day.agentOn) action = { href: "/agent", label: "Encender tu agente" };
-  else if (owner && day.agentOn && (!day.billingActive || (day.allDay && day.agent.length === 0)))
-    action = { href: "/settings/billing", label: "Ver planes" };
+  else if (owner && day.agentOn && !day.billingActive)
+    action = { href: "/settings/billing", label: "Elegir plan" };
   else if (owner) action = { href: "/agent", label: "Cambiar horario" };
 
   return (

@@ -160,9 +160,10 @@ export async function canAgentRespondNow(organizationId: string, now = new Date(
   if (!isAllokSaaSMode()) return true;
   const settings = await getBusinessHours(organizationId);
   if (!hasConfiguredBusinessHours(settings)) return false;
-  if (settings.responseMode === "all_day") {
-    return hasSaaSPlan(organizationId, "pro");
-  }
+  // «Todo el día» es de Completo. Con Esencial (se bajó de plan, o lo eligió
+  // durante la prueba) el agente contesta solo fuera del horario: el plan que
+  // el dueño pagó, no un agente mudo (ver `coverage` en lib/cobertura).
+  if (settings.responseMode === "all_day" && (await hasSaaSPlan(organizationId, "pro"))) return true;
   return isOutsideBusinessHours(settings, now);
 }
 

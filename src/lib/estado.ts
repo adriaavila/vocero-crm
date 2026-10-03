@@ -1,4 +1,5 @@
 import { brand } from "./brand";
+import type { PlanKind } from "./plan-estado";
 
 /**
  * Capa de agencia (fork) — el estado de la operación, la idea central de la
@@ -136,6 +137,8 @@ export type SystemInput = {
   whatsapp: WhatsAppLink;
   /** El plan deja automatizar (fuera del SaaS, siempre). */
   billingActive: boolean;
+  /** En qué punto del plan está: cambia las palabras cuando `billingActive` es false. */
+  plan?: PlanKind;
   agentOn: boolean;
   /** Conversaciones en `atencion`. */
   waiting: number;
@@ -155,6 +158,23 @@ export type SystemVerdict = {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** Por qué el agente no contesta cuando el plan no lo deja, en la voz del dueño. */
+function billingReason(plan: PlanKind | undefined): string {
+  const name = brand().name;
+  switch (plan) {
+    case "trial_cap":
+      return `Usaste las respuestas de la prueba: elige un plan para que ${name} siga contestando.`;
+    case "trial_ended":
+      return `Tu prueba terminó: elige un plan para que ${name} siga contestando.`;
+    case "payment_failed":
+      return `No pudimos cobrar tu plan: actualiza el pago para que ${name} siga contestando.`;
+    case "canceled":
+      return `Tu plan está cancelado: elige uno para que ${name} vuelva a contestar.`;
+    default:
+      return `Reactiva tu plan para que ${name} siga contestando.`;
+  }
+}
+
 /**
  * El estado del negocio entero. Primero lo que impide funcionar (WhatsApp, el
  * plan), después quien espera, después si está apagado a propósito, y recién
@@ -169,7 +189,7 @@ export function systemState(i: SystemInput): SystemVerdict {
     return { state: "atencion", reason: "Meta cortó el acceso: reconecta tu WhatsApp.", href: own("/settings/whatsapp") };
   }
   if (!i.billingActive) {
-    return { state: "atencion", reason: `Reactiva tu plan para que ${brand().name} siga contestando.`, href: own("/settings/billing") };
+    return { state: "atencion", reason: billingReason(i.plan), href: own("/settings/billing") };
   }
   if (i.waiting > 0) {
     return {

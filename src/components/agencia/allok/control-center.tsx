@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
 import { STATE_HINT, stateLabelFor, type SystemSnapshot, type SystemState } from "@/lib/estado";
+import { planHeadline, type PlanState } from "@/lib/plan-estado";
+import { CheckoutReturn } from "@/components/agencia/checkout-return";
 import type { Centro } from "@/server/agencia/estado";
 import type { getOverview } from "@/server/overview";
 import type { ReadinessResponse } from "@/server/readiness";
@@ -21,12 +23,13 @@ type Overview = Awaited<ReturnType<typeof getOverview>>;
 const STATES: SystemState[] = ["activo", "atendiendo", "atencion", "pausado"];
 
 /** Qué dice el botón según adónde lleva el estado. */
-function actionLabel(snapshot: SystemSnapshot): string | null {
+function actionLabel(snapshot: SystemSnapshot, plan: PlanState): string | null {
   switch (snapshot.href) {
     case "/settings/whatsapp":
       return snapshot.whatsapp.status === "missing" ? "Conectar WhatsApp" : "Reconectar WhatsApp";
     case "/settings/billing":
-      return "Ver mi plan";
+      // Un solo camino: pagar cuando falta un plan, actualizar el pago cuando falló.
+      return plan.kind === "payment_failed" ? "Actualizar pago" : "Elegir plan";
     case "/agent":
       return "Encender el agente";
     case "/inbox":
@@ -48,6 +51,7 @@ export function ControlCenter({
   readiness,
   pro,
   billingNotice,
+  checkoutReturn = false,
   businessName,
   userName,
   owner,
@@ -60,6 +64,8 @@ export function ControlCenter({
   /** Ventas, Agenda y Equipo (plan Completo activo). */
   pro: boolean;
   billingNotice?: string | null;
+  /** Vuelve de Checkout (`?billing=success`): Inicio espera la confirmación y se actualiza sola. */
+  checkoutReturn?: boolean;
   businessName: string;
   userName: string;
   owner: boolean;
@@ -98,7 +104,7 @@ export function ControlCenter({
     );
   }
   const state = snapshot.state;
-  const action = actionLabel(snapshot);
+  const action = actionLabel(snapshot, centro.plan);
   const tz = centro.timezone;
   const firstName = userName.trim().split(/\s+/)[0];
   const today = new Intl.DateTimeFormat("es", { weekday: "long", day: "numeric", month: "long", timeZone: tz }).format(new Date());
@@ -123,6 +129,9 @@ export function ControlCenter({
   return (
     <div className="h-full overflow-y-auto bg-subtle">
       <div className="mx-auto w-full max-w-[1160px] px-4 pb-16 pt-6 md:px-8 md:pt-10">
+        {checkoutReturn && (
+          <CheckoutReturn settled={centro.plan.hasSubscription && centro.plan.agentAllowed} />
+        )}
         {billingNotice && (
           <p role="status" className="mb-6 rounded-md border border-info-soft bg-info-tint px-4 py-3 text-sm leading-relaxed text-info-text">
             {billingNotice}
@@ -169,6 +178,8 @@ export function ControlCenter({
               </Link>
             )}
           </div>
+
+          <PlanStrip plan={centro.plan} timezone={tz} owner={owner} />
 
           <DayLine day={centro.day} timezone={tz} owner={owner} productLabel={productLabel} />
 
@@ -245,6 +256,59 @@ export function ControlCenter({
 
         {owner && readiness && <Readiness readiness={readiness} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * La prueba gratis y el plan por cancelarse, en una línea: cuánto queda y la
+ * única acción. Lo que ya frena al agente (prueba vencida, tope, cobro fallido)
+ * no sale acá: lo dice el estado de arriba, con su botón.
+ */
+function PlanStrip({ plan, timezone, owner }: { plan: PlanState; timezone: string; owner: boolean }) {
+  const trial = plan.kind === "trial" || plan.kind === "trial_ending";
+  if (!trial && plan.kind !== "cancelling") return null;
+  const ending = plan.kind === "trial_ending";
+  const pct = plan.replies ? Math.round((plan.replies.used / plan.replies.cap) * 100) : 0;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b px-5 py-4 md:px-7">
+      <div className="min-w-0">
+        <p className="flex items-center gap-2.5 text-[15px] leading-relaxed text-text-2">
+          {ending && (
+            <>
+              <StateDot state="atencion" size={9} decorative />
+              <span className="font-semibold text-foreground">Termina pronto</span>
+            </>
+          )}
+          <span suppressHydrationWarning>{planHeadline(plan, timezone)}</span>
+        </p>
+        {trial && plan.replies && (
+          <div className="mt-2 flex items-center gap-3">
+            <div
+              role="progressbar"
+              aria-label="Respuestas de la prueba usadas"
+              aria-valuemin={0}
+              aria-valuemax={plan.replies.cap}
+              aria-valuenow={plan.replies.used}
+              className="h-1.5 w-40 overflow-hidden rounded-full bg-[var(--ground-3)]"
+            >
+              <div className="h-full rounded-full bg-foreground" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="font-mono text-[11px] tabular-nums text-text-3">
+              {plan.replies.used}/{plan.replies.cap} respuestas
+            </span>
+          </div>
+        )}
+      </div>
+      {owner && (
+        <Link
+          href="/settings/billing"
+          className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
+        >
+          {plan.kind === "cancelling" ? "Gestionar plan" : "Elegir plan"}
+          <ArrowRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+        </Link>
+      )}
     </div>
   );
 }

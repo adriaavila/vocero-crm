@@ -21,7 +21,8 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
   const returnOrigin = organization.slug ? tenantOrigin(organization.slug, request) : appOrigin(request);
   const portal = await stripe.billingPortal.sessions.create({
     customer: billing.customerId,
-    return_url: `${returnOrigin}/overview`,
+    // Vuelve a Facturación: ahí se ve el cambio (plan, cancelación, pago).
+    return_url: `${returnOrigin}/settings/billing?billing=portal`,
   });
   return Response.json({ url: portal.url });
 });

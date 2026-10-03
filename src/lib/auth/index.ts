@@ -186,7 +186,9 @@ function createAuth() {
         if (ctx.path === "/sign-up/email") {
           const host =
             ctx.headers?.get("x-forwarded-host") ?? ctx.headers?.get("host");
-          if (isAllokSaaSMode() && !isSaaSAppHost(host)) {
+          // Un alta interna (el dueño suma a su equipo desde `/api/settings/team`)
+          // no trae host de petición y no es un registro público: no se rechaza.
+          if (isAllokSaaSMode() && !isInternalSignup() && !isSaaSAppHost(host)) {
             throw new APIError("FORBIDDEN", {
               // El prefijo "El registro" es lo que el formulario reconoce
               // (register-form.tsx) para mostrar esto tal cual en vez de un

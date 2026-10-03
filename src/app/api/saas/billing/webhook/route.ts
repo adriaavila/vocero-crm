@@ -2,11 +2,13 @@ import Stripe from "stripe";
 import {
   getOrganizationBilling,
   hasRememberedBillingEvent,
+  invoiceSubscriptionId,
   isCurrentOrFirstSubscriptionEvent,
   planForPriceId,
   rememberBillingEvent,
   saveOrganizationBilling,
   statusFromStripe,
+  subscriptionEndsAtPeriodEnd,
   stripeForSaaS,
   webhookSecretForSaaS,
 } from "@/server/saas/billing";
@@ -95,7 +97,7 @@ export async function POST(request: Request) {
     const subscription = event.data.object as Stripe.Subscription;
     const priceId = subscription.items.data[0]?.price.id ?? null;
     const current = await getOrganizationBilling(organizationId);
-    if (!isCurrentOrFirstSubscriptionEvent(current, subscription.id)) {
+    if (!isCurrentOrFirstSubscriptionEvent(current, subscription.id, event.type)) {
       return Response.json({ received: true, ignored: true, stale_subscription: true });
     }
     await saveOrganizationBilling(organizationId, {
@@ -107,22 +109,19 @@ export async function POST(request: Request) {
       currentPeriodEnd: subscription.items.data[0]?.current_period_end
         ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
         : current.currentPeriodEnd,
-      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      cancelAtPeriodEnd: subscriptionEndsAtPeriodEnd(subscription, event.created * 1000),
       updatedAt: new Date(event.created * 1000).toISOString(),
     });
   } else {
     const invoice = event.data.object as Stripe.Invoice;
     const invoiceData = invoice as unknown as {
       customer?: string | Stripe.Customer | Stripe.DeletedCustomer | null;
-      subscription?: string | Stripe.Subscription | null;
     };
     const current = await getOrganizationBilling(organizationId);
-    const invoiceSubscriptionId = typeof invoiceData.subscription === "string"
-      ? invoiceData.subscription
-      : null;
+    const invoiceSubscription = invoiceSubscriptionId(invoice);
     // Un cobro atrasado de una suscripción vieja no debe pausar una nueva que
     // ya está vigente tras un cambio de plan o recuperación.
-    if (current.subscriptionId && invoiceSubscriptionId && current.subscriptionId !== invoiceSubscriptionId) {
+    if (current.subscriptionId && invoiceSubscription && current.subscriptionId !== invoiceSubscription) {
       return Response.json({ received: true, ignored: true, stale_subscription: true });
     }
     await saveOrganizationBilling(organizationId, {
@@ -130,7 +129,7 @@ export async function POST(request: Request) {
         ? "canceled"
         : event.type === "invoice.paid" ? "active" : "past_due",
       customerId: typeof invoiceData.customer === "string" ? invoiceData.customer : current.customerId,
-      subscriptionId: typeof invoiceData.subscription === "string" ? invoiceData.subscription : current.subscriptionId,
+      subscriptionId: invoiceSubscription ?? current.subscriptionId,
       updatedAt: new Date(event.created * 1000).toISOString(),
     });
   }

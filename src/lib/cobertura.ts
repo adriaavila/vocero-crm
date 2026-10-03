@@ -60,10 +60,15 @@ export function gaps(spans: Span[]): Span[] {
   return out;
 }
 
-/** Quién contesta ese día. Sin horario guardado, o «Todo el día» sin Pro, el agente calla. */
+/**
+ * Quién contesta ese día. Sin horario guardado el agente calla. «Todo el día»
+ * es de Completo: con Esencial (se bajó de plan, o eligió «todo el día» durante
+ * la prueba) el agente contesta solo fuera del horario, como promete ese plan,
+ * en vez de quedarse mudo con el plan pagado.
+ */
 export function coverage(week: Week, mode: ResponseMode, pro: boolean, day: WeekdayKey): { team: Span[]; agent: Span[] } {
   const team = teamSpans(week, day);
-  if (mode === "all_day") return { team, agent: pro ? [[0, DAY]] : [] };
+  if (mode === "all_day" && pro) return { team, agent: [[0, DAY]] };
   const configured = WEEKDAYS.some((d) => (week[d]?.length ?? 0) > 0);
   return { team, agent: configured ? gaps(team) : [] };
 }
