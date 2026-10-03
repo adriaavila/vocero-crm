@@ -1,4 +1,7 @@
+import { SETUP_STEP_META, SETUP_STEP_ORDER, type SetupStepKey } from "@/lib/setup-steps";
 import { getReadiness, type ReadinessResponse, type ReadinessStep } from "@/server/readiness";
+
+export { SETUP_STEP_ORDER, type SetupStepKey };
 
 /**
  * Capa de agencia: UN solo modelo de avance para «poner a trabajar al agente».
@@ -12,16 +15,6 @@ import { getReadiness, type ReadinessResponse, type ReadinessStep } from "@/serv
  * Es puro sobre `ReadinessResponse` a propósito: Inicio puede llamarlo con la
  * preparación que ya cargó, sin otra consulta.
  */
-
-export const SETUP_STEP_ORDER = ["whatsapp", "negocio", "probar", "activar"] as const;
-export type SetupStepKey = (typeof SETUP_STEP_ORDER)[number];
-
-const STEP_META: Record<SetupStepKey, { label: string; href: string }> = {
-  whatsapp: { label: "Conectar WhatsApp", href: "/settings/whatsapp" },
-  negocio: { label: "Tu negocio", href: "/agent" },
-  probar: { label: "Probar", href: "/lab" },
-  activar: { label: "Activar", href: "/agent#activar" },
-};
 
 export type SetupStep = {
   key: SetupStepKey;
@@ -66,7 +59,7 @@ export function deriveSetupProgress(readiness: ReadinessResponse): SetupProgress
     probar: complete(readiness, "simulation"),
     activar: readiness.agentEnabled,
   };
-  const steps = SETUP_STEP_ORDER.map((key) => ({ key, ...STEP_META[key], done: done[key] }));
+  const steps = SETUP_STEP_ORDER.map((key) => ({ key, ...SETUP_STEP_META[key], done: done[key] }));
   return {
     steps,
     current: steps.find((step) => !step.done)?.key ?? null,

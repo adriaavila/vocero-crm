@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Check, ShieldCheck } from "lucide-react";
+import { ArrowRight, ShieldCheck } from "lucide-react";
+import { StateDot } from "@/components/agencia/allok/mark";
+import { SETUP_STEP_META, SETUP_STEP_ORDER } from "@/lib/setup-steps";
 import { signUp } from "@/lib/auth/client";
 import { isSaaSPlan, PLAN_CATALOG } from "@/lib/saas-plans";
 import type { SaaSPlan } from "@/server/saas/billing";
@@ -158,7 +160,6 @@ export default function RegisterForm({
   return (
     <Card className="shadow-md">
       <CardHeader>
-        <div className="mb-2 flex items-center justify-between gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3"><span className="flex items-center gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] text-brand-fg">1</span> Tu espacio</span><span className="normal-case tracking-normal text-text-4">1 de 6</span></div>
         <CardTitle>Empieza con tu negocio</CardTitle>
         <CardDescription>
           En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar {brand.Name}.
@@ -218,8 +219,21 @@ export default function RegisterForm({
           <Button type="submit" className="min-h-11 w-full" disabled={loading}>
             {loading ? "Creando tu espacio…" : <>Continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
           </Button>
-          <div className="grid gap-2 rounded-lg border bg-subtle p-3 text-xs text-text-3"><p className="flex items-center gap-2 font-medium text-text-2"><Check className="h-3.5 w-3.5 text-success" /> Después conectas tu WhatsApp</p><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-success" /> Ajustas horarios e información</p><p className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-success" /> Pruebas antes de activar respuestas</p></div>
-          <p className="flex items-center justify-center gap-1.5 text-center text-xs leading-relaxed text-text-3"><ShieldCheck className="h-3.5 w-3.5 text-success" /> No se enviarán mensajes durante la configuración.</p>
+          <div className="rounded-lg border bg-subtle p-3">
+            <p className="kicker">Lo que sigue</p>
+            <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-text-2">
+              {SETUP_STEP_ORDER.map((key) => (
+                <li key={key} className="flex items-center gap-2">
+                  <StateDot state="pausado" size={8} decorative />
+                  {SETUP_STEP_META[key].label}
+                </li>
+              ))}
+            </ol>
+          </div>
+          <p className="flex items-start justify-center gap-1.5 text-center text-xs leading-relaxed text-text-3">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
+            Tu agente empieza en pausa: no le escribe a nadie hasta que tú lo actives.
+          </p>
           <p className="text-center text-sm text-muted-foreground">
             ¿Ya tienes cuenta?{" "}
             <Link href="/login" className="inline-flex min-h-11 items-center text-primary hover:underline">
