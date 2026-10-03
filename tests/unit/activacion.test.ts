@@ -143,3 +143,15 @@ describe("activationBlockers", () => {
     expect(await activationBlockers("org")).toEqual([]);
   });
 });
+
+describe("restrictionsOf", () => {
+  it("avisa de los límites de Avanzado que siguen puestos al activar", async () => {
+    const { restrictionsOf } = await load();
+    expect(restrictionsOf(undefined)).toEqual([]);
+    expect(restrictionsOf({ allowlistEnabled: false, allowedWaIds: [], activationEnabled: false })).toEqual([]);
+    expect(restrictionsOf({ allowlistEnabled: true, allowedWaIds: ["1"], activationEnabled: false })).toEqual([
+      "Por ahora solo responde a 1 número autorizado.",
+    ]);
+    expect(restrictionsOf({ allowlistEnabled: true, allowedWaIds: ["1", "2"], activationEnabled: true })).toHaveLength(2);
+  });
+});

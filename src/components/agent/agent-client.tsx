@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
-import { Clock3, Plus, Sparkles, Trash2 } from "lucide-react";
+import { ChevronRight, Clock3, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,8 +18,13 @@ import {
   type AgencyAiCredentials,
   type AgencyProfile,
 } from "@/components/agencia/agent-agency-cards";
-import { useActivationGate } from "@/components/agencia/activation-gate";
+import { useSetup } from "@/components/agencia/activation-gate";
+import { ActivarSection } from "@/components/agencia/activar";
 import { AgentWeek } from "@/components/agencia/allok/agent-week";
+import { SetupProgressNav } from "@/components/agencia/setup-progress";
+import { TuNegocio } from "@/components/agencia/tu-negocio";
+import { postKbEntry, saveResult, type SaveResult } from "@/lib/negocio";
+import type { SetupProgress } from "@/server/agencia/setup-progress";
 
 type Profile = {
   enabled: boolean;
@@ -43,6 +48,7 @@ export function AgentClient({
   externalBrainAlwaysOn = false,
   brandName = "Allok",
   brandNameLower = "allok",
+  initialProgress = null,
 }: {
   saasMode?: boolean;
   /**
@@ -56,6 +62,8 @@ export function AgentClient({
   brandName?: string;
   /** "allok" / "Rei", mención dentro de una oración (allok es en minúscula). */
   brandNameLower?: string;
+  /** El avance de la puesta en marcha, resuelto en el servidor. */
+  initialProgress?: SetupProgress | null;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [aiConfigured, setAiConfigured] = useState(true);
@@ -64,11 +72,8 @@ export function AgentClient({
   const [kbSize, setKbSize] = useState<{ chars: number; warnAt: number; warning: boolean } | null>(null);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const { toggle, gate } = useActivationGate({
-    enabled: profile?.enabled ?? false,
-    strict: saasMode,
-    onConfirm: (enabled) => void saveProfile({ enabled }),
-  });
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const { progress, gate, reload: reloadSetup, retry: retrySetup } = useSetup(initialProgress);
 
   const refetch = useCallback(async () => {
     const [p, kb, size, credentials] = await Promise.all([
@@ -84,11 +89,37 @@ export function AgentClient({
     if (kb) setEntries(kb.entries);
     if (size) setKbSize(size);
     if (credentials?.credentials) setAiCredentials(credentials.credentials);
-  }, []);
+    // Lo que se guardó cambia qué falta para activar y qué paso toca.
+    void reloadSetup();
+  }, [reloadSetup]);
 
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // Los enlaces de «qué falta» apuntan a #avanzado, #horario, #negocio o
+  // #activar: con #avanzado hay que abrir el cajón para que el enlace lleve
+  // a algo.
+  useEffect(() => {
+    const open = () => {
+      if (window.location.hash === "#avanzado") setAdvancedOpen(true);
+    };
+    open();
+    window.addEventListener("hashchange", open);
+    return () => window.removeEventListener("hashchange", open);
+  }, []);
+
+  // Un enlace con ancla (/agent#activar) tiene que llegar a su sitio, y el
+  // sitio se mueve mientras cargan el horario y la lectura de «Activar»: el
+  // salto se hace UNA vez, cuando ya no queda nada por cargar encima.
+  const ready = profile !== null;
+  const [hoursLoaded, setHoursLoaded] = useState(false);
+  const jumped = useRef(false);
+  useEffect(() => {
+    if (jumped.current || !ready || gate.kind === "loading" || (saasMode && !hoursLoaded)) return;
+    jumped.current = true;
+    if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
+  }, [ready, gate.kind, hoursLoaded, saasMode]);
 
   if (!profile) {
     return (
@@ -97,25 +128,14 @@ export function AgentClient({
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-6 w-11 rounded-full" />
         </header>
-        <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
-          <div className="space-y-4 sm:space-y-6">
-            <Card>
-              <CardHeader>
-                <Skeleton className="h-5 w-32" />
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-20 w-full" />
-              </CardContent>
-            </Card>
-          </div>
+        <div className="max-w-3xl space-y-4 p-4 sm:space-y-6 sm:p-6">
           <Card>
             <CardHeader>
-              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-5 w-32" />
             </CardHeader>
             <CardContent className="space-y-3">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-20 w-full" />
             </CardContent>
           </Card>
         </div>
@@ -123,30 +143,69 @@ export function AgentClient({
     );
   }
 
+  async function putProfile(patch: Partial<Profile>): Promise<SaveResult> {
+    const result = await saveResult(() =>
+      fetch("/api/agent/profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      }),
+    );
+    if (result.ok) await refetch();
+    return result;
+  }
+
+  /** Guardado de las tarjetas de Avanzado: el error sale arriba de la página. */
   async function saveProfile(patch: Partial<Profile>): Promise<boolean> {
     setSaveError(null);
-    const response = await fetch("/api/agent/profile", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(patch),
-    }).catch(() => null);
-    if (!response?.ok) {
-      const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
-      setSaveError(payload?.error?.message ?? "No se pudo guardar el comportamiento del agente.");
+    const result = await putProfile(patch);
+    if (!result.ok) {
+      setSaveError(result.message === GENERIC_ERROR ? "No se pudo guardar el comportamiento del agente." : result.message);
       return false;
     }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-    await refetch();
     return true;
   }
+
+  /** Encender pasa por «Activar»: el servidor revisa lo mismo que la tarjeta. */
+  async function activate(): Promise<string | null> {
+    const result = await putProfile({ enabled: true });
+    if (!result.ok) {
+      // Pudo haber cambiado lo que falta: se vuelve a leer.
+      void reloadSetup();
+      return result.message;
+    }
+    return null;
+  }
+
+  async function pause() {
+    setSaveError(null);
+    const result = await putProfile({ enabled: false });
+    if (!result.ok) setSaveError(result.message);
+  }
+
+  /** El interruptor de arriba: apagar es inmediato; encender lleva a «Activar», que dice qué va a pasar. */
+  function onSwitch() {
+    if (!profile) return;
+    if (profile.enabled) {
+      void pause();
+      return;
+    }
+    const target = document.getElementById("activar");
+    const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target?.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+    target?.focus({ preventScroll: true });
+  }
+
+  const showProgress = progress?.active ?? false;
 
   return (
     <div className="h-full overflow-y-auto">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
-        <h2 className="text-[17px] font-bold tracking-tight">Agente de IA</h2>
+        <h2 className="text-[17px] font-bold tracking-tight">Tu agente</h2>
         <div className="flex items-center gap-3">
-          {saved && <span className="text-xs text-primary">Guardado ✓</span>}
+          {saved && <span role="status" className="text-xs text-primary">Guardado ✓</span>}
           <span className="text-sm text-muted-foreground">
             {profile.enabled ? "Encendido" : "Apagado"}
           </span>
@@ -154,64 +213,106 @@ export function AgentClient({
             checked={profile.enabled}
             label="Agente encendido"
             disabled={!aiConfigured}
-            onCheckedChange={() => void toggle()}
+            onCheckedChange={onSwitch}
           />
         </div>
       </header>
 
-      <p className="px-4 pt-3 text-sm text-muted-foreground sm:px-6">
-        {(() => {
-          // Un cerebro externo legado contesta con el interruptor apagado
-          // (no lo controla el CRM): sin esto, esta línea decía "Agente
-          // apagado" mientras ese bot seguía respondiendo de verdad.
-          const agentIsOn = profile.enabled || externalBrainAlwaysOn;
-          if (!agentIsOn) return "Agente apagado. Nadie responde automáticamente.";
-          const name = profile.name?.trim() || "Tu agente";
-          // El horario de atención solo existe como concepto en SaaS
-          // (canAgentRespondNow); una instancia dedicada contesta apenas
-          // llega el mensaje, así que prometer un horario ahí sería falso.
-          return saasMode
-            ? `${name} está encendido y responde según tu horario de atención.`
-            : `${name} está encendido y responde en tu WhatsApp.`;
-        })()}
-      </p>
-
-      {saveError && (
-        <p role="alert" className="mx-4 mt-4 rounded-lg border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text sm:mx-6 sm:mt-6">
-          {saveError}
+      <div className="max-w-3xl space-y-4 p-4 sm:space-y-6 sm:p-6">
+        <p className="text-sm text-muted-foreground">
+          {(() => {
+            // Un cerebro externo legado contesta con el interruptor apagado
+            // (no lo controla el CRM): sin esto, esta línea decía "Agente
+            // apagado" mientras ese bot seguía respondiendo de verdad.
+            const agentIsOn = profile.enabled || externalBrainAlwaysOn;
+            if (!agentIsOn) return "Agente apagado. Nadie responde automáticamente.";
+            const name = profile.name?.trim() || "Tu agente";
+            // El horario de atención solo existe como concepto en SaaS
+            // (canAgentRespondNow); una instancia dedicada contesta apenas
+            // llega el mensaje, así que prometer un horario ahí sería falso.
+            return saasMode
+              ? `${name} está encendido y responde según tu horario de atención.`
+              : `${name} está encendido y responde en tu WhatsApp.`;
+          })()}
         </p>
-      )}
 
-      {!aiConfigured && (
-        <div className="mx-4 mt-4 rounded-lg border border-brand-soft bg-brand-tint p-5 text-center sm:mx-6 sm:mt-6 sm:p-6">
-          <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
-          <p className="font-medium">Configura tu proveedor de IA para que Rei pueda responder</p>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Pega una clave de OpenRouter u OpenAI en la tarjeta <strong>Claves de IA</strong>.
-            Si tu plataforma ya tiene una clave configurada, aparecerá automáticamente como
-            disponible.
+        {progress && showProgress && <SetupProgressNav progress={progress} page="negocio" />}
+
+        {saveError && (
+          <p role="alert" className="rounded-lg border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
+            {saveError}
           </p>
-        </div>
-      )}
+        )}
 
-      <div className="grid gap-4 p-4 sm:gap-6 sm:p-6 lg:grid-cols-2">
-        <div className="space-y-4 sm:space-y-6">
-          <ProfileSection profile={profile} onSave={saveProfile} />
-          <AgencyAgentCards
-            profile={profile}
-            onSave={saveProfile}
-            credentials={aiCredentials}
-            onCredentialsChanged={() => void refetch()}
-            brandName={brandNameLower}
-          />
-          {saasMode && <BusinessHoursSection brandName={brandName} />}
-        </div>
-        <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
+        {!aiConfigured && (
+          <div className="rounded-lg border border-brand-soft bg-brand-tint p-5 text-center sm:p-6">
+            <Sparkles className="mx-auto mb-2 h-8 w-8 text-primary" />
+            <p className="font-medium">La IA todavía no está lista en tu cuenta</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+              Escríbenos y lo resolvemos. Si tienes tu propia clave de OpenRouter u OpenAI, también puedes
+              ponerla en <strong>Avanzado</strong>.
+            </p>
+          </div>
+        )}
+
+        <TuNegocio
+          entries={entries}
+          escalationRules={profile.escalationRules}
+          progress={progress}
+          saveHandoff={(rules) => putProfile({ escalationRules: rules })}
+          onChanged={refetch}
+        />
+
+        {saasMode && (
+          <div id="horario" className="scroll-mt-4">
+            <BusinessHoursSection brandName={brandName} onSaved={() => void reloadSetup()} onLoaded={() => setHoursLoaded(true)} />
+          </div>
+        )}
+
+        <ActivarSection
+          enabled={profile.enabled}
+          gate={gate}
+          onRetry={retrySetup}
+          onActivate={activate}
+          onPause={pause}
+        />
+
+        <details
+          id="avanzado"
+          open={advancedOpen}
+          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+          className="group scroll-mt-4 rounded-lg border border-border-strong bg-card"
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 [&::-webkit-details-marker]:hidden">
+            <span>
+              <span className="block text-[16px] font-bold tracking-tight">Avanzado</span>
+              <span className="block text-sm text-muted-foreground">
+                Nombre, tono, saludo, instrucciones, clave de IA y números autorizados.
+              </span>
+            </span>
+            <ChevronRight
+              className="h-5 w-5 shrink-0 text-text-3 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="space-y-4 border-t border-border p-4 sm:space-y-6 sm:p-5">
+            <ProfileSection profile={profile} onSave={saveProfile} />
+            <AgencyAgentCards
+              profile={profile}
+              onSave={saveProfile}
+              credentials={aiCredentials}
+              onCredentialsChanged={() => void refetch()}
+              brandName={brandNameLower}
+            />
+            <KbSection entries={entries} kbSize={kbSize} onChanged={() => void refetch()} />
+          </div>
+        </details>
       </div>
-      {gate}
     </div>
   );
 }
+
+const GENERIC_ERROR = "No se pudo guardar. Revisa el texto y vuelve a intentarlo.";
 
 type BusinessDay = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 type BusinessInterval = { start: string; end: string };
@@ -231,7 +332,7 @@ const BUSINESS_DAYS: { key: BusinessDay; label: string; short: string }[] = [
   { key: "sun", label: "Domingo", short: "D" },
 ];
 
-function BusinessHoursSection({ brandName }: { brandName: string }) {
+function BusinessHoursSection({ brandName, onSaved, onLoaded }: { brandName: string; onSaved?: () => void; onLoaded?: () => void }) {
   const [settings, setSettings] = useState<BusinessHoursSettings | null>(null);
   const [canUseAllDay, setCanUseAllDay] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -249,7 +350,9 @@ function BusinessHoursSection({ brandName }: { brandName: string }) {
         setSettings(payload.settings);
         setCanUseAllDay(payload.canUseAllDay === true);
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "No se pudo cargar el horario."));
+      .catch((reason) => setError(reason instanceof Error ? reason.message : "No se pudo cargar el horario."))
+      .finally(() => onLoaded?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!settings) {
@@ -305,6 +408,7 @@ function BusinessHoursSection({ brandName }: { brandName: string }) {
     setSettings(payload.settings);
     setSaved(true);
     setSaving(false);
+    onSaved?.();
   }
 
   return (
@@ -336,8 +440,8 @@ function BusinessHoursSection({ brandName }: { brandName: string }) {
             const open = Boolean(interval);
             const allDay = interval?.start === "00:00" && interval?.end === "00:00";
             return <div key={day.key} className="flex flex-wrap items-center gap-2 py-1">
-              <button type="button" onClick={() => toggleDay(day.key)} aria-pressed={open} className={`flex h-9 w-24 items-center gap-2 rounded-md px-2 text-left text-sm font-medium ${open ? "bg-brand-tint text-brand-text" : "text-text-3 hover:bg-subtle"}`}><span className="grid h-5 w-5 place-items-center rounded-full border text-[10px]">{day.short}</span>{day.label}</button>
-              {open ? allDay ? <><span className="rounded-md bg-brand-tint px-3 py-2 text-sm font-semibold text-brand-text">24 horas</span><button type="button" onClick={() => setDayAllDay(day.key, false)} className="text-xs font-semibold text-text-3 hover:text-foreground">Definir horario</button></> : <><Input aria-label={`${day.label}: abre`} type="time" value={interval?.start ?? "09:00"} onChange={(event) => setDayTime(day.key, "start", event.target.value)} className="h-9 w-28" /><span className="text-xs text-text-3">a</span><Input aria-label={`${day.label}: cierra`} type="time" value={interval?.end ?? "18:00"} onChange={(event) => setDayTime(day.key, "end", event.target.value)} className="h-9 w-28" /><button type="button" onClick={() => setDayAllDay(day.key, true)} className="text-xs font-semibold text-brand-text hover:underline">24 h</button></> : <span className="text-sm text-text-3">Cerrado</span>}
+              <button type="button" onClick={() => toggleDay(day.key)} aria-pressed={open} className={`flex h-11 w-28 items-center gap-2 rounded-md px-2 text-left text-sm font-medium sm:h-9 sm:w-24 ${open ? "bg-brand-tint text-brand-text" : "text-text-3 hover:bg-subtle"}`}><span className="grid h-5 w-5 place-items-center rounded-full border text-[10px]">{day.short}</span>{day.label}</button>
+              {open ? allDay ? <><span className="rounded-md bg-brand-tint px-3 py-2 text-sm font-semibold text-brand-text">24 horas</span><button type="button" onClick={() => setDayAllDay(day.key, false)} className="inline-flex min-h-11 items-center text-xs font-semibold text-text-3 hover:text-foreground sm:min-h-9">Definir horario</button></> : <><Input aria-label={`${day.label}: abre`} type="time" value={interval?.start ?? "09:00"} onChange={(event) => setDayTime(day.key, "start", event.target.value)} className="h-11 w-36 sm:h-9 sm:w-28" /><span className="text-xs text-text-3">a</span><Input aria-label={`${day.label}: cierra`} type="time" value={interval?.end ?? "18:00"} onChange={(event) => setDayTime(day.key, "end", event.target.value)} className="h-11 w-36 sm:h-9 sm:w-28" /><button type="button" onClick={() => setDayAllDay(day.key, true)} className="inline-flex min-h-11 items-center text-xs font-semibold text-brand-text hover:underline sm:min-h-9">24 h</button></> : <span className="text-sm text-text-3">Cerrado</span>}
             </div>;
           })}
           <p className="mt-2 text-xs leading-5 text-text-3">Un cierre a las 00:00 termina al comenzar el día siguiente. Usa <strong className="font-semibold text-text-2">24 h</strong> para mantener ese día siempre abierto.</p>
@@ -360,6 +464,16 @@ function ProfileSection({
 }) {
   const [form, setForm] = useState(profile);
   useEffect(() => setForm(profile), [profile]);
+
+  // Solo se manda lo que el dueño cambió, nunca `enabled` ni los controles de
+  // piloto: guardar un tono no tiene por qué volver a encender (o a revisar la
+  // puesta en marcha de) un agente.
+  const changed: Partial<Profile> = {};
+  if (form.name.trim() !== profile.name.trim()) changed.name = form.name.trim();
+  for (const field of ["tone", "instructions", "escalationRules", "greeting"] as const) {
+    if ((form[field] ?? "").trim() !== (profile[field] ?? "").trim()) changed[field] = form[field] ?? "";
+  }
+  const dirty = Object.keys(changed).length > 0;
 
   return (
     <Card>
@@ -416,7 +530,7 @@ function ProfileSection({
             onChange={(e) => setForm({ ...form, greeting: e.target.value })}
           />
         </div>
-        <Button onClick={() => void onSave(form)}>Guardar comportamiento</Button>
+        <Button className="min-h-11" disabled={!dirty} onClick={() => void onSave(changed)}>Guardar comportamiento</Button>
       </CardContent>
     </Card>
   );
@@ -440,14 +554,9 @@ function KbSection({
   // antes se borraba igual y el paso "Añade información" seguía pendiente.
   async function saveEntry(body: Record<string, string>) {
     setError(null);
-    const response = await fetch("/api/kb", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }).catch(() => null);
-    if (response?.ok) return true;
-    const payload = (await response?.json().catch(() => null)) as { error?: { message?: string } } | null;
-    setError(payload?.error?.message ?? "No se pudo guardar. Revisa el texto y vuelve a intentarlo.");
+    const result = await postKbEntry(body);
+    if (result.ok) return true;
+    setError(result.message);
     return false;
   }
 
@@ -467,7 +576,12 @@ function KbSection({
   }
 
   async function remove(id: string) {
-    await fetch(`/api/kb/${id}`, { method: "DELETE" }).catch(() => null);
+    setError(null);
+    const result = await saveResult(() => fetch(`/api/kb/${id}`, { method: "DELETE" }));
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
     onChanged();
   }
 
@@ -476,10 +590,10 @@ function KbSection({
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Información del negocio</CardTitle>
+            <CardTitle>Toda la información guardada</CardTitle>
             <CardDescription>
-              La única fuente de verdad del agente: lo que no está aquí, no lo
-              afirma.
+              Los datos de «Tu negocio», las preguntas frecuentes y cualquier
+              texto suelto. Es lo único que tu agente afirma.
             </CardDescription>
           </div>
           {kbSize && (
@@ -549,6 +663,7 @@ function KbSection({
                 variant="ghost"
                 size="icon"
                 aria-label="Eliminar entrada"
+                className="h-11 w-11 shrink-0"
                 onClick={() => void remove(e.id)}
               >
                 <Trash2 className="h-4 w-4" />

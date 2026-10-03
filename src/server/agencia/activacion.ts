@@ -5,7 +5,7 @@ import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { describeAgentSchedule, type ScheduleDescription } from "@/server/agencia/horario-texto";
-import type { SetupStepKey } from "@/server/agencia/setup-progress";
+import type { SetupStepKey } from "@/lib/setup-steps";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import {
@@ -251,6 +251,12 @@ export type ActivationSummary = {
   schedule: ScheduleDescription | null;
   /** Cuándo el agente pasa la conversación a una persona, tal como lo escribió el dueño. */
   handoff: string | null;
+  /**
+   * Límites que el dueño dejó puestos en Avanzado y que cambian a quién le
+   * contesta el agente: encender no los quita, y no decirlo sería prometer más
+   * de lo que va a pasar.
+   */
+  restrictions: string[];
   /** Cuántos datos del negocio tiene el agente para responder. */
   knowledgeCount: number;
 };
@@ -258,6 +264,23 @@ export type ActivationSummary = {
 function publicBlocker(blocker: ActivationBlocker): PublicBlocker {
   const { code, step, title, detail, href, cta } = blocker;
   return { code, step, title, detail, href, cta };
+}
+
+export function restrictionsOf(
+  profile: { allowlistEnabled: boolean; allowedWaIds: string[]; activationEnabled: boolean } | undefined,
+): string[] {
+  if (!profile) return [];
+  const restrictions: string[] = [];
+  if (profile.allowlistEnabled) {
+    const n = profile.allowedWaIds.length;
+    restrictions.push(
+      n === 1 ? "Por ahora solo responde a 1 número autorizado." : `Por ahora solo responde a ${n} números autorizados.`,
+    );
+  }
+  if (profile.activationEnabled) {
+    restrictions.push("Solo empieza a responder cuando el cliente escribe uno de tus mensajes de activación.");
+  }
+  return restrictions;
 }
 
 /** Lo que muestra «Activar»: el número, el horario, qué hará el agente y qué falta. */
@@ -274,7 +297,12 @@ export async function getActivationSummary(
     getCredentialsByOrg(organizationId),
     getBusinessHours(organizationId),
     db
-      .select({ escalationRules: schema.agentProfile.escalationRules })
+      .select({
+        escalationRules: schema.agentProfile.escalationRules,
+        allowlistEnabled: schema.agentProfile.allowlistEnabled,
+        allowedWaIds: schema.agentProfile.allowedWaIds,
+        activationEnabled: schema.agentProfile.activationEnabled,
+      })
       .from(schema.agentProfile)
       .where(scoped(schema.agentProfile.organizationId, organizationId))
       .limit(1),
@@ -310,6 +338,7 @@ export async function getActivationSummary(
       : null,
     schedule: describeAgentSchedule(hours, now),
     handoff: profiles[0]?.escalationRules?.trim() || null,
+    restrictions: restrictionsOf(profiles[0]),
     knowledgeCount: kb[0]?.n ?? 0,
   };
 }
