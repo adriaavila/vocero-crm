@@ -241,13 +241,22 @@ export async function getOrCreateConversation(
   return existing;
 }
 
+/** Data spine: el evento crudo del que sale lo que se está procesando. */
+export type SpineContext = { rawEventId?: string };
+
 /**
  * Procesa el `value` de un cambio `messages` del webhook: mensajes entrantes
  * (idempotentes por wa_message_id) y actualizaciones de estado.
+ *
+ * Devuelve `unmatched` si algún estado era de un wamid que aún no existe
+ * (el raw_event queda para el replay); lo demás se procesó igual.
  */
-export async function processMessagesValue(value: WebhookValue): Promise<void> {
+export async function processMessagesValue(
+  value: WebhookValue,
+  ctx: SpineContext = {}
+): Promise<"processed" | "unmatched"> {
   const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) return;
+  if (!phoneNumberId) return "processed";
 
   const credentials = await getCredentialsByPhoneNumberId(phoneNumberId);
   if (!credentials) {
@@ -257,13 +266,16 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       `[webhook] evento para phone_number_id desconocido (${phoneNumberId}): ` +
         "guarda la conexión en Configuración → WhatsApp para recibir mensajes"
     );
-    return;
+    return "processed";
   }
 
   const organizationId = credentials.organizationId;
 
+  let unmatched = false;
   for (const status of value.statuses ?? []) {
-    await applyStatusUpdate(organizationId, status);
+    if ((await applyStatusUpdate(organizationId, status)) === "unmatched") {
+      unmatched = true;
+    }
   }
 
   let ingested = false;
@@ -291,6 +303,8 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       // 018: normalizado aquí, en el adaptador del canal; la ingesta no sabe
       // de qué forma lo mandó Meta.
       anuncio: anuncioDeWhatsapp(msg.referral),
+      replyToWaId: msg.context?.id ?? null,
+      rawEventId: ctx.rawEventId ?? null,
     });
     ingested = true;
   }
@@ -301,6 +315,7 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       console.error("[onboarding] no se pudo marcar el primer mensaje:", err)
     );
   }
+  return unmatched ? "unmatched" : "processed";
 }
 
 /**
@@ -308,21 +323,29 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
  * envió A MANO desde la app de WhatsApp Business del teléfono. Se registran
  * como salientes `origin='manual'` y pausan la IA (decisión del dueño
  * 2026-08-04). JAMÁS tocan la ventana de 24 h ni disparan al agente.
+ *
+ * Un echo que falla NO tumba el webhook (un 503 repetido por un echo malformado
+ * haría que Meta desactive la suscripción), pero tampoco se pierde: devuelve
+ * `failed` y el raw_event queda `failed` para el replay.
  */
-export async function processEchoesValue(value: WebhookValue): Promise<void> {
+export async function processEchoesValue(
+  value: WebhookValue,
+  ctx: SpineContext = {}
+): Promise<"processed" | "failed"> {
   const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) return;
+  if (!phoneNumberId) return "processed";
 
   const credentials = await getCredentialsByPhoneNumberId(phoneNumberId);
   if (!credentials) {
     console.warn(
       `[webhook] echo para phone_number_id desconocido (${phoneNumberId}): descartado`
     );
-    return;
+    return "processed";
   }
 
   // Meta documenta `message_echoes`; parser tolerante a `messages` (R1).
   const echoes = value.message_echoes ?? value.messages ?? [];
+  let failed = false;
   for (const echo of echoes) {
     if (!SUPPORTED_TYPES.has(echo.type)) continue;
     if (!echo.to) {
@@ -330,17 +353,20 @@ export async function processEchoesValue(value: WebhookValue): Promise<void> {
       continue;
     }
     try {
-      await ingestManualEcho(credentials.organizationId, echo);
+      await ingestManualEcho(credentials.organizationId, echo, ctx.rawEventId ?? null);
     } catch (err) {
       // Un echo malformado jamás tumba el webhook (edge case del spec).
       console.error(`[webhook] error procesando echo ${echo.id}:`, err);
+      failed = true;
     }
   }
+  return failed ? "failed" : "processed";
 }
 
 async function ingestManualEcho(
   organizationId: string,
-  echo: WebhookMessage
+  echo: WebhookMessage,
+  rawEventId: string | null
 ): Promise<void> {
   const db = getDb();
   const identity = normalizeMx(echo.to!);
@@ -370,6 +396,10 @@ async function ingestManualEcho(
       status: "sent",
       origin: "manual",
       waTimestamp,
+      // El echo ya es un enviado: su marca de envío es la de WhatsApp.
+      sentAt: waTimestamp,
+      replyToWaId: echo.context?.id ?? null,
+      rawEventId,
     })
     .onConflictDoNothing({ target: [schema.message.waMessageId] })
     .returning();
@@ -434,6 +464,9 @@ export async function ingestInboundMessage(input: {
   threadRef?: string | null;
   /** 016/018: el anuncio que abrió la conversación, ya normalizado por el canal. */
   anuncio?: AnuncioDeOrigen | null;
+  /** Data spine: wamid al que responde (`context.id`) y evento crudo de origen. */
+  replyToWaId?: string | null;
+  rawEventId?: string | null;
 }): Promise<void> {
   const db = getDb();
   const { organizationId } = input;
@@ -487,6 +520,8 @@ export async function ingestInboundMessage(input: {
       text: input.text,
       status: "delivered",
       waTimestamp,
+      replyToWaId: input.replyToWaId ?? null,
+      rawEventId: input.rawEventId ?? null,
     })
     .onConflictDoNothing({ target: [schema.message.waMessageId] })
     .returning();

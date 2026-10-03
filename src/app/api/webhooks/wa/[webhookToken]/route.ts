@@ -1,27 +1,16 @@
 import { getEnv, isMockEnabled } from "@/lib/env";
-import {
-  isValidSignature,
-  isValidWebhookToken,
-  type WebhookPayload,
-  type WebhookValue,
-} from "@/server/inbox/webhook";
-import { processEchoesValue, processMessagesValue } from "@/server/inbox/ingest";
-import { processTemplateStatusValue } from "@/server/whatsapp/template-events";
-// Fork — Embedded Signup en la app (server/agencia/whatsapp-signup): estos dos
-// campos solo llegan tras pedir el sync de coexistencia y JAMÁS deben verse
-// como un mensaje nuevo (sin publish, sin turno de agente).
-import {
-  processHistoryValue,
-  processSmbAppStateSyncValue,
-  type HistoryFieldValue,
-  type SmbAppStateSyncValue,
-} from "@/server/agencia/whatsapp-signup/history-sync";
+import { isValidSignature, isValidWebhookToken } from "@/server/inbox/webhook";
+// Data spine (fork): guarda cada cambio crudo y lo procesa; ver
+// server/agencia/raw-events.ts. Ahí vive el orden de los `field` y cada
+// procesador (mensajes, echoes, plantillas, history, smb_app_state_sync).
+import { receiveWhatsAppWebhook, safeErrorText } from "@/server/agencia/raw-events";
 
 /**
  * Webhook público de WhatsApp (contrato webhook.md).
  * Capa 1: el segmento [webhookToken] debe coincidir (si no → 404 sin efectos).
  * Capa 2: firma x-hub-signature-256 obligatoria, salvo mocks locales.
  * El POST confirma solo después de persistir; un 503 hace que Meta reintente.
+ * Cada cambio queda guardado en `raw_event` antes de procesarse (data spine).
  */
 export const dynamic = "force-dynamic";
 
@@ -61,60 +50,16 @@ export async function POST(req: Request, { params }: Params) {
     return new Response(null, { status: 401 });
   }
 
-  let payload: WebhookPayload;
+  // Cada cambio se guarda crudo ANTES de procesarse; un cuerpo ilegible también
+  // (200 igualmente: Meta reintenta y termina desactivando). Un procesador que
+  // falla pide reintento con 503.
   try {
-    payload = JSON.parse(rawBody) as WebhookPayload;
-  } catch {
-    // body ilegible: 200 igualmente (Meta reintenta y termina desactivando)
-    return Response.json({ received: true });
-  }
-
-  try {
-    await processPayload(payload);
+    const { retry } = await receiveWhatsAppWebhook(rawBody);
+    if (retry) return Response.json({ received: false }, { status: 503 });
   } catch (err) {
-    console.error("[webhook] error procesando payload:", err);
+    console.error(`[webhook] error procesando payload: ${safeErrorText(err)}`);
     return Response.json({ received: false }, { status: 503 });
   }
 
   return Response.json({ received: true });
-}
-
-/**
- * `messages` PRIMERO, siempre — ante un payload mixto (Meta puede mandar
- * `messages` e `history`/`smb_app_state_sync` en el mismo POST), la
- * conversación en curso no puede esperar a que termine una importación de
- * historial. Los demás fields van después, en el orden en que llegaron.
- *
- * `history`/`smb_app_state_sync` NO llevan su propio try/catch: un error de
- * base de datos ahí debe subir y volver un 503 (Meta reintiende TODO el
- * payload; los inserts son idempotentes por `wa_message_id`, así que
- * reintentar es seguro). Esas funciones ya descartan por su cuenta lo que es
- * un problema de FORMA del payload (ver history-sync.ts) — lo único que llega
- * hasta aquí es un fallo real.
- */
-async function processPayload(payload: WebhookPayload): Promise<void> {
-  const changes: { entryId: string | null; field?: string; value: WebhookValue }[] = [];
-  for (const entry of payload.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      if (!change.value) continue;
-      changes.push({ entryId: entry.id ?? null, field: change.field, value: change.value });
-    }
-  }
-
-  for (const change of changes) {
-    if (change.field === "messages") await processMessagesValue(change.value);
-  }
-  for (const change of changes) {
-    if (change.field === "smb_message_echoes") {
-      // 008: mensajes enviados a mano desde la app del teléfono (coexistence)
-      await processEchoesValue(change.value);
-    } else if (change.field === "message_template_status_update") {
-      await processTemplateStatusValue(change.entryId, change.value);
-    } else if (change.field === "history") {
-      await processHistoryValue(change.value as unknown as HistoryFieldValue);
-    } else if (change.field === "smb_app_state_sync") {
-      await processSmbAppStateSyncValue(change.value as unknown as SmbAppStateSyncValue);
-    }
-    // otros fields: ignorar sin error
-  }
 }
