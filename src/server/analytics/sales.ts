@@ -90,8 +90,12 @@ export async function salesBlock(
   };
 }
 
-/** Prospectos que entraron: leads creados en el rango, sin los del Laboratorio. */
-async function contarNuevos(
+/**
+ * Prospectos que entraron: leads creados en el rango, sin los del Laboratorio.
+ * Fork — exportada para que Inicio (`agencia/centro-metricas.ts`) cuente los
+ * mismos leads que Resultados y las dos pantallas no se contradigan.
+ */
+export async function contarNuevos(
   organizationId: string,
   start: Date,
   end: Date
