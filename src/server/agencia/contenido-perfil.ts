@@ -7,6 +7,9 @@
  * y la prueba quedaba vieja: activar obligaba a probar otra vez sin que nada
  * hubiera cambiado. Ahora `updatedAt` es la versión del CONTENIDO y solo se
  * mueve cuando alguno de estos campos cambia de verdad.
+ *
+ * El proveedor de IA cuenta: otro modelo contesta distinto, así que una prueba
+ * hecha con uno no vale para el otro.
  */
 
 export const PROFILE_CONTENT_FIELDS = [
@@ -15,6 +18,7 @@ export const PROFILE_CONTENT_FIELDS = [
   "instructions",
   "escalationRules",
   "greeting",
+  "aiProvider",
 ] as const;
 
 export type ProfileContentField = (typeof PROFILE_CONTENT_FIELDS)[number];

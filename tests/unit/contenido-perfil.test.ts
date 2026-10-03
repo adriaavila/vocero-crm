@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { profileContentChanged } from "@/server/agencia/contenido-perfil";
 
 const stored = {
+  aiProvider: "openrouter",
   name: "Asistente",
   tone: "Cercano",
   instructions: "Vendemos pan.",
@@ -24,7 +25,7 @@ describe("profileContentChanged", () => {
     expect(profileContentChanged(stored, { instructions: "  Vendemos pan.  " })).toBe(false);
   });
 
-  it.each(["name", "tone", "instructions", "escalationRules", "greeting"] as const)(
+  it.each(["name", "tone", "instructions", "escalationRules", "greeting", "aiProvider"] as const)(
     "cambiar %s mueve el contenido",
     (field) => {
       expect(profileContentChanged(stored, { [field]: "Algo distinto" })).toBe(true);

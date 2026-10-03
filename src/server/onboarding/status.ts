@@ -1,5 +1,6 @@
 import { and, eq, gte, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
+import { scoped } from "@/lib/db/tenant";
 import { errorKeyForStep, type OnboardingErrorKey } from "@/lib/onboarding-errors";
 import { activateNumber, finishActivation, metaErrorSink } from "@/server/agencia/whatsapp-signup/complete";
 import { getPhoneNameStatus } from "@/server/agencia/whatsapp-signup/graph";
@@ -61,7 +62,7 @@ export async function getConnectionEvidence(
     .innerJoin(c, and(eq(c.id, m.conversationId), eq(c.organizationId, m.organizationId)))
     .where(
       and(
-        eq(m.organizationId, organizationId),
+        scoped(m.organizationId, organizationId),
         eq(c.channel, "whatsapp"),
         eq(c.isTest, false),
         ne(m.origin, "history"),
