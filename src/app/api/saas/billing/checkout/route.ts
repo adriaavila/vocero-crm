@@ -21,6 +21,8 @@ import { checkoutBodySchema } from "@/server/saas/checkout";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const LIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing", "past_due", "incomplete"]);
+
 export const POST = withOwner<[Request]>(async (session, request: Request) => {
   const parsed = await parseBody(request, checkoutBodySchema);
   if (!parsed.ok) return parsed.response;
@@ -45,6 +47,17 @@ export const POST = withOwner<[Request]>(async (session, request: Request) => {
   if (blocked === "payment_failed") {
     // Es la misma suscripción: un checkout nuevo la dejaría cobrando dos veces.
     return apiError(409, "billing_payment_failed", "Tu último cobro falló. Actualiza tu método de pago desde el portal de facturación.");
+  }
+
+  // La BD puede ir atrás de Stripe (webhook perdido o aún en camino, o un
+  // checkout abierto en otra pestaña): la fuente de verdad es Stripe. Una
+  // suscripción viva del mismo cliente significa que un checkout nuevo cobraría
+  // dos veces.
+  if (current.customerId) {
+    const existing = await stripe.subscriptions.list({ customer: current.customerId, status: "all", limit: 10 });
+    if (existing.data.some((subscription) => LIVE_SUBSCRIPTION_STATUSES.has(subscription.status))) {
+      return apiError(409, "subscription_exists", "Ya tienes una suscripción. Gestiónala en el portal.");
+    }
   }
 
   const customer = current.customerId
