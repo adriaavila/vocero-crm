@@ -1,4 +1,5 @@
 import { and, eq, gt, isNull, ne, not } from "drizzle-orm";
+import { reanudarSiVencio } from "@/server/agencia/pausa-manual";
 import { getDb, schema } from "@/lib/db";
 import { serializeFicha } from "@/server/bot/ficha";
 // Capa de agencia: allowlist del piloto y la cita que el lead ya tiene.
@@ -78,6 +79,14 @@ export async function buildBotContext(
   const row = rows[0];
   if (!row) return null;
   const { conversation, contact } = row;
+
+  // Fork — pausa que vence: un cerebro externo (Nea v1) puede leer el contexto
+  // antes de reenviar el webhook al CRM; el estado que lee es el de verdad.
+  if (await reanudarSiVencio(conversation)) {
+    conversation.aiEnabled = true;
+    conversation.handoffAt = null;
+    conversation.handoffReason = null;
+  }
 
   const proEnabled = await hasSaaSPlan(organizationId, "pro");
   const leadRows = proEnabled

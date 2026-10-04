@@ -852,6 +852,13 @@ export const agentProfile = pgTable(
     })
       .notNull()
       .default("outside_hours"),
+    /**
+     * Fork — la pausa por respuesta manual VENCE: cuántas horas sin que el
+     * dueño escriba desde el teléfono tarda la IA en retomar un chat que él
+     * tomó a mano. NULL = el valor por defecto (12, `pausa-manual.ts`);
+     * 0 = nunca, la reactiva él desde la conversación.
+     */
+    handoffResumeHours: integer("handoff_resume_hours"),
     activationEnabled: boolean("preset_only").notNull().default(false),
     activationMessages: jsonb("preset_replies")
       .$type<string[]>()

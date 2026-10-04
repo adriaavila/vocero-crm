@@ -19,6 +19,8 @@ const bodySchema = z.object({
   weeklyHours: z.record(z.string(), z.array(intervalSchema).max(4).optional()),
   timezone: z.string().trim().min(1).max(80),
   responseMode: z.enum(["outside_hours", "all_day"]),
+  // Fork — pausa que vence: 0 = nunca, null = default (12 h).
+  handoffResumeHours: z.number().int().min(0).max(168).nullable().optional(),
 });
 
 export const GET = withOwner(async (session) => {

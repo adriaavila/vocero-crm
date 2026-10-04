@@ -12,6 +12,7 @@ const monSat: BusinessHoursSettings = {
   weeklyHours: { mon: open(), tue: open(), wed: open(), thu: open(), fri: open(), sat: open() },
   timezone: "America/Caracas",
   responseMode: "outside_hours",
+  handoffResumeHours: null,
 };
 
 // 2026-08-10 es lunes. Caracas es UTC-4 todo el año.

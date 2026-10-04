@@ -922,6 +922,50 @@ async function main() {
     react.res.ok && conv008?.aiEnabled === true && !conv008?.handoffReason
   );
 
+  // Fork — la pausa por respuesta manual VENCE: la bandeja dice cuándo retoma
+  // la IA (12 h desde la última respuesta manual) y «nunca» lo apaga.
+  await api("/api/dev/wa-mock/echo", {
+    method: "POST",
+    body: JSON.stringify({
+      phoneNumberId: PN,
+      to: LEAD,
+      text: "otra vez te contesto yo",
+      // Único por corrida: un wamid repetido es un duplicado y no pausa nada.
+      waMessageId: `wamid.e2e.008.echo.4.${Date.now()}`,
+    }),
+  });
+  await sleep(700);
+  conv008 = await findConv008();
+  const horasHastaRetomar = conv008?.aiResumeAt && conv008?.handoffAt
+    ? (Date.parse(conv008.aiResumeAt) - Date.parse(conv008.handoffAt)) / 3_600_000
+    : null;
+  ok(
+    "una respuesta manual pausa la IA y anota cuándo retoma (12 h)",
+    conv008?.handoffReason === "manual_reply" && horasHastaRetomar === 12,
+    JSON.stringify({ reason: conv008?.handoffReason, aiResumeAt: conv008?.aiResumeAt, handoffAt: conv008?.handoffAt })
+  );
+  const horarioAntes = (await api("/api/settings/business-hours")).json?.settings;
+  const nunca = await api("/api/settings/business-hours", {
+    method: "PUT",
+    body: JSON.stringify({ ...horarioAntes, handoffResumeHours: 0 }),
+  });
+  conv008 = await findConv008();
+  ok(
+    "con «nunca» la bandeja no promete que la IA retome",
+    nunca.res.ok && nunca.json?.settings?.handoffResumeHours === 0 && conv008?.aiResumeAt === null,
+    JSON.stringify({ status: nunca.res.status, aiResumeAt: conv008?.aiResumeAt })
+  );
+  const fueraDeRango = await api("/api/settings/business-hours", {
+    method: "PUT",
+    body: JSON.stringify({ ...horarioAntes, handoffResumeHours: 999 }),
+  });
+  ok("el tope de horas se valida (999 → error de validación)", fueraDeRango.res.status === 422 || fueraDeRango.res.status === 400, String(fueraDeRango.res.status));
+  await api("/api/settings/business-hours", {
+    method: "PUT",
+    body: JSON.stringify({ ...horarioAntes, handoffResumeHours: null }),
+  });
+  await api(`/api/conversations/${conv008.id}`, { method: "PATCH", body: JSON.stringify({ reactivate: true }) });
+
   console.log("\n== 008: enviar adjuntos desde el composer (US2) ==");
   const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0xff, 0xd9]);
   const mediaForm = new FormData();

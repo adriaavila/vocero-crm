@@ -2,12 +2,15 @@ import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipeline";
+import { barrerPausasVencidas } from "@/server/agencia/pausa-manual";
 
 const POLL_MS = 1_000;
+/** Fork — pausa que vence: cada cuánto se reanudan las pausas manuales vencidas. */
+const SWEEP_MS = 60_000;
 const STALE_AFTER_MS = 10 * 60_000;
 const DEFAULT_CONCURRENCY = 4;
 
-type WorkerState = { started: boolean; id: string; inFlight: number };
+type WorkerState = { started: boolean; id: string; inFlight: number; sweptAt?: number };
 
 const globalForWorker = globalThis as unknown as {
   __voceroAgentWorker?: WorkerState;
@@ -51,6 +54,13 @@ export function kickAgentWorker(): void {
 async function poll(state: WorkerState): Promise<void> {
   try {
     await markStaleJobs();
+    if (Date.now() - (state.sweptAt ?? 0) >= SWEEP_MS) {
+      state.sweptAt = Date.now();
+      // Con su propio catch: un barrido roto no deja trabajos sin reclamar.
+      await barrerPausasVencidas().catch((error) => {
+        console.error("[agent-worker] barrido de pausas falló:", error);
+      });
+    }
     await claimUpToCapacity(state);
   } catch (error) {
     console.error("[agent-worker] poll falló:", error);

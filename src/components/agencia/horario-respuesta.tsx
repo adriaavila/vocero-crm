@@ -6,6 +6,7 @@ import { AgentWeek } from "@/components/agencia/allok/agent-week";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TimezoneSelect } from "@/components/ui/timezone-select";
 import { describeTeamHours, timezoneLabel } from "@/lib/horario";
@@ -28,7 +29,29 @@ export type HoursSettings = {
   weeklyHours: Partial<Record<WeekdayKey, Interval[]>>;
   timezone: string;
   responseMode: "outside_hours" | "all_day";
+  /** Fork — pausa que vence: null = 12 h (default), 0 = nunca. */
+  handoffResumeHours: number | null;
 };
+
+const DEFAULT_RESUME_HOURS = 12;
+const RESUME_CHOICES = [1, 2, 4, 8, 12, 24, 48, 0];
+
+/** Completa la oración del rótulo: «Si respondes desde el teléfono, la IA retoma el chat…». */
+function resumeLabel(hours: number): string {
+  if (hours === 0) return "Nunca: la reactivas tú";
+  if (hours === 1) return "1 hora después";
+  return `${hours} horas después${hours === DEFAULT_RESUME_HOURS ? " (recomendado)" : ""}`;
+}
+
+function resumeHint(s: HoursSettings): string {
+  const hours = s.handoffResumeHours ?? DEFAULT_RESUME_HOURS;
+  if (hours === 0) return "Cada chat que tomes desde el teléfono queda tuyo hasta que lo reactives desde la conversación.";
+  const turno =
+    s.responseMode === "outside_hours" && Object.keys(s.weeklyHours).length > 0
+      ? " Si tu horario cierra antes, vuelve al cerrar."
+      : "";
+  return `Cuenta desde tu último mensaje en ese chat, desde el teléfono o desde aquí: mientras escribes, la IA no interrumpe.${turno}`;
+}
 
 // En el teléfono el selector de hora es la rueda del sistema: el icono del
 // reloj sobra y es lo que partía la fila a 375px.
@@ -47,7 +70,7 @@ const DAYS: { key: WeekdayKey; label: string; short: string }[] = [
 
 /** Una firma estable: dos horarios iguales dan la misma, sin importar el orden de las claves. */
 export function hoursSignature(s: HoursSettings): string {
-  return JSON.stringify([WEEKDAYS.map((day) => s.weeklyHours[day] ?? []), s.timezone, s.responseMode]);
+  return JSON.stringify([WEEKDAYS.map((day) => s.weeklyHours[day] ?? []), s.timezone, s.responseMode, s.handoffResumeHours ?? null]);
 }
 
 /** «Atiendes tú lunes a sábado, de 09:00 a 18:00 · Hora de Caracas», o lo que corresponda. */
@@ -292,6 +315,34 @@ export function HorarioRespuesta({
             </p>
           </div>
         )}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="handoff-resume">Si respondes desde el teléfono, la IA retoma el chat</Label>
+          <Select
+            value={String(current.handoffResumeHours ?? DEFAULT_RESUME_HOURS)}
+            onValueChange={(value) => setSettings({ ...current, handoffResumeHours: Number(value) })}
+            disabled={disabled}
+          >
+            <SelectTrigger id="handoff-resume" className="w-full max-sm:h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[
+                ...RESUME_CHOICES,
+                ...(current.handoffResumeHours !== null && !RESUME_CHOICES.includes(current.handoffResumeHours)
+                  ? [current.handoffResumeHours]
+                  : []),
+              ]
+                .sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
+                .map((hours) => (
+                  <SelectItem key={hours} value={String(hours)}>
+                    {resumeLabel(hours)}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs leading-5 text-text-3">{resumeHint(current)}</p>
+        </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="business-timezone">Zona horaria</Label>

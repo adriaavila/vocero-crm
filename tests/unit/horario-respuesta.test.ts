@@ -6,6 +6,7 @@ const monSat: HoursSettings = {
   weeklyHours: { mon: open(), tue: open(), wed: open(), thu: open(), fri: open(), sat: open() },
   timezone: "America/Caracas",
   responseMode: "outside_hours",
+  handoffResumeHours: null,
 };
 
 describe("hoursSummary: la frase que queda al plegar el horario", () => {
@@ -27,6 +28,7 @@ describe("hoursSignature: detecta cambios reales, no de orden", () => {
     const shuffled: HoursSettings = {
       responseMode: "outside_hours",
       timezone: "America/Caracas",
+      handoffResumeHours: null,
       weeklyHours: { sat: open(), fri: open(), thu: open(), wed: open(), tue: open(), mon: open() },
     };
     expect(hoursSignature(shuffled)).toBe(hoursSignature(monSat));

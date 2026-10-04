@@ -6,6 +6,7 @@ import {
   isValidTimeZone,
   weekdayKeyOf,
   WEEKDAYS,
+  zonedWallClockToUtc,
   type WeekdayKey,
 } from "@/lib/time/slots";
 import { hasSaaSPlan } from "@/server/agencia/entitlements";
@@ -19,13 +20,30 @@ export type BusinessHoursSettings = {
   weeklyHours: WeeklyBusinessHours;
   timezone: string;
   responseMode: BusinessResponseMode;
+  /**
+   * Fork — pausa que vence: horas sin que el dueño escriba desde el teléfono
+   * antes de que la IA retome el chat. null = default (12), 0 = nunca.
+   * Ver `server/agencia/pausa-manual.ts`.
+   */
+  handoffResumeHours: number | null;
 };
 
 export const DEFAULT_BUSINESS_HOURS: BusinessHoursSettings = {
   weeklyHours: {},
   timezone: "America/Mexico_City",
   responseMode: "outside_hours",
+  handoffResumeHours: null,
 };
+
+/** Tope del selector: una semana. Más que eso es "nunca", y para eso está el 0. */
+export const MAX_HANDOFF_RESUME_HOURS = 168;
+
+export function normalizeHandoffResumeHours(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > MAX_HANDOFF_RESUME_HOURS) return null;
+  return n;
+}
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -54,6 +72,7 @@ export function businessHoursFromProfile(profile: {
   businessHours?: unknown;
   businessTimezone?: string;
   responseMode?: string;
+  handoffResumeHours?: number | null;
 }): BusinessHoursSettings {
   const timezone = profile.businessTimezone ?? "";
   return {
@@ -62,6 +81,7 @@ export function businessHoursFromProfile(profile: {
       ? timezone
       : DEFAULT_BUSINESS_HOURS.timezone,
     responseMode: profile.responseMode === "all_day" ? "all_day" : "outside_hours",
+    handoffResumeHours: normalizeHandoffResumeHours(profile.handoffResumeHours),
   };
 }
 
@@ -97,11 +117,61 @@ export function isOutsideBusinessHours(
   return hasConfiguredBusinessHours(settings) && !isBusinessHoursOpen(settings, now);
 }
 
+/**
+ * Fork — pausa que vence: el instante en que CIERRA el tramo del horario del
+ * equipo que está abierto en `from` (= cuando empieza el turno del agente en
+ * modo fuera de horario). Camina los tramos contiguos (09–13 y 13–18 cierran
+ * a las 18). null si en `from` el equipo no atiende, si el modo es todo el
+ * día, o si el horario nunca cierra (24 h todos los días).
+ */
+export function businessHoursCloseAfter(
+  settings: BusinessHoursSettings,
+  from: Date,
+): Date | null {
+  if (settings.responseMode === "all_day" || !hasConfiguredBusinessHours(settings)) return null;
+  if (!isBusinessHoursOpen(settings, from)) return null;
+  const tz = settings.timezone;
+  let cursor = from;
+  for (let step = 0; step < 16; step++) {
+    const day = dayIsoInTz(cursor, tz);
+    const weekday = weekdayKeyOf(day, tz);
+    const previousDay = weekdayKeyOf(addDaysISO(day, -1), tz);
+    if (!weekday || !previousDay) return null;
+    const minute = localMinute(cursor, tz);
+    let close: Date | null = null;
+    for (const interval of settings.weeklyHours[weekday] ?? []) {
+      if (isAllDayInterval(interval)) {
+        close = zonedWallClockToUtc(addDaysISO(day, 1), "00:00", tz);
+        break;
+      }
+      if (intervalIsOpenNow(interval, minute)) {
+        close = intervalRunsPastMidnight(interval)
+          ? zonedWallClockToUtc(addDaysISO(day, 1), interval.end, tz)
+          : zonedWallClockToUtc(day, interval.end, tz);
+        break;
+      }
+    }
+    if (!close) {
+      for (const interval of settings.weeklyHours[previousDay] ?? []) {
+        if (intervalRunsPastMidnight(interval) && minute < toMinutes(interval.end)) {
+          close = zonedWallClockToUtc(day, interval.end, tz);
+          break;
+        }
+      }
+    }
+    if (!close || close.getTime() <= cursor.getTime()) return null;
+    if (!isBusinessHoursOpen(settings, close)) return close;
+    cursor = close; // el siguiente tramo empieza justo al cerrar éste: seguir
+  }
+  return null;
+}
+
 export async function getBusinessHours(organizationId: string): Promise<BusinessHoursSettings> {
   const profileFields = {
     businessHours: schema.agentProfile.businessHours,
     businessTimezone: schema.agentProfile.businessTimezone,
     responseMode: schema.agentProfile.responseMode,
+    handoffResumeHours: schema.agentProfile.handoffResumeHours,
   };
   const rows = await getDb()
     .select(profileFields)
@@ -133,12 +203,24 @@ export async function saveBusinessHours(
     throw new BusinessHoursError("Modo de respuesta desconocido");
   }
 
+  // undefined = no lo mandaron (se conserva); null = "usa el default".
+  const handoffResumeHours =
+    input.handoffResumeHours === undefined
+      ? current.handoffResumeHours
+      : normalizeHandoffResumeHours(input.handoffResumeHours);
+  if (input.handoffResumeHours != null && handoffResumeHours === null) {
+    throw new BusinessHoursError(
+      `Las horas hasta que la IA retoma van de 0 (nunca) a ${MAX_HANDOFF_RESUME_HOURS}`,
+    );
+  }
+
   const next: BusinessHoursSettings = {
     weeklyHours: normalizeBusinessHours(
       input.weeklyHours === undefined ? current.weeklyHours : input.weeklyHours,
     ),
     timezone,
     responseMode,
+    handoffResumeHours,
   };
   const updated = await getDb()
     .update(schema.agentProfile)
@@ -146,6 +228,7 @@ export async function saveBusinessHours(
       businessHours: next.weeklyHours,
       businessTimezone: next.timezone,
       responseMode: next.responseMode,
+      handoffResumeHours: next.handoffResumeHours,
       // Sin `updatedAt`: el horario no cambia lo que el agente dice, así que no
       // vuelve vieja la prueba (ver `server/agencia/contenido-perfil.ts`).
     })

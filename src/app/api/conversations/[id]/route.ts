@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withAuth } from "@/lib/api";
 import { publish } from "@/server/events/bus";
 import { serializeConversation, getConversation, updateConversation } from "@/server/inbox/queries";
+import { getBusinessHours } from "@/server/business-hours";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,8 @@ export const PATCH = withAuth(async (session, req: Request, ctx: Params) => {
       row.contact,
       null,
       null,
-      row.anuncio
+      row.anuncio,
+      await getBusinessHours(session.organizationId)
     );
     publish(session.organizationId, {
       type: "conversation.updated",

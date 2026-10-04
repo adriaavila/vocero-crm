@@ -17,6 +17,14 @@ export type ConversationDto = {
   windowOpen: boolean;
   windowRemainingMs: number;
   preview: string | null;
+  /**
+   * Fork — pausa que vence: cuándo retoma la IA un chat que el dueño tomó
+   * desde el teléfono (`handoffReason = manual_reply`). null si no es ese
+   * caso o si el negocio eligió "nunca".
+   */
+  aiResumeAt: string | null;
+  /** Por qué a esa hora: pasaron las horas del negocio, o cierra el horario del equipo. */
+  aiResumeBy: "hours" | "shift" | null;
   /** 018: el anuncio que abrió la conversación, para la marca de la lista. */
   anuncio: {
     headline: string | null;
