@@ -164,7 +164,9 @@ export async function canAgentRespondNow(organizationId: string, now = new Date(
   // durante la prueba) el agente contesta solo fuera del horario: el plan que
   // el dueño pagó, no un agente mudo (ver `coverage` en lib/cobertura).
   if (settings.responseMode === "all_day" && (await hasSaaSPlan(organizationId, "pro"))) return true;
-  return isOutsideBusinessHours(settings, now);
+  // `isOutsideBusinessHours` ve `all_day` como «siempre abierto» y devolvería
+  // false: Esencial se evalúa como `outside_hours` con el mismo horario.
+  return isOutsideBusinessHours({ ...settings, responseMode: "outside_hours" }, now);
 }
 
 function isBusinessInterval(value: unknown): value is BusinessInterval {
