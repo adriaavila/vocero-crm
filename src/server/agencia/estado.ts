@@ -7,9 +7,10 @@ import {
   type SystemState,
   type WhatsAppLink,
 } from "@/lib/estado";
-import { canAutomate } from "@/server/agencia/entitlements";
+import { getPlanState } from "@/server/agencia/plan-estado";
+import type { PlanState } from "@/lib/plan-estado";
 import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
-import { automationAccessFromMetadata, hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
+import { hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
@@ -38,7 +39,7 @@ export async function agentOn(organizationId: string): Promise<{ on: boolean; ti
 
 export async function getSystemState(organizationId: string, owner: boolean): Promise<SystemSnapshot> {
   const db = getDb();
-  const [creds, agent, jobs, billingActive] = await Promise.all([
+  const [creds, agent, jobs, plan] = await Promise.all([
     db
       .select({ status: schema.metaCredentials.status, phone: schema.metaCredentials.displayPhoneNumber })
       .from(schema.metaCredentials)
@@ -55,13 +56,18 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
           inArray(schema.agentJob.status, ["queued", "running"]),
         ),
       ),
-    canAutomate(organizationId),
+    getPlanState(organizationId),
   ]);
+  // El plan manda: un agente que el plan no deja contestar (prueba vencida,
+  // tope de la prueba, cobro fallido) no «está respondiendo» aunque esté
+  // encendido, y un cliente sin respuesta tiene que contar como espera.
+  const billingActive = plan.agentAllowed;
+  const agentLive = agent.on && billingActive;
 
   // LA regla de «esperando» es la de «Por dónde arrancar» (`prioridades.ts`):
   // el punto, la barra, el icono y el encabezado de Inicio cuentan lo mismo.
   // `light`: aquí solo importan los conteos, no el texto de las tarjetas.
-  const queue = await getPrioridades(organizationId, { agentOn: agent.on, light: true, limit: 0 });
+  const queue = await getPrioridades(organizationId, { agentOn: agentLive, light: true, limit: 0 });
   const waiting = queue.needsYou;
   // Un turno en cola es de una conversación que ya puede estar contada como
   // viva: se toma el mayor, no la suma, para no contar dos veces la misma.
@@ -69,7 +75,7 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   const whatsapp: WhatsAppLink = creds[0] ? creds[0].status : "missing";
 
   return {
-    ...systemState({ whatsapp, billingActive, agentOn: agent.on, waiting, working, owner }),
+    ...systemState({ whatsapp, billingActive, plan: plan.kind, agentOn: agent.on, waiting, working, owner }),
     whatsapp: { status: whatsapp, phone: creds[0]?.phone ?? null },
     waiting,
     working,
@@ -81,6 +87,8 @@ export type DayPoint = { id: string; contactId: string; name: string; state: Sys
 
 export type Centro = {
   timezone: string;
+  /** En qué punto del plan está el negocio (prueba, cobro fallido…): Inicio lo dice y ofrece la única acción. */
+  plan: PlanState;
   /** Inicio, «Hoy, hora por hora»: quién escribió y quién contesta cada minuto del día. */
   day: {
     points: DayPoint[];
@@ -118,7 +126,7 @@ export async function getCentro(organizationId: string, stateById: Record<string
   const now = Date.now();
   const today = dayIsoInTz(new Date(now), tz);
   const dayStart = zonedWallClockToUtc(today, "00:00", tz) ?? new Date(now - 24 * 3_600_000);
-  const [schedule, orgRows, todays] = await Promise.all([
+  const [schedule, orgRows, todays, plan] = await Promise.all([
     getBusinessHours(organizationId),
     getDb()
       .select({ metadata: schema.organization.metadata })
@@ -142,6 +150,7 @@ export async function getCentro(organizationId: string, stateById: Record<string
           gte(schema.conversation.lastInboundAt, dayStart),
         ),
       ),
+    getPlanState(organizationId),
   ]);
 
   // Un punto por conversación de hoy, en el minuto en que el cliente escribió
@@ -156,22 +165,24 @@ export async function getCentro(organizationId: string, stateById: Record<string
       minute: minuteInTz(c.lastInboundAt as Date, tz),
     }))
     .sort((a, b) => a.minute - b.minute);
-  const allDay = schedule.responseMode === "all_day";
   // Las mismas lecturas que los gates: canAutomate y hasSaaSPlan.
   const metadata = orgRows[0]?.metadata;
   const pro = hasPaidSaaSPlanFromMetadata(metadata, "pro");
+  // «Todo el día» es de Completo: con Esencial el agente contesta fuera del horario.
+  const allDay = schedule.responseMode === "all_day" && pro;
   const weekday = weekdayInTz(new Date(now), tz);
   const shifts = coverage(schedule.weeklyHours, schedule.responseMode, pro, weekday);
   const tomorrow = coverage(schedule.weeklyHours, schedule.responseMode, pro, nextDay(weekday)).team[0]?.[0] ?? null;
 
   return {
     timezone: tz,
+    plan,
     day: {
       points,
       ...shifts,
       tomorrow,
       agentOn: agent.on,
-      billingActive: automationAccessFromMetadata(metadata).allowed,
+      billingActive: plan.agentAllowed,
       configured: hasConfiguredBusinessHours(schedule),
       allDay,
     },

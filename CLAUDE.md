@@ -29,6 +29,16 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 
 ### Qué hace distinto este fork
 
+- **Todo negocio nuevo nace con el agente en pausa** (`server/agent/
+  default-profile.ts`), lo cree el alta pública o un admin; lo enciende el
+  dueño en «Activar». En allok el agente se llama «Asistente» (Rei conserva
+  «Rei»). Los negocios que ya existían no se tocan.
+- **La puesta en marcha son cuatro pasos** (Conectar WhatsApp, Tu negocio,
+  Probar, Activar), derivados de la preparación en `server/agencia/
+  setup-progress.ts`; `server/agencia/activacion.ts` es la ÚNICA lista de
+  bloqueos para activar (la usa la ruta que enciende y la pantalla «Activar»).
+  `agent_profile.updated_at` es la versión del CONTENIDO del agente: pausar o
+  encender no vuelve vieja la prueba.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.
@@ -130,6 +140,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | De qué anuncio llegó cada conversación (siempre visible) | `src/server/attribution/referral.ts` (normalización) · `creativo.ts` (copia de la imagen, solo hosts de Meta) · `store.ts` · tarjeta en `src/components/anuncio-origen.tsx` |
 | Los números de Resultados (ventas, agente, origen y anuncios, higiene) | `src/server/analytics/` (un módulo por sección; periodo en la zona del negocio en `period.ts`; exclusión del Laboratorio en `shared.ts`) · contratos y tasas en `src/lib/analytics.ts` · UI en `src/components/results/` · spec [019](specs/019-resultados/spec.md) |
 | La atribución de anuncios y el reporte a Meta | `src/server/attribution/` — el `ctwa_clid`, la CAPI y Ajustes → Anuncios detrás de la bandera `ATRIBUCION` (`flag.ts`) + `src/lib/meta/capi.ts` · guía: [docs/atribucion-capi.md](docs/atribucion-capi.md) |
+| El correo saliente (conector opcional Resend; hoy solo "olvidé mi contraseña") | `src/server/agencia/email.ts` (apagado sin `RESEND_API_KEY` + `EMAIL_FROM`) · `restablecer-contrasena.ts` · pantallas `src/app/(auth)/forgot-password` y `reset-password` · guía de encendido: [docs/autoservicio.md](docs/autoservicio.md) |
 | Datos durables del webhook (`raw_event`, replay) y decisiones del agente (`agent_decision`, veredicto) | `src/server/agencia/raw-events*.ts` · `decisions*.ts` · guía: [docs/data-spine.md](docs/data-spine.md) |
 | Inicio del SaaS (centro de mando): «Por dónde arrancar», cifras por periodo, «Pregúntale a allok» y «Cómo decidió el agente» | `src/server/agencia/prioridades.ts` (qué conversaciones esperan por una persona y en qué orden) · `centro-metricas.ts` (Hoy / 7 / 30 / 90 días en la zona del negocio, `?p=`) · `centro-ask.ts` + `/api/centro/ask` (resumen de la organización → `chatJson`, 20 al día) · `lib/centro.ts` y `lib/decisiones.ts` (frases puras) · UI en `src/components/agencia/centro/` y `allok/control-center.tsx` · `/decisiones` |
 | UI | `src/components/` + `src/app/(app)/` |

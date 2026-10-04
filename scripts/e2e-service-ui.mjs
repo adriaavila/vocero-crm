@@ -65,27 +65,33 @@ try {
    */
 
   await owner.request.put(`${base}/api/agent/profile`, { data: { enabled: false, greeting: "" } });
-  // El freno solo debe aparecer si de verdad falta algo. Se le pregunta a la
-  // misma fuente que consulta él, en vez de asumir el estado de la instancia:
-  // corriendo después de los demás guiones, la puesta en marcha puede estar
-  // ya completa y entonces NO advertir es lo correcto.
-  const readiness = await (await owner.request.get(`${base}/api/readiness`)).json();
-  const faltaAlgo = readiness.overall === "needs_attention";
+  // «Activar» solo debe advertir si de verdad falta algo. Se le pregunta a la
+  // misma fuente que consulta él (`/api/setup`, la lista de bloqueos del
+  // servidor), en vez de asumir el estado de la instancia: corriendo después de
+  // los demás guiones, la puesta en marcha puede estar ya completa y entonces
+  // NO advertir es lo correcto.
+  const setup = await (await owner.request.get(`${base}/api/setup`)).json();
+  const faltaAlgo = setup.activation.blockers.length > 0;
   await page.goto(`${base}/agent`, { waitUntil: "load", timeout: 90000 });
-  await page.getByRole("switch", { name: "Agente encendido" }).click();
-  // El freno consulta /api/readiness antes de abrir: hay que esperarlo, no
-  // preguntar en el mismo tick.
-  const advertencia = page.getByRole("dialog");
-  await advertencia.waitFor({ timeout: 10000 }).catch(() => {});
+  const activar = page.locator("#activar");
+  // La tarjeta lee /api/setup antes de ofrecer nada: hay que esperarla.
+  await activar.getByRole("button", { name: /Activar|Reintentar/ }).first().waitFor({ timeout: 30000 });
   check(
     faltaAlgo
-      ? "activar incompleto abre advertencia"
-      : "puesta en marcha completa: activar NO molesta",
-    (await advertencia.isVisible()) === faltaAlgo
+      ? "activar incompleto avisa qué falta (y ofrece activar de todas formas fuera del SaaS)"
+      : "puesta en marcha completa: activar no estorba",
+    faltaAlgo
+      ? (await activar.getByText("Te recomendamos revisar").isVisible()) &&
+          (await activar.getByRole("button", { name: "Activar de todas formas" }).isVisible())
+      : (await activar.getByRole("button", { name: "Activar mi agente" }).isVisible()) &&
+          !(await activar.getByText("Te recomendamos revisar").isVisible())
   );
-  if (faltaAlgo) {
-    await page.getByRole("button", { name: "Activar de todas formas" }).click();
-  }
+  // El interruptor de arriba ya no abre un diálogo: lleva a «Activar».
+  await page.getByRole("switch", { name: "Agente encendido" }).click();
+  check("el interruptor lleva a «Activar» sin diálogo", (await page.getByRole("dialog").count()) === 0);
+  await activar.getByRole("button", { name: faltaAlgo ? "Activar de todas formas" : "Activar mi agente" }).click();
+  await activar.getByText("Activo", { exact: true }).waitFor({ timeout: 30000 });
+  check("activar enciende el agente", (await (await owner.request.get(`${base}/api/agent/profile`)).json()).profile.enabled === true);
 
   let members = (await (await owner.request.get(`${base}/api/settings/team`)).json()).members;
   let member = members.find((item) => item.email === memberEmail);

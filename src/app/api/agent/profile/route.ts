@@ -1,15 +1,12 @@
 import { apiError, parseBody, withOwner } from "@/lib/api";
 import { agentProfilePutSchema, compatibleActivation } from "@/lib/agent-profile-compat";
-import { brand } from "@/lib/brand";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { activationBlockers, activationError } from "@/server/agencia/activacion";
+import { profileContentChanged } from "@/server/agencia/contenido-perfil";
 import { encenderConversacionesEnEspera } from "@/server/agencia/ia-inicial";
-import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
-import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
-import { getReadiness, saasActivationBlockers } from "@/server/readiness";
-import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
 
 export const dynamic = "force-dynamic";
 
@@ -47,39 +44,40 @@ export const GET = withOwner(async (session) => {
 export const PUT = withOwner(async (session, req: Request) => {
   const body = await parseBody(req, agentProfilePutSchema);
   if (!body.ok) return body.response;
-  if (body.data.enabled === true && !(await canAutomate(session.organizationId))) {
-    return apiError(402, "billing_inactive", `Activa o recupera tu suscripción para encender ${brand().Name}.`);
-  }
-  if (body.data.enabled === true && isAllokSaaSMode()) {
-    if (!(await isAgentAvailableForOrganization(session.organizationId))) {
-      return apiError(503, "ai_not_configured", "La IA todavía no está configurada en esta instancia.");
-    }
-    const credentials = await getCredentialsByOrg(session.organizationId);
-    if (!credentials || credentials.status !== "connected") {
-      return apiError(409, "whatsapp_required", `Conecta y verifica tu número de WhatsApp antes de activar ${brand().Name}.`);
-    }
-    const businessHours = await getBusinessHours(session.organizationId);
-    if (businessHours.responseMode === "all_day" && !(await hasSaaSPlan(session.organizationId, "pro"))) {
-      return apiError(402, "pro_required", "La atención todo el día está disponible en Completo.");
-    }
-    if (!hasConfiguredBusinessHours(businessHours)) {
-      return apiError(409, "business_hours_required", `Define al menos un horario de respuesta antes de activar ${brand().Name}.`);
-    }
-    const pending = saasActivationBlockers(await getReadiness(session.organizationId))
-      .filter((step) => step.id !== "whatsapp" && step.id !== "business_hours");
-    if (pending.length) {
+
+  const db = getDb();
+  const [stored] = await db
+    .select()
+    .from(schema.agentProfile)
+    .where(scoped(schema.agentProfile.organizationId, session.organizationId))
+    .limit(1);
+  if (!stored) return apiError(404, "not_found", "Perfil no encontrado");
+
+  const contentChanged = profileContentChanged(stored, body.data);
+  // Solo es una ACTIVACIÓN si el agente estaba apagado: reenviar `enabled: true`
+  // con el agente ya encendido (una pantalla que guarda el perfil completo) no
+  // vuelve a exigir lo de la puesta en marcha, ni la prueba, para guardar un
+  // cambio cualquiera.
+  const activating = body.data.enabled === true && !stored.enabled;
+  if (activating) {
+    // El primer bloqueo manda: mismo orden, códigos y mensajes de siempre. La
+    // pantalla «Activar» pinta esta misma lista (`server/agencia/activacion.ts`).
+    const error = activationError(await activationBlockers(session.organizationId));
+    if (error) return apiError(error.status, error.code, error.message);
+    // Los bloqueos se calculan sobre lo guardado: si en la misma petición
+    // cambia lo que el agente dice, esa edición aún no pasó por la prueba.
+    if (isAllokSaaSMode() && contentChanged) {
       return apiError(
         409,
-        "onboarding_incomplete",
-        `Completa antes de activar: ${pending.map((step) => step.label).join(", ")}.`,
+        "content_changed",
+        "Guarda los cambios y vuelve a probar tu agente antes de activarlo.",
       );
     }
   }
 
-  const db = getDb();
   const updated = await db
     .update(schema.agentProfile)
-    .set({ ...body.data, updatedAt: new Date() })
+    .set({ ...body.data, ...(contentChanged ? { updatedAt: new Date() } : {}) })
     .where(scoped(schema.agentProfile.organizationId, session.organizationId))
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Perfil no encontrado");

@@ -32,6 +32,9 @@ export async function cleanupOrphanRuns(): Promise<void> {
   if (saasMode) {
     const { startAgentWorker } = await import("@/server/ai/worker");
     startAgentWorker();
+    // Correos de la prueba («termina en 2 días», «terminó»): apagados sin el conector de correo.
+    const { startTrialLifecycle } = await import("@/server/agencia/trial-correos");
+    startTrialLifecycle();
   }
   const missing = missingReiConfigVars(saasMode);
   if (missing.length > 0) {

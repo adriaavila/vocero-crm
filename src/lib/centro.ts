@@ -14,13 +14,15 @@ export function fmtNumber(n: number): string {
 }
 
 /** Qué dice el botón según adónde lleva el estado. */
-export function actionLabel(snapshot: Pick<SystemSnapshot, "href" | "whatsapp">): string | null {
+export function actionLabel(snapshot: Pick<SystemSnapshot, "href" | "whatsapp">, planKind?: string): string | null {
   switch (snapshot.href) {
     case "/settings/whatsapp":
       return snapshot.whatsapp.status === "missing" ? "Conectar WhatsApp" : "Reconectar WhatsApp";
     case "/settings/billing":
-      return "Ver mi plan";
+      // Un solo camino: pagar cuando falta un plan, actualizar el pago cuando falló.
+      return planKind === "payment_failed" ? "Actualizar pago" : "Elegir plan";
     case "/agent":
+    case "/agent#activar":
       return "Encender el agente";
     case "/inbox":
       return "Abrir conversaciones";
@@ -58,13 +60,15 @@ export function homeStatus(i: {
   productLabel: string;
   /** Encender el agente es del propietario. */
   owner: boolean;
+  /** `PlanState.kind`: decide si el botón dice «Elegir plan» o «Actualizar pago». */
+  planKind?: string;
 }): HomeStatus {
   const { snapshot, needsYou, live, closed, productLabel } = i;
 
   if (snapshot.whatsapp.status !== "connected" || !i.billingActive) {
     return {
       headline: { state: "atencion", text: snapshot.reason },
-      strip: { state: "atencion", reason: null, href: snapshot.href, actionLabel: actionLabel(snapshot) },
+      strip: { state: "atencion", reason: null, href: snapshot.href, actionLabel: actionLabel(snapshot, i.planKind) },
     };
   }
 
@@ -89,7 +93,7 @@ export function homeStatus(i: {
 
   // La tarjeta de tinta describe SOLO al sistema (¿contesta allok?), nunca repite
   // lo que dice la línea de arriba: apagado, trabajando o contestando.
-  const agentOffHref = i.owner ? "/agent" : null;
+  const agentOffHref = i.owner ? "/agent#activar" : null;
   const strip: HomeStatus["strip"] = !i.agentOn
     ? {
         state: "pausado",

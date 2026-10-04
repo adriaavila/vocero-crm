@@ -1,115 +1,82 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ActivationSummary } from "@/server/agencia/activacion";
+import type { SetupProgress } from "@/server/agencia/setup-progress";
 
 /**
- * Capa de agencia — el freno antes de encender el agente.
+ * Capa de agencia: el freno antes de encender el agente, y de dónde sale.
  *
  * En upstream, una instancia la configura su propio dueño: si enciende el
- * agente a medias, lo descubre él. Aquí la instancia se ENTREGA a un cliente,
- * y el agente medio configurado le contesta a los leads DEL CLIENTE. Así que
- * encender no es un toggle: primero se consulta `/api/readiness` y, si algo
- * falta, se enseña qué falta. Se puede seguir de todas formas — es una
- * advertencia informada, no un candado.
+ * agente a medias, lo descubre él. Aquí el agente le contesta a los clientes
+ * DEL NEGOCIO, así que encender no es un toggle: antes se lee de `/api/setup`
+ * (la misma lista de bloqueos que aplica el servidor al encender) y se enseña
+ * qué falta, o qué va a pasar si no falta nada.
  *
- * Apagar nunca pregunta: frenar al bot tiene que ser instantáneo.
+ * El freno CIERRA ante la duda: si esa lectura no llega (red caída, error del
+ * servidor, respuesta rara), el estado es `error` y no hay botón de activar.
+ * Antes dejaba pasar («una ayuda que no responde no puede bloquear»): justo el
+ * caso en que no se sabe si falta algo era el que encendía el agente a ciegas.
+ * Apagar nunca pasa por aquí: frenar al bot tiene que ser instantáneo.
  */
 
-type Step = { id?: string; status: string; label: string; detail: string };
+export type GateState =
+  | { kind: "loading" }
+  /** No se pudo saber qué falta: no se puede activar. */
+  | { kind: "error" }
+  /** Falta algo y el servidor no deja activar. */
+  | { kind: "blocked"; activation: ActivationSummary }
+  /** Se puede activar; `activation.blockers` son consejos si los hay (fuera del SaaS). */
+  | { kind: "ready"; activation: ActivationSummary };
 
-export function useActivationGate(input: {
-  enabled: boolean;
-  strict?: boolean;
-  onConfirm: (enabled: boolean) => void;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const [pending, setPending] = useState<Step[]>([]);
-  const { enabled, strict = false, onConfirm } = input;
-
-  const toggle = useCallback(async () => {
-    if (enabled) return onConfirm(false);
-
-    const readiness = (await fetch("/api/readiness")
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)) as {
-      overall?: string;
-      steps?: Step[];
-    } | null;
-
-    // Sin readiness (endpoint caído, instancia vieja) se enciende igual: este
-    // freno es una ayuda, y una ayuda que no responde no puede bloquear el
-    // trabajo del dueño.
-    if (readiness?.overall === "needs_attention") {
-      setPending(readiness.steps?.filter((s) => s.status !== "complete") ?? []);
-      dialog.current?.showModal();
-      return;
-    }
-    onConfirm(true);
-  }, [enabled, onConfirm]);
-
-  const gate = (
-    <ActivationGate
-      ref={dialog}
-      steps={pending}
-      blocked={strict && pending.some((step) =>
-        step.id === "whatsapp" ||
-        step.id === "business_hours" ||
-        step.id === "agent_profile" ||
-        step.id === "knowledge" ||
-        step.id === "simulation"
-      )}
-      onConfirm={() => {
-        dialog.current?.close();
-        onConfirm(true);
-      }}
-    />
-  );
-
-  return { toggle, gate };
+function isBlocker(value: unknown): boolean {
+  const b = value as { code?: unknown; title?: unknown; detail?: unknown } | null;
+  return Boolean(b && typeof b.code === "string" && typeof b.title === "string" && typeof b.detail === "string");
 }
 
-export function ActivationGate({
-  ref,
-  steps,
-  blocked = false,
-  onConfirm,
-}: {
-  ref: React.Ref<HTMLDialogElement>;
-  steps: Step[];
-  blocked?: boolean;
-  onConfirm: () => void;
-}) {
-  return (
-    <dialog
-      ref={ref}
-      className="w-[min(32rem,calc(100vw-2rem))] rounded-lg border bg-card p-0 text-foreground shadow-pop backdrop:bg-black/35"
-    >
-      <div className="border-b p-5">
-        <h3 className="font-semibold">Aún hay pasos pendientes</h3>
-        <p className="mt-1 text-sm text-text-3">
-          {blocked
-            ? "Completa la conexión, el horario, la información y la prueba antes de permitir respuestas reales."
-            : "Puedes activar el agente, pero recomendamos revisar esto primero."}
-        </p>
-      </div>
-      <div className="space-y-2 p-5">
-        {steps.map((step) => (
-          <div key={step.label} className="rounded-md border p-3">
-            <p className="text-sm font-semibold">{step.label}</p>
-            <p className="mt-0.5 text-xs text-text-3">{step.detail}</p>
-          </div>
-        ))}
-      </div>
-      <div className="flex justify-end gap-2 border-t p-4">
-        <Button
-          variant="ghost"
-          onClick={(e) => e.currentTarget.closest("dialog")?.close()}
-        >
-          Volver y corregir
-        </Button>
-        {!blocked && <Button onClick={onConfirm}>Activar de todas formas</Button>}
-      </div>
-    </dialog>
-  );
+/** Convierte la respuesta de `/api/setup` en el estado del freno. Todo lo que no se entienda es `error`. */
+export function gateStateFromResponse(payload: unknown): GateState {
+  const activation = (payload as { activation?: ActivationSummary } | null)?.activation;
+  if (
+    !activation ||
+    typeof activation.enforced !== "boolean" ||
+    !Array.isArray(activation.blockers) ||
+    !activation.blockers.every(isBlocker)
+  ) {
+    return { kind: "error" };
+  }
+  return activation.enforced && activation.blockers.length > 0
+    ? { kind: "blocked", activation }
+    : { kind: "ready", activation };
+}
+
+type SetupPayload = { progress?: SetupProgress; activation?: ActivationSummary };
+
+/** Lee `/api/setup`: el avance de la puesta en marcha y el estado del freno. */
+export function useSetup(initialProgress: SetupProgress | null = null) {
+  const [progress, setProgress] = useState<SetupProgress | null>(initialProgress);
+  const [gate, setGate] = useState<GateState>({ kind: "loading" });
+  const latest = useRef(0);
+
+  const reload = useCallback(async () => {
+    const request = ++latest.current;
+    const payload = (await fetch("/api/setup", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null)) as SetupPayload | null;
+    // Una lectura vieja que llega tarde no pisa a la nueva.
+    if (request !== latest.current) return;
+    if (payload?.progress) setProgress(payload.progress);
+    setGate(gateStateFromResponse(payload));
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const retry = useCallback(() => {
+    setGate({ kind: "loading" });
+    void reload();
+  }, [reload]);
+
+  return { progress, gate, reload, retry };
 }

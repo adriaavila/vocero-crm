@@ -32,7 +32,9 @@ export default async function OverviewPage({
     isAllokSaaSMode() ? getOrganizationBilling(session.organizationId) : null,
   ]);
   const billingNotice = params.billing === "success"
-    ? "Checkout completado. Stripe está confirmando la suscripción; la automatización se habilitará solo cuando llegue el webhook."
+    // Fuera del SaaS (panel clásico) la nota es estática; en el SaaS Inicio
+    // dibuja `CheckoutReturn`, que espera la confirmación y se actualiza sola.
+    ? "Pago recibido. Estamos confirmando tu suscripción con Stripe; tu agente vuelve a contestar apenas termine."
     : params.billing === "cancelled"
       ? "No se realizó ningún cobro. Puedes retomar el checkout desde Facturación cuando quieras."
       : params.upgrade === "pro"
@@ -64,7 +66,8 @@ export default async function OverviewPage({
         hasDecisions={decisions}
         readiness={readiness}
         pro={pro}
-        billingNotice={billingNotice}
+        billingNotice={params.billing === "success" ? null : billingNotice}
+        checkoutReturn={params.billing === "success"}
         businessName={branding.name}
         userName={authSession?.user.name ?? ""}
         owner={session.role === "owner"}

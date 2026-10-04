@@ -73,7 +73,7 @@ describe("lo que impide funcionar manda sobre las tarjetas", () => {
     const snap = snapshot({ state: "atencion", reason: "Reactiva tu plan para que allok siga contestando.", href: "/settings/billing" });
     const s = homeStatus({ ...base, snapshot: snap, billingActive: false });
     expect(s.headline.text).toMatch(/Reactiva tu plan/);
-    expect(s.strip.actionLabel).toBe("Ver mi plan");
+    expect(s.strip.actionLabel).toBe("Elegir plan");
   });
 });
 
@@ -84,16 +84,16 @@ describe("la tarjeta de estado compacta", () => {
   });
 
   it("con el agente apagado y nada pendiente: pausado, con su única acción", () => {
-    const snap = snapshot({ state: "pausado", reason: "El agente está apagado: contestas tú.", href: "/agent" });
+    const snap = snapshot({ state: "pausado", reason: "El agente está apagado: contestas tú.", href: "/agent#activar" });
     const s = homeStatus({ ...base, snapshot: snap, agentOn: false });
-    expect(s.strip).toEqual({ state: "pausado", reason: "El agente está apagado: contestas tú.", href: "/agent", actionLabel: "Encender el agente" });
+    expect(s.strip).toEqual({ state: "pausado", reason: "El agente está apagado: contestas tú.", href: "/agent#activar", actionLabel: "Encender el agente" });
     // La línea de arriba sigue diciendo que nadie espera.
     expect(s.headline.state).toBe("activo");
   });
 
   it("el agente apagado se enciende desde la tarjeta aunque el estado de la barra apunte a la bandeja; un miembro no ve la acción", () => {
     const snap = snapshot({ state: "atencion", reason: "2 conversaciones esperan por ti.", href: "/inbox" });
-    expect(homeStatus({ ...base, snapshot: snap, agentOn: false, needsYou: 2 }).strip).toMatchObject({ href: "/agent", actionLabel: "Encender el agente" });
+    expect(homeStatus({ ...base, snapshot: snap, agentOn: false, needsYou: 2 }).strip).toMatchObject({ href: "/agent#activar", actionLabel: "Encender el agente" });
     expect(homeStatus({ ...base, snapshot: snap, agentOn: false, needsYou: 2, owner: false }).strip).toMatchObject({ href: null, actionLabel: null });
   });
 
