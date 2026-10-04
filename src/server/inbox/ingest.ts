@@ -198,7 +198,7 @@ export async function getOrCreateContact(
 export async function getOrCreateConversation(
   organizationId: string,
   contactId: string,
-  opts?: { channel?: Channel; threadRef?: string | null }
+  opts?: { channel?: Channel; threadRef?: string | null; aiEnabled?: boolean }
 ) {
   const db = getDb();
   const inserted = await db
@@ -211,7 +211,9 @@ export async function getOrCreateConversation(
       channelThreadRef: opts?.threadRef ?? null,
       // Capa de agencia (fork): la IA nace según el estado del agente del
       // negocio, no con un sí ni un no fijos. Ver server/agencia/ia-inicial.
-      aiEnabled: await iaInicialPara(organizationId),
+      // `aiEnabled: false` lo pide el import de historial: un chat viejo del
+      // teléfono no es un lead nuevo y la IA no debe contestarle.
+      aiEnabled: opts?.aiEnabled ?? (await iaInicialPara(organizationId)),
     })
     .onConflictDoNothing()
     .returning();
