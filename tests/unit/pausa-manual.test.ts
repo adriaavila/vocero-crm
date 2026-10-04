@@ -73,6 +73,12 @@ describe("manualPauseExpired: turno del agente (fuera de horario)", () => {
     expect(manualPauseExpired(deDia, turno, at("2026-09-08T00:05:00Z"))).toBe(true); // 18:05, empezó el turno
   });
 
+  it("el turno no arranca encima de una respuesta recién escrita (una hora de gracia)", () => {
+    const alCierre = pausedAt("2026-09-07T23:59:00Z"); // 17:59 locales
+    expect(manualPauseExpired(alCierre, turno, at("2026-09-08T00:05:00Z"))).toBe(false); // 18:05
+    expect(manualPauseExpired(alCierre, turno, at("2026-09-08T01:00:00Z"))).toBe(true); // 19:00
+  });
+
   it("una pausa nacida de noche (el dueño atendiendo a mano) solo vence por horas", () => {
     const deNoche = pausedAt("2026-09-08T03:00:00Z"); // 21:00 locales del lunes
     expect(manualPauseExpired(deNoche, turno, at("2026-09-08T05:00:00Z"))).toBe(false); // 23:00, 2 h

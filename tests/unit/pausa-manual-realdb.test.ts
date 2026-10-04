@@ -33,6 +33,8 @@ type Mod = {
   ids: typeof import("@/lib/db/ids");
   pausa: typeof import("@/server/agencia/pausa-manual");
   ingest: typeof import("@/server/inbox/ingest");
+  queries: typeof import("@/server/inbox/queries");
+  iaInicial: typeof import("@/server/agencia/ia-inicial");
 };
 let m: Mod;
 let seq = 0;
@@ -86,6 +88,8 @@ describeReal("pausa manual que vence — Postgres real", { timeout: 30_000 }, ()
       ids: await import("@/lib/db/ids"),
       pausa: await import("@/server/agencia/pausa-manual"),
       ingest: await import("@/server/inbox/ingest"),
+      queries: await import("@/server/inbox/queries"),
+      iaInicial: await import("@/server/agencia/ia-inicial"),
     };
     for (const org of [ORG, ORG_NUNCA]) {
       await m.db.insert(m.schema.organization).values({ id: org, name: org, slug: org });
@@ -207,6 +211,77 @@ describeReal("pausa manual que vence — Postgres real", { timeout: 30_000 }, ()
       replay: true,
     });
     expect((await row(quieta.id)).aiEnabled).toBe(false);
+  });
+
+  it("una pausa renovada entre la lectura y el UPDATE no se pisa (carrera echo/entrante)", async () => {
+    const { id } = await seedConversation(ORG, { aiEnabled: false, handoffAt: ago(13), handoffReason: "manual_reply" });
+    const snapshot = await row(id); // lo que leyó la ingesta: vencida
+    expect(await m.pausa.pausarPorRespuestaManual(id, ago(0.5))).toBe("extended"); // el dueño volvió a escribir
+    expect(await m.pausa.reanudarSiVencio(snapshot)).toBe(false);
+    const c = await row(id);
+    expect(c.aiEnabled).toBe(false);
+    expect(c.handoffReason).toBe("manual_reply");
+  });
+
+  it("una respuesta desde la bandeja adelanta el reloj, pero no pausa por sí sola", async () => {
+    const pausada = await seedConversation(ORG, { aiEnabled: false, handoffAt: ago(5), handoffReason: "manual_reply" });
+    const desdeLaBandeja = ago(1);
+    expect(await m.pausa.extenderPausaManual(pausada.id, desdeLaBandeja)).toBe(true);
+    expect((await row(pausada.id)).handoffAt?.getTime()).toBe(desdeLaBandeja.getTime());
+
+    const activa = await seedConversation(ORG);
+    expect(await m.pausa.extenderPausaManual(activa.id, new Date())).toBe(false);
+    expect((await row(activa.id)).handoffAt).toBeNull();
+  });
+
+  it("el interruptor reemplaza la pausa automática: apagar queda apagado, encender retoma ya", async () => {
+    const apagar = await seedConversation(ORG, { aiEnabled: false, handoffAt: ago(13), handoffReason: "manual_reply" });
+    await m.queries.updateConversation(ORG, apagar.id, { aiEnabled: false });
+    let c = await row(apagar.id);
+    expect(c.handoffReason).toBeNull();
+    expect(c.aiEnabled).toBe(false);
+    expect(await m.pausa.barrerPausasVencidas()).toBeGreaterThanOrEqual(0);
+    expect((await row(apagar.id)).aiEnabled).toBe(false); // ya no "vence"
+
+    const encender = await seedConversation(ORG, { aiEnabled: false, handoffAt: ago(1), handoffReason: "manual_reply" });
+    await m.queries.updateConversation(ORG, encender.id, { aiEnabled: true });
+    c = await row(encender.id);
+    expect(c.aiEnabled).toBe(true);
+    expect(c.handoffAt).toBeNull();
+
+    // Un traspaso del agente no lo toca el interruptor.
+    const traspaso = await seedConversation(ORG, { aiEnabled: false, handoffAt: ago(1), handoffReason: "cliente" });
+    await m.queries.updateConversation(ORG, traspaso.id, { aiEnabled: true });
+    expect((await row(traspaso.id)).handoffReason).toBe("cliente");
+  });
+
+  it("al activar el agente, lo que el dueño atendió hace poco pasa a pausa manual; el resto se enciende", async () => {
+    const reciente = await seedConversation(ORG, { aiEnabled: false });
+    const vieja = await seedConversation(ORG, { aiEnabled: false });
+    const nunca = await seedConversation(ORG, { aiEnabled: false });
+    const manual = async (conversationId: string, at: Date) =>
+      m.db.insert(m.schema.message).values({
+        id: m.ids.newId("message"),
+        organizationId: ORG,
+        conversationId,
+        direction: "out",
+        type: "text",
+        text: "te contesto yo",
+        status: "sent",
+        origin: "manual",
+        waTimestamp: at,
+        createdAt: at,
+      });
+    const hace2h = ago(2);
+    await manual(reciente.id, hace2h);
+    await manual(vieja.id, ago(30));
+    await m.iaInicial.encenderConversacionesEnEspera(ORG);
+    const r = await row(reciente.id);
+    expect(r.aiEnabled).toBe(false);
+    expect(r.handoffReason).toBe("manual_reply");
+    expect(r.handoffAt?.getTime()).toBe(hace2h.getTime());
+    expect((await row(vieja.id)).aiEnabled).toBe(true);
+    expect((await row(nunca.id)).aiEnabled).toBe(true);
   });
 
   it("el barrido reanuda solo las pausas manuales vencidas", async () => {

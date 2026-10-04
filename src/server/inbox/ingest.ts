@@ -539,7 +539,7 @@ export async function ingestInboundMessage(input: {
   // Fork — la pausa por respuesta manual vence: si ya venció, la IA retoma
   // ANTES de decidir el turno de este mensaje. Un replay no reanuda nada.
   if (!input.replay) {
-    await reanudarSiVencio(conversation).catch((err) => {
+    await reanudarSiVencio(conversation, waTimestamp).catch((err) => {
       console.warn(`[pausa] no se pudo evaluar la pausa de ${conversation.id}:`, err);
     });
   }

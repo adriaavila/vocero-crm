@@ -1,4 +1,5 @@
 import { and, eq, isNull, lt } from "drizzle-orm";
+import { extenderPausaManual } from "@/server/agencia/pausa-manual";
 import { brand } from "@/lib/brand";
 import { getDb, schema } from "@/lib/db";
 import { neaMessageId, newId } from "@/lib/db/ids";
@@ -326,6 +327,13 @@ async function persistOutbound(input: {
     .update(schema.conversation)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
     .where(eq(schema.conversation.id, input.conversationId));
+
+  // Fork — pausa que vence: si el dueño tomó el chat desde el teléfono y sigue
+  // desde la bandeja, el reloj cuenta desde este mensaje. No pausa (eso sigue
+  // siendo solo del teléfono); un fallo aquí no frena el envío.
+  if (input.origin === "operator") {
+    await extenderPausaManual(input.conversationId, new Date()).catch(() => {});
+  }
 
   publish(input.organizationId, {
     type: "message.new",

@@ -184,7 +184,14 @@ export async function updateConversation(
 ) {
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
-  if (patch.aiEnabled !== undefined) set.aiEnabled = patch.aiEnabled;
+  if (patch.aiEnabled !== undefined) {
+    set.aiEnabled = patch.aiEnabled;
+    // Fork — pausa que vence: el interruptor es una decisión explícita y
+    // reemplaza la pausa automática del teléfono (apagar = queda apagada,
+    // sin vencer; encender = retoma ya). Un traspaso del agente no se toca.
+    set.handoffAt = sql`case when ${schema.conversation.handoffReason} = 'manual_reply' then null else ${schema.conversation.handoffAt} end`;
+    set.handoffReason = sql`case when ${schema.conversation.handoffReason} = 'manual_reply' then null else ${schema.conversation.handoffReason} end`;
+  }
   if (patch.reactivate) {
     set.handoffAt = null;
     set.handoffReason = null;

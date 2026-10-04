@@ -56,7 +56,10 @@ async function poll(state: WorkerState): Promise<void> {
     await markStaleJobs();
     if (Date.now() - (state.sweptAt ?? 0) >= SWEEP_MS) {
       state.sweptAt = Date.now();
-      await barrerPausasVencidas();
+      // Con su propio catch: un barrido roto no deja trabajos sin reclamar.
+      await barrerPausasVencidas().catch((error) => {
+        console.error("[agent-worker] barrido de pausas falló:", error);
+      });
     }
     await claimUpToCapacity(state);
   } catch (error) {

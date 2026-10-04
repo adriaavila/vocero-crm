@@ -1,7 +1,9 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
+import { getBusinessHours } from "@/server/business-hours";
+import { resumeHours } from "@/server/agencia/pausa-manual";
 
 /**
  * Capa de agencia — ¿la IA nace encendida en una conversación nueva?
@@ -76,6 +78,33 @@ export async function encenderConversacionesEnEspera(
   organizationId: string
 ): Promise<number> {
   const db = getDb();
+
+  // Fork — pausa que vence: un chat que el dueño atendió desde el teléfono
+  // hace poco (dentro de las horas de la pausa) no se enciende de golpe: pasa
+  // a pausa manual medida desde su última respuesta, y vence sola. Antes el
+  // echo dejaba `handoff_at` aunque la IA estuviera apagada, y este encendido
+  // lo saltaba para siempre; ahora el echo no marca lo que no estaba
+  // encendido, así que la marca se pone aquí, con el reloj correcto.
+  const horas = resumeHours(await getBusinessHours(organizationId));
+  const corte =
+    horas > 0
+      ? sql`and m.last_manual > ${new Date(Date.now() - horas * 3_600_000).toISOString()}::timestamp`
+      : sql``;
+  await db.execute(sql`
+    update conversation c
+    set handoff_at = m.last_manual, handoff_reason = 'manual_reply', updated_at = now()
+    from (
+      select conversation_id, max(coalesce(wa_timestamp, created_at)) as last_manual
+      from message
+      where organization_id = ${organizationId} and direction = 'out' and origin = 'manual'
+      group by conversation_id
+    ) m
+    where c.id = m.conversation_id
+      and c.organization_id = ${organizationId}
+      and c.ai_enabled = false and c.handoff_at is null and c.is_test = false
+      ${corte}
+  `);
+
   const filas = await db
     .update(schema.conversation)
     .set({ aiEnabled: true, updatedAt: new Date() })

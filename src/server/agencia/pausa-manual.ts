@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { publish } from "@/server/events/bus";
 import {
@@ -41,6 +41,12 @@ import {
  */
 
 export const DEFAULT_HANDOFF_RESUME_HOURS = 12;
+/**
+ * El turno del agente no arranca encima de una respuesta recién escrita: una
+ * respuesta a las 17:59 con cierre a las 18:00 no puede terminar con la IA
+ * contestando a las 18:00 ("mientras escribes, no interrumpe").
+ */
+export const SHIFT_GRACE_MS = 60 * 60_000;
 
 type PausaConv = { handoffAt: Date | string | null; handoffReason: string | null };
 
@@ -78,10 +84,12 @@ export function manualPauseExpired(
   // Turno del agente: la pausa nació dentro del horario del equipo y ahora
   // estamos fuera → le toca al agente. Una pausa nacida fuera de horario (el
   // dueño atendiendo de noche a mano) solo vence por horas.
+  const since = new Date(c.handoffAt);
   return (
     resumesOnShiftStart(settings) &&
+    now.getTime() - since.getTime() >= SHIFT_GRACE_MS &&
     isOutsideBusinessHours(settings, now) &&
-    isBusinessHoursOpen(settings, new Date(c.handoffAt))
+    isBusinessHoursOpen(settings, since)
   );
 }
 
@@ -127,9 +135,17 @@ export async function pausarPorRespuestaManual(
     )
     .returning({ id: schema.conversation.id });
   if (paused[0]) return "paused";
-  // El instante va como texto con cast explícito: postgres-js no serializa un
-  // Date crudo dentro de un `sql` (mismo trato que history-sync).
-  const extended = await db
+  return (await extenderPausaManual(conversationId, at)) ? "extended" : "none";
+}
+
+/**
+ * El dueño sigue escribiendo en un chat que ya tomó (desde el teléfono o
+ * desde la bandeja): el reloj de la pausa se adelanta. Nunca pausa por sí
+ * solo, y nunca lo atrasa. El instante va como texto con cast explícito:
+ * postgres-js no serializa un Date crudo dentro de un `sql` (history-sync).
+ */
+export async function extenderPausaManual(conversationId: string, at: Date): Promise<boolean> {
+  const extended = await getDb()
     .update(schema.conversation)
     .set({
       handoffAt: sql`GREATEST(${schema.conversation.handoffAt}, ${at.toISOString()}::timestamp)`,
@@ -142,34 +158,53 @@ export async function pausarPorRespuestaManual(
       )
     )
     .returning({ id: schema.conversation.id });
-  return extended[0] ? "extended" : "none";
+  return Boolean(extended[0]);
 }
 
-async function reanudar(ids: string[], organizationId: string): Promise<number> {
-  if (ids.length === 0) return 0;
-  const rows = await getDb()
-    .update(schema.conversation)
-    .set({ aiEnabled: true, handoffAt: null, handoffReason: null, updatedAt: new Date() })
-    .where(
-      and(
-        inArray(schema.conversation.id, ids),
-        eq(schema.conversation.organizationId, organizationId),
-        // Atómico: si justo ahora el dueño volvió a escribir o la reactivó, no se pisa.
-        eq(schema.conversation.handoffReason, "manual_reply")
+type PausaVista = { id: string; handoffAt: Date | string };
+
+/**
+ * Reanuda las pausas que se LEYERON vencidas. La guarda compara contra el
+ * `handoff_at` que se leyó (truncado a milisegundos, que es lo que un Date de
+ * JS conserva): si entre la lectura y este UPDATE el dueño volvió a escribir
+ * (el echo adelantó el reloj) o la reactivó/apagó él, la fila ya no coincide y
+ * no se pisa. Una fila por UPDATE: son pocas y cada una tiene su instante.
+ */
+async function reanudar(vistas: PausaVista[], organizationId: string): Promise<number> {
+  if (vistas.length === 0) return 0;
+  const db = getDb();
+  let total = 0;
+  for (const vista of vistas) {
+    const leido = new Date(vista.handoffAt).toISOString();
+    const rows = await db
+      .update(schema.conversation)
+      .set({ aiEnabled: true, handoffAt: null, handoffReason: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.conversation.id, vista.id),
+          eq(schema.conversation.organizationId, organizationId),
+          eq(schema.conversation.handoffReason, "manual_reply"),
+          sql`date_trunc('milliseconds', ${schema.conversation.handoffAt}) <= ${leido}::timestamp`
+        )
       )
-    )
-    .returning({ id: schema.conversation.id });
-  for (const r of rows) {
-    console.log(`[pausa] la IA retoma ${r.id}: venció la pausa por respuesta manual`);
-    publish(organizationId, {
-      type: "conversation.updated",
-      data: { conversation: { id: r.id } },
-    });
+      .returning({ id: schema.conversation.id });
+    for (const r of rows) {
+      total++;
+      console.log(`[pausa] la IA retoma ${r.id}: venció la pausa por respuesta manual`);
+      publish(organizationId, {
+        type: "conversation.updated",
+        data: { conversation: { id: r.id } },
+      });
+    }
   }
-  return rows.length;
+  return total;
 }
 
-/** Al entrar un mensaje del cliente: si la pausa manual venció, la IA vuelve. */
+/**
+ * Si la pausa manual de ESTA lectura venció, la IA vuelve. `now` es el
+ * instante que se juzga: al entrar un mensaje, el del mensaje (un entrante
+ * viejo que Meta entrega tarde no abre una pausa que a su hora seguía viva).
+ */
 export async function reanudarSiVencio(
   conversation: PausaConv & { id: string; organizationId: string },
   now: Date = new Date()
@@ -177,7 +212,9 @@ export async function reanudarSiVencio(
   if (conversation.handoffReason !== "manual_reply" || !conversation.handoffAt) return false;
   const settings = await getBusinessHours(conversation.organizationId);
   if (!manualPauseExpired(conversation, settings, now)) return false;
-  return (await reanudar([conversation.id], conversation.organizationId)) > 0;
+  return (
+    (await reanudar([{ id: conversation.id, handoffAt: conversation.handoffAt }], conversation.organizationId)) > 0
+  );
 }
 
 /**
@@ -219,7 +256,9 @@ export async function barrerPausasVencidas(now: Date = new Date()): Promise<numb
           eq(schema.conversation.isTest, false)
         )
       );
-    const vencidas = rows.filter((c) => manualPauseExpired(c, settings, now)).map((c) => c.id);
+    const vencidas = rows
+      .filter((c) => manualPauseExpired(c, settings, now))
+      .map((c) => ({ id: c.id, handoffAt: c.handoffAt as Date }));
     total += await reanudar(vencidas, organizationId);
   }
   return total;
