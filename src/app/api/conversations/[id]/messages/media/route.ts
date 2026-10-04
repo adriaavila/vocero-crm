@@ -59,6 +59,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
         fileName: file.name || undefined,
       },
       caption,
+      senderUserId: session.userId,
     });
     return Response.json({ messageId: result.messageId }, { status: 201 });
   } catch (err) {

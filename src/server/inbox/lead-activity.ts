@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { notBefore } from "@/lib/db/monotonic";
 import { recordLeadCreated } from "@/server/leads/stage-history";
 import type { StageChangeSource } from "@/lib/types";
 
@@ -25,7 +26,8 @@ export async function onLeadActivity(
   if (existing[0]) {
     await db
       .update(schema.lead)
-      .set({ lastActivityAt: at, updatedAt: new Date() })
+      // Nunca hacia atrás: un mensaje viejo no rejuvenece ni enfría al lead.
+      .set({ lastActivityAt: notBefore(schema.lead.lastActivityAt, at), updatedAt: new Date() })
       .where(eq(schema.lead.id, existing[0].id));
     return;
   }

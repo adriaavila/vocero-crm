@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import {
   countVariables,
   renderBody,
@@ -241,7 +241,12 @@ export async function syncTemplates(organizationId: string): Promise<number> {
 /** Evento webhook `message_template_status_update` (modo directo, FR-050). */
 export async function applyTemplateStatusEvent(
   wabaId: string | null,
-  value: WebhookValue
+  value: WebhookValue,
+  /**
+   * Replay: solo toca la plantilla si nada la cambió DESPUÉS de que llegó el
+   * evento (otro evento, un sync); un estado viejo no revierte uno más nuevo.
+   */
+  opts: { notAfter?: Date } = {}
 ): Promise<void> {
   if (!wabaId) return;
   const creds = await getCredentialsByWabaId(wabaId);
@@ -264,7 +269,8 @@ export async function applyTemplateStatusEvent(
       and(
         eq(schema.template.organizationId, creds.organizationId),
         eq(schema.template.name, name),
-        eq(schema.template.language, language)
+        eq(schema.template.language, language),
+        opts.notAfter ? lte(schema.template.updatedAt, opts.notAfter) : undefined
       )
     );
 }
@@ -275,6 +281,8 @@ export async function sendTemplate(input: {
   conversationId: string;
   templateId: string;
   variables?: string[];
+  /** Data spine: el usuario del CRM que la manda. */
+  senderUserId?: string;
 }): Promise<{ messageId: string }> {
   const db = getDb();
 
@@ -385,6 +393,7 @@ export async function sendTemplate(input: {
       text: renderBody(template.body, values),
       status: "pending",
       origin: "template",
+      senderUserId: input.senderUserId ?? null,
     })
     .returning();
   const message = inserted[0]!;

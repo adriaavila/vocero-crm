@@ -31,6 +31,7 @@ export const POST = withAuth(async (session, req: Request, ctx: Params) => {
       variables:
         body.data.variables ??
         (body.data.variable === undefined ? undefined : [body.data.variable]),
+      senderUserId: session.userId,
     });
     return Response.json({ messageId: result.messageId });
   } catch (err) {

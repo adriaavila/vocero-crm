@@ -298,6 +298,8 @@ async function persistOutbound(input: {
   origin: "ai" | "operator";
   mediaAssetId?: string | null;
   media?: typeof schema.mediaAsset.$inferSelect | null;
+  /** Data spine: el usuario del CRM que lo mandó (null en IA y sistema). */
+  senderUserId?: string | null;
 }): Promise<string> {
   const db = getDb();
   const inserted = await db
@@ -315,6 +317,7 @@ async function persistOutbound(input: {
       aiGenerated: input.aiGenerated ?? false,
       origin: input.origin,
       mediaAssetId: input.mediaAssetId ?? null,
+      senderUserId: input.senderUserId ?? null,
     })
     .returning();
   const message = inserted[0]!;
@@ -349,6 +352,8 @@ export async function sendText(input: {
   dispatchId?: string;
   /** Distingue varios mensajes de UN mismo despacho; default 0. */
   seq?: number;
+  /** Data spine: el usuario del CRM que lo manda (composer del operador). */
+  senderUserId?: string;
 }): Promise<SendResult> {
   if (input.dispatchId) {
     // Siempre IA (Nea es el único llamador que manda dispatchId), sin
@@ -393,6 +398,7 @@ export async function sendText(input: {
       : "sent",
     aiGenerated: input.aiGenerated,
     origin: input.aiGenerated ? "ai" : "operator",
+    senderUserId: input.senderUserId,
   });
 
   return { messageId };
@@ -560,6 +566,7 @@ export async function sendMediaMessage(input: {
   organizationId: string;
   file: { data: Buffer; mimeType: string; fileName?: string };
   caption?: string;
+  senderUserId?: string;
 }): Promise<SendResult> {
   // Validación previa (FR-007): tipo y tamaño antes de tocar disco o red.
   const kind = validateOutgoing(input.file.mimeType, input.file.data.byteLength);
@@ -626,6 +633,7 @@ export async function sendMediaMessage(input: {
       origin: "operator",
       mediaAssetId: assetId,
       media: asset,
+      senderUserId: input.senderUserId,
     });
     return { messageId };
   } catch (err) {
@@ -657,6 +665,7 @@ export async function sendMediaMessage(input: {
       origin: "operator",
       mediaAssetId: assetId,
       media: asset,
+      senderUserId: input.senderUserId,
     });
     throw sendErr;
   }
@@ -676,6 +685,7 @@ export async function sendStructured(
   input: {
     conversationId: string;
     organizationId: string;
+    senderUserId?: string;
   } & (
     | { kind: "location"; location: LocationInput }
     | { kind: "contacts"; contacts: ContactInput[] }
@@ -734,6 +744,7 @@ export async function sendStructured(
     origin: "operator",
     mediaAssetId: asset.id,
     media: asset,
+    senderUserId: input.senderUserId,
   });
   return { messageId };
 }

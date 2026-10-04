@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { markFirstMessage } from "@/server/onboarding/whatsapp-onboarding";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
+import { notBefore } from "@/lib/db/monotonic";
 import { normalizeMx } from "@/lib/meta/client";
 import { publish } from "@/server/events/bus";
 import { getCredentialsByPhoneNumberId } from "@/server/whatsapp/credentials";
@@ -242,12 +243,28 @@ export async function getOrCreateConversation(
 }
 
 /**
+ * Data spine: el evento crudo del que sale lo que se está procesando.
+ *
+ * `replay` = es un reproceso de un evento VIEJO (admin), no una entrega en vivo:
+ * jamás le escribe al cliente (ni turno del agente ni `agent_job`) ni pausa la
+ * IA por un echo. El mensaje igual se guarda, para que un humano lo vea.
+ * `receivedAt` = cuándo llegó el evento (lo usa la plantilla para no retroceder).
+ */
+export type SpineContext = { rawEventId?: string; replay?: boolean; receivedAt?: Date };
+
+/**
  * Procesa el `value` de un cambio `messages` del webhook: mensajes entrantes
  * (idempotentes por wa_message_id) y actualizaciones de estado.
+ *
+ * Devuelve `unmatched` si algún estado era de un wamid que aún no existe
+ * (el raw_event queda para el replay); lo demás se procesó igual.
  */
-export async function processMessagesValue(value: WebhookValue): Promise<void> {
+export async function processMessagesValue(
+  value: WebhookValue,
+  ctx: SpineContext = {}
+): Promise<"processed" | "unmatched"> {
   const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) return;
+  if (!phoneNumberId) return "processed";
 
   const credentials = await getCredentialsByPhoneNumberId(phoneNumberId);
   if (!credentials) {
@@ -257,13 +274,16 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       `[webhook] evento para phone_number_id desconocido (${phoneNumberId}): ` +
         "guarda la conexión en Configuración → WhatsApp para recibir mensajes"
     );
-    return;
+    return "processed";
   }
 
   const organizationId = credentials.organizationId;
 
+  let unmatched = false;
   for (const status of value.statuses ?? []) {
-    await applyStatusUpdate(organizationId, status);
+    if ((await applyStatusUpdate(organizationId, status)) === "unmatched") {
+      unmatched = true;
+    }
   }
 
   let ingested = false;
@@ -291,6 +311,9 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       // 018: normalizado aquí, en el adaptador del canal; la ingesta no sabe
       // de qué forma lo mandó Meta.
       anuncio: anuncioDeWhatsapp(msg.referral),
+      replyToWaId: msg.context?.id ?? null,
+      rawEventId: ctx.rawEventId ?? null,
+      replay: ctx.replay ?? false,
     });
     ingested = true;
   }
@@ -301,6 +324,7 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
       console.error("[onboarding] no se pudo marcar el primer mensaje:", err)
     );
   }
+  return unmatched ? "unmatched" : "processed";
 }
 
 /**
@@ -308,21 +332,29 @@ export async function processMessagesValue(value: WebhookValue): Promise<void> {
  * envió A MANO desde la app de WhatsApp Business del teléfono. Se registran
  * como salientes `origin='manual'` y pausan la IA (decisión del dueño
  * 2026-08-04). JAMÁS tocan la ventana de 24 h ni disparan al agente.
+ *
+ * Un echo que falla NO tumba el webhook (un 503 repetido por un echo malformado
+ * haría que Meta desactive la suscripción), pero tampoco se pierde: devuelve
+ * `failed` y el raw_event queda `failed` para el replay.
  */
-export async function processEchoesValue(value: WebhookValue): Promise<void> {
+export async function processEchoesValue(
+  value: WebhookValue,
+  ctx: SpineContext = {}
+): Promise<"processed" | "failed"> {
   const phoneNumberId = value.metadata?.phone_number_id;
-  if (!phoneNumberId) return;
+  if (!phoneNumberId) return "processed";
 
   const credentials = await getCredentialsByPhoneNumberId(phoneNumberId);
   if (!credentials) {
     console.warn(
       `[webhook] echo para phone_number_id desconocido (${phoneNumberId}): descartado`
     );
-    return;
+    return "processed";
   }
 
   // Meta documenta `message_echoes`; parser tolerante a `messages` (R1).
   const echoes = value.message_echoes ?? value.messages ?? [];
+  let failed = false;
   for (const echo of echoes) {
     if (!SUPPORTED_TYPES.has(echo.type)) continue;
     if (!echo.to) {
@@ -330,17 +362,20 @@ export async function processEchoesValue(value: WebhookValue): Promise<void> {
       continue;
     }
     try {
-      await ingestManualEcho(credentials.organizationId, echo);
+      await ingestManualEcho(credentials.organizationId, echo, ctx);
     } catch (err) {
       // Un echo malformado jamás tumba el webhook (edge case del spec).
       console.error(`[webhook] error procesando echo ${echo.id}:`, err);
+      failed = true;
     }
   }
+  return failed ? "failed" : "processed";
 }
 
 async function ingestManualEcho(
   organizationId: string,
-  echo: WebhookMessage
+  echo: WebhookMessage,
+  ctx: SpineContext
 ): Promise<void> {
   const db = getDb();
   const identity = normalizeMx(echo.to!);
@@ -370,6 +405,10 @@ async function ingestManualEcho(
       status: "sent",
       origin: "manual",
       waTimestamp,
+      // El echo ya es un enviado: su marca de envío es la de WhatsApp.
+      sentAt: waTimestamp,
+      replyToWaId: echo.context?.id ?? null,
+      rawEventId: ctx.rawEventId ?? null,
     })
     .onConflictDoNothing({ target: [schema.message.waMessageId] })
     .returning();
@@ -382,31 +421,39 @@ async function ingestManualEcho(
     : null;
 
   // Solo lastMessageAt: un mensaje del negocio NUNCA abre la ventana de 24 h.
+  // Nunca hacia atrás: un echo viejo (replay) no mueve el reloj.
   await db
     .update(schema.conversation)
-    .set({ lastMessageAt: waTimestamp, updatedAt: new Date() })
+    .set({
+      lastMessageAt: notBefore(schema.conversation.lastMessageAt, waTimestamp),
+      updatedAt: new Date(),
+    })
     .where(eq(schema.conversation.id, conversation.id));
 
   // Pausa automática de la IA, idempotente y atómica (solo si no hay handoff).
-  const paused = await db
-    .update(schema.conversation)
-    .set({
-      aiEnabled: false,
-      handoffAt: new Date(),
-      handoffReason: "manual_reply",
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(schema.conversation.id, conversation.id),
-        sql`${schema.conversation.handoffAt} is null`
+  // Un replay reproduce el pasado: la conversación pudo haber seguido su curso
+  // (el dueño reactivó la IA, entró otro mensaje...), así que NO la pausa.
+  if (!ctx.replay) {
+    const paused = await db
+      .update(schema.conversation)
+      .set({
+        aiEnabled: false,
+        handoffAt: new Date(),
+        handoffReason: "manual_reply",
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.conversation.id, conversation.id),
+          sql`${schema.conversation.handoffAt} is null`
+        )
       )
-    )
-    .returning();
-  if (paused[0]) {
-    console.log(
-      `[webhook] respuesta manual del dueño en ${conversation.id} — IA pausada (manual_reply)`
-    );
+      .returning();
+    if (paused[0]) {
+      console.log(
+        `[webhook] respuesta manual del dueño en ${conversation.id} — IA pausada (manual_reply)`
+      );
+    }
   }
 
   publish(organizationId, {
@@ -434,6 +481,11 @@ export async function ingestInboundMessage(input: {
   threadRef?: string | null;
   /** 016/018: el anuncio que abrió la conversación, ya normalizado por el canal. */
   anuncio?: AnuncioDeOrigen | null;
+  /** Data spine: wamid al que responde (`context.id`) y evento crudo de origen. */
+  replyToWaId?: string | null;
+  rawEventId?: string | null;
+  /** Reproceso de un evento viejo: se guarda el mensaje, pero no se le responde. */
+  replay?: boolean;
 }): Promise<void> {
   const db = getDb();
   const { organizationId } = input;
@@ -487,6 +539,8 @@ export async function ingestInboundMessage(input: {
       text: input.text,
       status: "delivered",
       waTimestamp,
+      replyToWaId: input.replyToWaId ?? null,
+      rawEventId: input.rawEventId ?? null,
     })
     .onConflictDoNothing({ target: [schema.message.waMessageId] })
     .returning();
@@ -500,8 +554,10 @@ export async function ingestInboundMessage(input: {
   await db
     .update(schema.conversation)
     .set({
-      lastInboundAt: waTimestamp,
-      lastMessageAt: waTimestamp,
+      // Nunca hacia atrás: un entrante viejo (replay, reintento tardío de Meta)
+      // no mueve la ventana de 24 h ni el orden de la bandeja.
+      lastInboundAt: notBefore(schema.conversation.lastInboundAt, waTimestamp),
+      lastMessageAt: notBefore(schema.conversation.lastMessageAt, waTimestamp),
       unreadCount: sql`${schema.conversation.unreadCount} + 1`,
       updatedAt: new Date(),
     })
@@ -521,6 +577,8 @@ export async function ingestInboundMessage(input: {
     data: { conversation: { id: conversation.id } },
   });
 
+  // Un replay jamás le escribe al cliente: sin turno del agente (ni agent_job).
+  if (input.replay) return;
   await maybeRunAgentTurn(conversation.id, organizationId);
 }
 

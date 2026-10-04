@@ -18,8 +18,19 @@ export type ChatMessage = {
   content: string;
 };
 
+/** Tokens que cobró el proveedor (suma de los intentos de la llamada). */
+export type ChatUsage = { input: number; output: number };
+
 export type ChatJsonResult<T> =
-  | { ok: true; data: T; raw: string }
+  | {
+      ok: true;
+      data: T;
+      raw: string;
+      /** Data spine: quién respondió y cuánto costó; ausente si el proveedor no lo reporta. */
+      provider?: AiProvider;
+      model?: string;
+      usage?: ChatUsage;
+    }
   | { ok: false; error: "not_configured" | "provider_error" | "invalid_output"; detail: string };
 
 export type { AiProvider, AiProviderSettings } from "@/lib/ai/config";
@@ -187,6 +198,7 @@ async function attemptProvider<T>(
 ): Promise<ChatJsonResult<T>> {
   let lastDetail = "";
   let lastIssues = "";
+  let usage: ChatUsage | undefined;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const attemptMessages: ChatMessage[] =
       attempt === 1
@@ -199,13 +211,20 @@ async function attemptProvider<T>(
             },
           ];
     try {
-      const raw = await callProvider(
+      const call = await callProvider(
         provider.baseUrl,
         provider.token,
         provider.model,
         attemptMessages,
         timeoutMs
       );
+      const raw = call.content;
+      if (call.usage) {
+        usage = {
+          input: (usage?.input ?? 0) + call.usage.input,
+          output: (usage?.output ?? 0) + call.usage.output,
+        };
+      }
       const extracted = extractJson(raw);
       if (extracted === null) {
         lastIssues = "sin JSON extraíble";
@@ -220,7 +239,14 @@ async function attemptProvider<T>(
         lastDetail = `[${provider.name}] no cumple el esquema: ${lastIssues} (raw=${truncate(raw)})`;
         continue;
       }
-      return { ok: true, data: parsed.data, raw };
+      return {
+        ok: true,
+        data: parsed.data,
+        raw,
+        provider: provider.name,
+        model: provider.model,
+        ...(usage ? { usage } : {}),
+      };
     } catch (err) {
       lastDetail = `[${provider.name}] ${err instanceof Error ? err.message : String(err)}`;
       if (attempt < MAX_ATTEMPTS) {
@@ -244,7 +270,7 @@ async function callProvider(
   model: string,
   messages: ChatMessage[],
   timeoutMs = 60_000
-): Promise<string> {
+): Promise<{ content: string; usage?: ChatUsage }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -264,12 +290,20 @@ async function callProvider(
     }
     const json = (await res.json()) as {
       choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
     };
     const content = json.choices?.[0]?.message?.content;
     if (typeof content !== "string" || content.length === 0) {
       throw new Error("respuesta del proveedor sin contenido");
     }
-    return content;
+    const input = json.usage?.prompt_tokens;
+    const output = json.usage?.completion_tokens;
+    return {
+      content,
+      ...(typeof input === "number" && typeof output === "number"
+        ? { usage: { input, output } }
+        : {}),
+    };
   } finally {
     clearTimeout(timer);
   }
