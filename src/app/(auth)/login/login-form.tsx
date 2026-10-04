@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 
 export default function LoginForm({
   saasClosed,
+  saasMode = saasClosed,
+  resetEnabled = false,
   brandName,
   startUrl,
   helpUrl,
@@ -18,6 +20,10 @@ export default function LoginForm({
   reiBrand = false,
 }: {
   saasClosed: boolean;
+  /** Despliegue SaaS, abierto o cerrado: ahí no hay "propietario" a quien pedirle la contraseña. */
+  saasMode?: boolean;
+  /** Conector de correo encendido: "olvidé mi contraseña" se resuelve solo en /forgot-password. */
+  resetEnabled?: boolean;
   /** Rei no tiene "cuenta inicial": quien no tiene cuenta escribe a Rei. */
   reiBrand?: boolean;
   /** Resueltos en el servidor: ver el comentario en register-form.tsx. */
@@ -58,6 +64,22 @@ export default function LoginForm({
     router.refresh();
   }
 
+  const contactRecovery = saasClosed || saasMode || reiBrand;
+  const forgot = resetEnabled ? (
+    <Link href="/forgot-password" className="inline-flex min-h-11 items-center text-primary underline underline-offset-4">
+      ¿Olvidaste tu contraseña?
+    </Link>
+  ) : contactRecovery ? (
+    <>
+      ¿Olvidaste tu contraseña?{" "}
+      <a href={helpUrl} className="inline-flex min-h-11 items-center text-primary hover:underline">
+        Escríbenos {channelSuffix}
+      </a>
+    </>
+  ) : (
+    "¿Perdiste el acceso? Pide al propietario que restablezca tu contraseña."
+  );
+
   return (
     <Card className="shadow-md">
       <CardHeader>
@@ -93,14 +115,9 @@ export default function LoginForm({
           <Button type="submit" className="min-h-11 w-full" disabled={loading}>
             {loading ? "Entrando…" : "Entrar"}
           </Button>
+          <p className="text-center text-xs text-muted-foreground">{forgot}</p>
           {saasClosed || reiBrand ? (
             <>
-              <p className="text-center text-xs text-muted-foreground">
-                ¿Olvidaste tu contraseña?{" "}
-                <a href={helpUrl} className="inline-flex min-h-11 items-center text-primary hover:underline">
-                  Escríbenos {channelSuffix}
-                </a>
-              </p>
               <p className="text-center text-sm text-muted-foreground">
                 ¿Aún no tienes {brandName}?{" "}
                 <a href={startUrl} className="inline-flex min-h-11 items-center text-primary hover:underline">
@@ -110,9 +127,6 @@ export default function LoginForm({
             </>
           ) : (
             <>
-              <p className="text-center text-xs text-muted-foreground">
-                ¿Perdiste el acceso? Pide al propietario que restablezca tu contraseña.
-              </p>
               <p className="text-center text-sm text-muted-foreground">
                 ¿Primera vez aquí?{" "}
                 <Link href="/register" className="inline-flex min-h-11 items-center text-primary hover:underline">

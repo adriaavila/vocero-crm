@@ -10,10 +10,11 @@ import {
   type SystemState,
   type WhatsAppLink,
 } from "@/lib/estado";
-import { canAutomate } from "@/server/agencia/entitlements";
+import { getPlanState } from "@/server/agencia/plan-estado";
+import type { PlanState } from "@/lib/plan-estado";
 import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
 import type { ConversationDto } from "@/lib/types";
-import { automationAccessFromMetadata, hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
+import { hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz } from "@/lib/time/slots";
@@ -44,7 +45,7 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   // Solo puede no estar en `activo` lo que tuvo un entrante dentro de la
   // ventana (traspasos incluidos): el resto ni se trae.
   const windowStart = new Date(Date.now() - WINDOW_MS);
-  const [creds, agent, rows, jobs, billingActive] = await Promise.all([
+  const [creds, agent, rows, jobs, plan] = await Promise.all([
     db
       .select({ status: schema.metaCredentials.status, phone: schema.metaCredentials.displayPhoneNumber })
       .from(schema.metaCredentials)
@@ -78,14 +79,19 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
           inArray(schema.agentJob.status, ["queued", "running"]),
         ),
       ),
-    canAutomate(organizationId),
+    getPlanState(organizationId),
   ]);
+  // El plan manda: un agente que el plan no deja contestar (prueba vencida,
+  // tope de la prueba, cobro fallido) no «está respondiendo» aunque esté
+  // encendido, y un cliente sin respuesta tiene que contar como espera.
+  const billingActive = plan.agentAllowed;
+  const agentLive = agent.on && billingActive;
 
   const now = Date.now();
   let waiting = 0;
   let live = 0;
   for (const row of rows) {
-    const state = conversationState(row, agent.on, now);
+    const state = conversationState(row, agentLive, now);
     if (state === "atencion") waiting++;
     else if (state === "atendiendo") live++;
   }
@@ -95,7 +101,7 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   const whatsapp: WhatsAppLink = creds[0] ? creds[0].status : "missing";
 
   return {
-    ...systemState({ whatsapp, billingActive, agentOn: agent.on, waiting, working, owner }),
+    ...systemState({ whatsapp, billingActive, plan: plan.kind, agentOn: agent.on, waiting, working, owner }),
     whatsapp: { status: whatsapp, phone: creds[0]?.phone ?? null },
     waiting,
     working,
@@ -131,6 +137,8 @@ export type Centro = {
   waiting: number;
   feed: FeedRow[];
   timezone: string;
+  /** En qué punto del plan está el negocio (prueba, cobro fallido…): Inicio lo dice y ofrece la única acción. */
+  plan: PlanState;
   /** Inicio, «Hoy, hora por hora»: quién escribió y quién contesta cada minuto del día. */
   day: {
     points: DayPoint[];
@@ -167,7 +175,7 @@ export async function getCentro(organizationId: string, conversations: Conversat
   // `created_at` guarda la hora UTC sin zona: la medianoche del negocio se
   // pasa a esa misma forma para compararla.
   // El horario y el plan se leen junto con las cifras, no después.
-  const [totals, schedule, orgRows] = await Promise.all([
+  const [totals, schedule, orgRows, plan] = await Promise.all([
     getDb().execute(sql`
       with bounds as (
         select ((date_trunc('day', now() at time zone ${tz}) at time zone ${tz}) at time zone 'UTC') as start
@@ -203,10 +211,14 @@ export async function getCentro(organizationId: string, conversations: Conversat
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
       .limit(1),
+    getPlanState(organizationId),
   ]);
 
   const now = Date.now();
-  const rows = conversations.map((c) => ({ c, state: conversationState(c, agent.on, now) }));
+  // Mismas reglas que el punto: sin plan que lo deje contestar, el agente no
+  // «está respondiendo» ni «atendiendo», aunque siga encendido.
+  const agentLive = agent.on && plan.agentAllowed;
+  const rows = conversations.map((c) => ({ c, state: conversationState(c, agentLive, now) }));
   // Primero lo que espera por una persona, después lo que el agente atiende
   // ahora, después lo más reciente (listConversations ya viene por recencia).
   const rank = { atencion: 0, atendiendo: 1, activo: 2, pausado: 2 } as const;
@@ -239,10 +251,11 @@ export async function getCentro(organizationId: string, conversations: Conversat
       minute: minuteInTz(new Date(c.lastInboundAt as string), tz),
     }))
     .sort((a, b) => a.minute - b.minute);
-  const allDay = schedule.responseMode === "all_day";
   // Las mismas lecturas que los gates: canAutomate y hasSaaSPlan.
   const metadata = orgRows[0]?.metadata;
   const pro = hasPaidSaaSPlanFromMetadata(metadata, "pro");
+  // «Todo el día» es de Completo: con Esencial el agente contesta fuera del horario.
+  const allDay = schedule.responseMode === "all_day" && pro;
   const weekday = weekdayInTz(new Date(now), tz);
   const shifts = coverage(schedule.weeklyHours, schedule.responseMode, pro, weekday);
   const tomorrow = coverage(schedule.weeklyHours, schedule.responseMode, pro, nextDay(weekday)).team[0]?.[0] ?? null;
@@ -258,12 +271,13 @@ export async function getCentro(organizationId: string, conversations: Conversat
     waiting: rows.filter((r) => r.state === "atencion").length,
     feed,
     timezone: tz,
+    plan,
     day: {
       points,
       ...shifts,
       tomorrow,
       agentOn: agent.on,
-      billingActive: automationAccessFromMetadata(metadata).allowed,
+      billingActive: plan.agentAllowed,
       configured: hasConfiguredBusinessHours(schedule),
       allDay,
     },

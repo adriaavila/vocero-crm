@@ -2,6 +2,7 @@ import { requireOwnerSession } from "@/lib/auth/session";
 import { soldSaaSPlans } from "@/lib/saas-plans";
 import { brand } from "@/lib/brand";
 import { getOrganizationBilling } from "@/server/saas/billing";
+import { getPlanState } from "@/server/agencia/plan-estado";
 import { BillingClient } from "@/components/settings/billing-client";
 
 export const dynamic = "force-dynamic";
@@ -9,12 +10,18 @@ export const dynamic = "force-dynamic";
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout?: string }>;
+  searchParams: Promise<{ checkout?: string; billing?: string }>;
 }) {
   const [session, params] = await Promise.all([requireOwnerSession(), searchParams]);
+  const [billing, plan] = await Promise.all([
+    getOrganizationBilling(session.organizationId),
+    getPlanState(session.organizationId),
+  ]);
   return (
     <BillingClient
-      billing={await getOrganizationBilling(session.organizationId)}
+      billing={billing}
+      plan={plan}
+      portalReturn={params.billing === "portal"}
       soldPlans={soldSaaSPlans(process.env.SAAS_PLANS)}
       brandName={brand().Name}
       trial={brand().id !== "rei"}

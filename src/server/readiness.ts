@@ -84,6 +84,9 @@ type Input = {
 
 export function evaluateReadiness(input: Input): ReadinessResponse {
   const { profile, latestRun } = input;
+  // `profile.updatedAt` es la versión del CONTENIDO del agente (solo se mueve
+  // si cambia lo que dice, ver `server/agencia/contenido-perfil.ts`): pausar o
+  // encender no vuelve vieja la prueba.
   const contentUpdatedAt = input.knowledgeUpdatedAt && input.knowledgeUpdatedAt > profile.updatedAt
     ? input.knowledgeUpdatedAt
     : profile.updatedAt;
@@ -120,12 +123,13 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
       status: input.whatsappConnected ? "complete" : "pending",
       label: "Conecta WhatsApp",
       // Un token revocado deja la conexión guardada pero muerta. Decir
-      // "conecta tu número" ahí manda al dueño a rehacer un alta que ya hizo,
-      // en vez de a pegar un token nuevo.
+      // "conecta tu número" ahí le oculta que ya hizo el alta y que lo que
+      // falta es volver a autorizarla. Sin jerga: el dueño no sabe qué es un
+      // token, solo que su WhatsApp dejó de funcionar.
       detail: input.whatsappConnected
         ? "Número conectado y vigente."
         : input.whatsappStatus === "reconnect_required"
-          ? "El token de WhatsApp expiró o fue revocado: los envíos están pausados hasta reconectar."
+          ? "La conexión con tu WhatsApp venció: los envíos están pausados hasta que la reconectes."
           : "Conecta el número que atenderá a tus clientes.",
       href: "/settings/whatsapp",
     },

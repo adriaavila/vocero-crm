@@ -7,6 +7,8 @@ import {
 } from "@/server/whatsapp/credentials";
 import { subscribeAppToWaba, testConnection } from "@/server/whatsapp/connect";
 import { canAutomate } from "@/server/agencia/entitlements";
+import { getConnectionEvidence } from "@/server/onboarding/status";
+import { getOnboarding } from "@/server/onboarding/whatsapp-onboarding";
 // Fork: el índice `meta_credentials_phone_uq` es de instancia — sin esto, un
 // número ya conectado a otra organización revienta aquí con un 500 mudo.
 import { isDuplicatePhoneNumberError } from "@/server/agencia/whatsapp-signup/payload";
@@ -15,8 +17,16 @@ export const dynamic = "force-dynamic";
 
 export const GET = withOwner(async (session) => {
   const creds = await getCredentialsByOrg(session.organizationId);
-  if (!creds) return Response.json({ connection: null });
+  if (!creds) return Response.json({ connection: null, evidence: null });
+  // Recibido y entregado por separado, desde la última vez que se conectó.
+  const onboarding = await getOnboarding(session.organizationId);
+  const evidence = await getConnectionEvidence(session.organizationId, onboarding?.connectedAt ?? null);
   return Response.json({
+    evidence: {
+      connectedAt: onboarding?.connectedAt?.toISOString() ?? null,
+      lastInboundAt: evidence.lastInboundAt?.toISOString() ?? null,
+      lastDeliveredAt: evidence.lastDeliveredAt?.toISOString() ?? null,
+    },
     connection: {
       wabaId: creds.wabaId,
       phoneNumberId: creds.phoneNumberId,

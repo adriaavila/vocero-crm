@@ -81,7 +81,7 @@ describe("estado del negocio", () => {
   });
 
   it("agente apagado y nadie esperando: pausado", () => {
-    expect(systemState({ ...ok, agentOn: false, working: 4 })).toMatchObject({ state: "pausado", href: "/agent" });
+    expect(systemState({ ...ok, agentOn: false, working: 4 })).toMatchObject({ state: "pausado", href: "/agent#activar" });
   });
 
   it("trabajando ahora: atendiendo", () => {

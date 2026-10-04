@@ -1,10 +1,12 @@
 /**
  * Restablecer la contraseña de un usuario SIN correo.
  *
- * Vocero no tiene flujo de "olvidé mi contraseña" —sería una dependencia
- * externa, y la constitución las prohíbe en v1— y el registro público se cierra
- * en cuanto existe la primera organización. Cuando la contraseña se pierde, la
- * única salida es reescribir el hash en la base.
+ * Sin el conector de correo (RESEND_API_KEY + EMAIL_FROM, ver
+ * src/server/agencia/email.ts) Vocero no tiene flujo de "olvidé mi contraseña"
+ * —el correo es un tercero y solo entra como conector opcional— y el registro
+ * público se cierra en cuanto existe la primera organización. Cuando la
+ * contraseña se pierde y no hay correo, la única salida es reescribir el hash
+ * en la base.
  *
  * Este script NO toca ninguna base de datos: no abre conexión, no lee
  * DATABASE_URL, no escribe nada. Genera el hash y te imprime el `UPDATE` listo

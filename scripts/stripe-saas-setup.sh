@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Crea en Stripe lo que necesita el cobro SaaS: los dos productos, sus precios
-# mensuales y el webhook. Idempotente por lookup_key y por URL del webhook:
+# Crea en Stripe lo que necesita el cobro SaaS: los productos, sus precios
+# mensuales, el webhook y el portal del cliente (cambio de plan y cancelación). Idempotente por lookup_key y por URL del webhook:
 # correrlo dos veces no duplica nada. Imprime las variables para Coolify.
 #
 #   STRIPE_KEY=sk_live_… scripts/stripe-saas-setup.sh
@@ -30,10 +30,12 @@ price() { # lookup_key nombre centavos
 BASIC=$(price allok_saas_basic_monthly "allok · Esencial" 4900)
 PRO=$(price allok_saas_pro_monthly "allok · Completo" 9900)
 INMO=$(price allok_saas_inmobiliaria_monthly "allok · Agencia" 29900)
+product_of() { api "prices/$1" | field "d['product']"; }
 
 HOOK=$(api "webhook_endpoints?limit=100" | field "next((w['id'] for w in d['data'] if w['url']=='$WEBHOOK_URL'), '')")
 if [ -z "$HOOK" ]; then
   SECRET=$(api webhook_endpoints -d url="$WEBHOOK_URL" \
+    -d "api_version=2026-04-22.dahlia" \
     -d "enabled_events[]=checkout.session.completed" \
     -d "enabled_events[]=customer.subscription.created" \
     -d "enabled_events[]=customer.subscription.updated" \
@@ -42,7 +44,44 @@ if [ -z "$HOOK" ]; then
     -d "enabled_events[]=invoice.payment_failed" | field "d['secret']")
 else
   SECRET="(ya existía $HOOK: usa el whsec que guardaste)"
+  HOOK_VERSION=$(api "webhook_endpoints/$HOOK" | field "d.get('api_version') or ''")
+  if [ "$HOOK_VERSION" != "2026-04-22.dahlia" ]; then
+    echo "AVISO: el webhook $HOOK usa api_version '${HOOK_VERSION:-(predeterminada de la cuenta)}', no 2026-04-22.dahlia." >&2
+    echo "       El código lee los campos de esa versión. La versión no se puede cambiar: crea otro endpoint con esa versión y borra este." >&2
+  else
+    echo "Webhook $HOOK: api_version $HOOK_VERSION"
+  fi
 fi
+
+# Portal del cliente: sin esto no puede cambiar de plan ni cancelar solo. Es una
+# configuración PROPIA (marcada con metadata[allok_saas]=portal), no la
+# predeterminada de la cuenta: esa puede servir a otro producto y no se toca.
+# Se encuentra por esa metadata, así que correrlo dos veces deja lo mismo.
+# Esencial y Completo se intercambian; Agencia no entra (se vende hablando).
+PORTAL=$(api "billing_portal/configurations?limit=100" | field "next((c['id'] for c in d['data'] if (c.get('metadata') or {}).get('allok_saas') == 'portal'), '')")
+PORTAL_ARGS=(
+  -d "metadata[allok_saas]=portal"
+  -d "business_profile[headline]=Tu plan de allok"
+  -d "features[invoice_history][enabled]=true"
+  -d "features[payment_method_update][enabled]=true"
+  -d "features[subscription_cancel][enabled]=true"
+  -d "features[subscription_cancel][mode]=at_period_end"
+  -d "features[subscription_update][enabled]=true"
+  -d "features[subscription_update][default_allowed_updates][]=price"
+  -d "features[subscription_update][proration_behavior]=create_prorations"
+  -d "features[subscription_update][products][0][product]=$(product_of "$BASIC")"
+  -d "features[subscription_update][products][0][prices][]=$BASIC"
+  -d "features[subscription_update][products][1][product]=$(product_of "$PRO")"
+  -d "features[subscription_update][products][1][prices][]=$PRO"
+)
+if [ -z "$PORTAL" ]; then
+  PORTAL=$(api billing_portal/configurations "${PORTAL_ARGS[@]}" | field "d['id']")
+  PORTAL_NOTE="creada $PORTAL"
+else
+  api "billing_portal/configurations/$PORTAL" "${PORTAL_ARGS[@]}" | field "d['id']" >/dev/null
+  PORTAL_NOTE="actualizada $PORTAL (cambiar entre Esencial y Completo, cancelar al final del periodo, actualizar pago)"
+fi
+echo "Portal del cliente: $PORTAL_NOTE"
 
 cat <<EOF
 
@@ -52,4 +91,5 @@ ALLOK_SAAS_STRIPE_BASIC_PRICE_ID=$BASIC
 ALLOK_SAAS_STRIPE_PRO_PRICE_ID=$PRO
 ALLOK_SAAS_STRIPE_INMO_PRICE_ID=$INMO
 ALLOK_SAAS_STRIPE_WEBHOOK_SECRET=$SECRET
+ALLOK_SAAS_STRIPE_PORTAL_CONFIG_ID=$PORTAL
 EOF
