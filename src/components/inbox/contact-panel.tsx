@@ -25,31 +25,31 @@ const HANDOFF_LABELS: Record<string, string> = {
   ventana: "Ventana de 24h cerrada",
 };
 
-/** "hoy a las 21:30", "mañana a las 09:00", "el jueves 8 a las 09:00". */
+/** "hoy a las 11:00 p.m.", "mañana a las 02:43 a.m.", "el martes 6 a las 02:43 a.m." (la misma hora de la lista). */
 function cuando(at: Date, now: Date): string {
-  const hora = at.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const hora = at.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
   const dia = (d: Date) => d.toDateString();
   if (dia(at) === dia(now)) return `hoy a las ${hora}`;
   if (dia(at) === dia(new Date(now.getTime() + 86_400_000))) return `mañana a las ${hora}`;
-  return `el ${at.toLocaleDateString("es", { weekday: "long", day: "numeric" })} a las ${hora}`;
+  return `el ${at.toLocaleDateString("es-MX", { weekday: "long", day: "numeric" })} a las ${hora}`;
 }
 
 /**
  * Fork — pausa que vence: qué pasa con un chat que el dueño tomó desde el
- * teléfono. Dice la verdad en los dos despliegues: en SaaS el worker la
- * reanuda a la hora; en una instancia dedicada, el próximo mensaje del
- * cliente ("a partir de").
+ * teléfono. El reloj cuenta desde su último mensaje (teléfono o bandeja); en
+ * una instancia sin worker el estado cambia con el próximo mensaje del
+ * cliente, por eso la frase de la pausa ya vencida.
  */
 function textoDePausaManual(c: ConversationDto, now = new Date()): string {
   if (!c.aiResumeAt) {
-    return "Respondiste desde el teléfono. La IA no retoma este chat hasta que la reactives.";
+    return "Respondiste desde el teléfono. La IA no vuelve hasta que la reactives.";
   }
   const at = new Date(c.aiResumeAt);
   if (at.getTime() <= now.getTime()) {
-    return "Respondiste desde el teléfono. La IA retoma en cuanto el cliente vuelva a escribir.";
+    return "Respondiste desde el teléfono. La IA vuelve en cuanto el cliente escriba.";
   }
-  const turno = c.aiResumeOnShiftStart ? " (o antes, cuando empiece su turno)" : "";
-  return `Respondiste desde el teléfono. Si no vuelves a escribir aquí, la IA retoma sola a partir de ${cuando(at, now)}${turno}.`;
+  const cierre = c.aiResumeBy === "shift" ? ", al cerrar tu horario" : "";
+  return `Respondiste desde el teléfono. La IA vuelve sola ${cuando(at, now)}${cierre}.`;
 }
 
 export function ContactPanel({
@@ -61,13 +61,25 @@ export function ContactPanel({
   conversation: ConversationDto;
   /** Aumenta con cada evento SSE relevante: dispara un refetch en vivo. */
   refreshKey?: number;
+  /** Resuelve `false` si el cambio no se guardó (la bandeja no lanza). */
   onPatchConversation: (patch: {
     aiEnabled?: boolean;
     reactivate?: boolean;
-  }) => Promise<void>;
+  }) => Promise<boolean | void>;
   onClose: () => void;
 }) {
   const [notes, setNotes] = useState("");
+  // Fork — pausa que vence: reactivar con respuesta (ocupado / falló), nunca en silencio.
+  const [reactivando, setReactivando] = useState(false);
+  const [falloReactivar, setFalloReactivar] = useState<string | null>(null);
+  useEffect(() => setFalloReactivar(null), [conversation.id]);
+  const reactivar = async () => {
+    setFalloReactivar(null);
+    setReactivando(true);
+    const ok = await onPatchConversation({ reactivate: true });
+    setReactivando(false);
+    if (ok === false) setFalloReactivar("No se pudo reactivar la IA. Inténtalo de nuevo.");
+  };
   const [ficha, setFicha] = useState<FichaDto>({});
   const [notesLoaded, setNotesLoaded] = useState(false);
   const [savingNotes, setSavingNotes] = useState(false);
@@ -219,9 +231,13 @@ export function ContactPanel({
           </div>
 
           {conversation.handoffAt && conversation.handoffReason === "manual_reply" && (
-            <div className="mt-3 rounded-md border bg-subtle p-3">
-              <p className="flex items-center gap-1.5 text-[13px] font-medium">
-                <UserRound className="h-4 w-4" strokeWidth={1.7} /> La atiendes tú
+            <div
+              data-state="pausado"
+              className="mt-3 rounded-md border border-[var(--st-soft,var(--border))] bg-[var(--st-soft,var(--bg-subtle))] p-3"
+            >
+              <p className="flex items-center gap-2 text-[13px] font-medium text-[var(--st-ink,inherit)]">
+                <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-[var(--st,var(--text-3))]" />
+                La atiendes tú
               </p>
               <p className="mt-1 text-xs leading-relaxed text-text-3">
                 {textoDePausaManual(conversation)}
@@ -229,11 +245,17 @@ export function ContactPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="mt-2 w-full"
-                onClick={() => void onPatchConversation({ reactivate: true })}
+                className="mt-2 w-full max-sm:h-11"
+                disabled={reactivando}
+                onClick={() => void reactivar()}
               >
-                Que la IA retome ahora
+                {reactivando ? "Reactivando…" : "Reactivar IA"}
               </Button>
+              {falloReactivar && (
+                <p role="alert" className="mt-2 text-xs text-danger-text">
+                  {falloReactivar}
+                </p>
+              )}
             </div>
           )}
 
@@ -249,11 +271,17 @@ export function ContactPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="mt-2 w-full"
-                onClick={() => void onPatchConversation({ reactivate: true })}
+                className="mt-2 w-full max-sm:h-11"
+                disabled={reactivando}
+                onClick={() => void reactivar()}
               >
-                Reactivar IA
+                {reactivando ? "Reactivando…" : "Reactivar IA"}
               </Button>
+              {falloReactivar && (
+                <p role="alert" className="mt-2 text-xs text-danger-text">
+                  {falloReactivar}
+                </p>
+              )}
             </div>
           )}
 

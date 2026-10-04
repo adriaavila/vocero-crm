@@ -23,8 +23,8 @@ export type ConversationDto = {
    * caso o si el negocio eligió "nunca".
    */
   aiResumeAt: string | null;
-  /** …y también en cuanto empiece el turno del agente (modo fuera de horario). */
-  aiResumeOnShiftStart: boolean;
+  /** Por qué a esa hora: pasaron las horas del negocio, o cierra el horario del equipo. */
+  aiResumeBy: "hours" | "shift" | null;
   /** 018: el anuncio que abrió la conversación, para la marca de la lista. */
   anuncio: {
     headline: string | null;

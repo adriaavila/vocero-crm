@@ -262,14 +262,15 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   );
 
   const patchConversation = useCallback(
-    async (patch: { aiEnabled?: boolean; reactivate?: boolean }) => {
-      if (!selectedIdRef.current) return;
-      await fetch(`/api/conversations/${selectedIdRef.current}`, {
+    async (patch: { aiEnabled?: boolean; reactivate?: boolean }): Promise<boolean> => {
+      if (!selectedIdRef.current) return false;
+      const res = await fetch(`/api/conversations/${selectedIdRef.current}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(patch),
       }).catch(() => null);
       void refetchConversations();
+      return res?.ok === true;
     },
     [refetchConversations]
   );

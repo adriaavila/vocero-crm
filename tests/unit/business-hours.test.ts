@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  businessHoursCloseAfter,
   businessHoursFromProfile,
   DEFAULT_BUSINESS_HOURS,
   isBusinessHoursOpen,
@@ -66,5 +67,29 @@ describe("fork — horas hasta que la IA retoma (pausa que vence)", () => {
   it("viaja con el horario del perfil", () => {
     expect(businessHoursFromProfile({ responseMode: "all_day", handoffResumeHours: 6 }).handoffResumeHours).toBe(6);
     expect(businessHoursFromProfile({ responseMode: "all_day" }).handoffResumeHours).toBeNull();
+  });
+});
+
+describe("fork — cuándo cierra el horario abierto (el turno del agente)", () => {
+  const mon = { ...base, weeklyHours: { mon: [{ start: "09:00", end: "18:00" }] } };
+
+  it("dentro del tramo devuelve su cierre; fuera, nunca o todo el día, null", () => {
+    expect(businessHoursCloseAfter(mon, new Date("2026-09-07T21:00:00Z"))?.toISOString()).toBe("2026-09-08T00:00:00.000Z");
+    expect(businessHoursCloseAfter(mon, new Date("2026-09-08T03:00:00Z"))).toBeNull(); // 21:00, cerrado
+    expect(businessHoursCloseAfter({ ...mon, responseMode: "all_day" }, new Date("2026-09-07T21:00:00Z"))).toBeNull();
+    expect(businessHoursCloseAfter({ ...base, weeklyHours: {} }, new Date("2026-09-07T21:00:00Z"))).toBeNull();
+  });
+
+  it("tramos contiguos cierran juntos; uno que cruza la medianoche cierra al día siguiente", () => {
+    const partido = { ...base, weeklyHours: { mon: [{ start: "09:00", end: "13:00" }, { start: "13:00", end: "18:00" }] } };
+    expect(businessHoursCloseAfter(partido, new Date("2026-09-07T16:00:00Z"))?.toISOString()).toBe("2026-09-08T00:00:00.000Z");
+    const noche = { ...base, weeklyHours: { mon: [{ start: "22:00", end: "02:00" }] } };
+    expect(businessHoursCloseAfter(noche, new Date("2026-09-08T05:00:00Z"))?.toISOString()).toBe("2026-09-08T08:00:00.000Z"); // lunes 23:00 → martes 02:00
+    expect(businessHoursCloseAfter(noche, new Date("2026-09-08T07:00:00Z"))?.toISOString()).toBe("2026-09-08T08:00:00.000Z"); // martes 01:00, tramo de ayer
+  });
+
+  it("24 h todos los días nunca cierra", () => {
+    const siempre = { ...base, weeklyHours: Object.fromEntries(["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map((d) => [d, [{ start: "00:00", end: "00:00" }]])) };
+    expect(businessHoursCloseAfter(siempre as BusinessHoursSettings, new Date("2026-09-07T21:00:00Z"))).toBeNull();
   });
 });

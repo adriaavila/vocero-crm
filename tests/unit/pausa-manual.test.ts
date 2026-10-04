@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_HANDOFF_RESUME_HOURS,
   manualPauseExpired,
+  manualPauseResume,
   manualPauseResumeAt,
   pausaInfo,
   resumeHours,
-  resumesOnShiftStart,
 } from "@/server/agencia/pausa-manual";
 import { DEFAULT_BUSINESS_HOURS, type BusinessHoursSettings } from "@/server/business-hours";
 
@@ -86,33 +86,45 @@ describe("manualPauseExpired: turno del agente (fuera de horario)", () => {
   });
 
   it("sin horario configurado, o todo el día, no hay turno que la venza", () => {
-    expect(resumesOnShiftStart({ ...turno, weeklyHours: {} })).toBe(false);
-    expect(resumesOnShiftStart({ ...turno, responseMode: "all_day" })).toBe(false);
-    expect(resumesOnShiftStart({ ...turno, handoffResumeHours: 0 })).toBe(false);
+    expect(manualPauseResume(deDia, { ...turno, weeklyHours: {} })).toEqual({ at: at("2026-09-08T09:00:00Z"), by: "hours" });
+    expect(manualPauseResume(deDia, { ...turno, responseMode: "all_day" })).toEqual({ at: at("2026-09-08T09:00:00Z"), by: "hours" });
+    expect(manualPauseResume(deDia, { ...turno, handoffResumeHours: 0 })).toBeNull();
     expect(manualPauseExpired(deDia, { ...turno, responseMode: "all_day" }, at("2026-09-08T00:05:00Z"))).toBe(false);
+  });
+
+  it("el instante del turno es fijo: vencida sigue vencida aunque el horario vuelva a abrir", () => {
+    // Pausa a las 15:00 del lunes; cierre 18:00; el martes a las 10:00 (abierto otra vez) sigue vencida.
+    expect(manualPauseResume(deDia, { ...turno, handoffResumeHours: 48 })).toEqual({ at: at("2026-09-08T00:00:00Z"), by: "shift" });
+    expect(manualPauseExpired(deDia, { ...turno, handoffResumeHours: 48 }, at("2026-09-08T16:00:00Z"))).toBe(true);
   });
 });
 
 describe("pausaInfo (lo que ve la bandeja)", () => {
-  it("dice cuándo retoma y si también lo hace al empezar su turno", () => {
+  it("dice cuándo vuelve la IA y por qué: el cierre del horario gana a las horas si llega antes", () => {
     const turno: BusinessHoursSettings = { ...base, weeklyHours: { mon: [{ start: "09:00", end: "18:00" }] } };
+    // Lunes 15:00 locales: cierra a las 18:00 (00:00Z), antes de las 12 h.
     expect(pausaInfo(pausedAt("2026-09-07T21:00:00Z"), turno)).toEqual({
-      aiResumeAt: "2026-09-08T09:00:00.000Z",
-      aiResumeOnShiftStart: true,
+      aiResumeAt: "2026-09-08T00:00:00.000Z",
+      aiResumeBy: "shift",
     });
     // Pausa nacida fuera del horario (domingo): solo vence por horas, y la
-    // bandeja no promete un turno que ya está corriendo.
+    // bandeja no promete un cierre que ya pasó.
     expect(pausaInfo(pausedAt("2026-09-06T21:00:00Z"), turno)).toEqual({
       aiResumeAt: "2026-09-07T09:00:00.000Z",
-      aiResumeOnShiftStart: false,
+      aiResumeBy: "hours",
+    });
+    // Con 2 horas, las horas llegan antes que el cierre.
+    expect(pausaInfo(pausedAt("2026-09-07T21:00:00Z"), { ...turno, handoffResumeHours: 2 })).toEqual({
+      aiResumeAt: "2026-09-07T23:00:00.000Z",
+      aiResumeBy: "hours",
     });
     expect(pausaInfo(pausedAt("2026-09-07T21:00:00Z"), { ...turno, handoffResumeHours: 0 })).toEqual({
       aiResumeAt: null,
-      aiResumeOnShiftStart: false,
+      aiResumeBy: null,
     });
     expect(pausaInfo({ handoffAt: "2026-09-07T21:00:00Z", handoffReason: "cliente" }, turno)).toEqual({
       aiResumeAt: null,
-      aiResumeOnShiftStart: false,
+      aiResumeBy: null,
     });
   });
 });

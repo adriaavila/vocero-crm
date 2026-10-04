@@ -2,9 +2,8 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { publish } from "@/server/events/bus";
 import {
+  businessHoursCloseAfter,
   getBusinessHours,
-  isBusinessHoursOpen,
-  isOutsideBusinessHours,
   type BusinessHoursSettings,
 } from "@/server/business-hours";
 
@@ -55,21 +54,32 @@ export function resumeHours(settings: Pick<BusinessHoursSettings, "handoffResume
   return v === null || v === undefined ? DEFAULT_HANDOFF_RESUME_HOURS : v;
 }
 
-/** ¿La pausa también termina cuando empieza el turno del agente? */
-export function resumesOnShiftStart(settings: BusinessHoursSettings): boolean {
-  return (
-    resumeHours(settings) > 0 &&
-    settings.responseMode === "outside_hours" &&
-    Object.keys(settings.weeklyHours).length > 0
-  );
-}
+export type Reanudacion = { at: Date; by: "hours" | "shift" } | null;
 
-/** Cuándo vence la pausa por horas; null si no es una pausa manual o nunca vence. */
-export function manualPauseResumeAt(c: PausaConv, settings: BusinessHoursSettings): Date | null {
+/**
+ * Cuándo y por qué vuelve la IA en una pausa manual: lo primero que ocurra
+ * entre las horas del negocio (`handoff_at` + N h) y, si el agente atiende
+ * solo fuera de horario y la pausa nació dentro del horario del equipo, el
+ * cierre de ese horario (con una hora de gracia desde la última respuesta).
+ * Un instante fijo: una vez pasado, la pausa está vencida aunque el horario
+ * vuelva a abrir después. null si no es una pausa manual o es "nunca".
+ */
+export function manualPauseResume(c: PausaConv, settings: BusinessHoursSettings): Reanudacion {
   if (c.handoffReason !== "manual_reply" || !c.handoffAt) return null;
   const hours = resumeHours(settings);
   if (hours <= 0) return null;
-  return new Date(new Date(c.handoffAt).getTime() + hours * 3_600_000);
+  const since = new Date(c.handoffAt);
+  const byHours = new Date(since.getTime() + hours * 3_600_000);
+  if (settings.responseMode !== "outside_hours") return { at: byHours, by: "hours" };
+  const close = businessHoursCloseAfter(settings, since);
+  if (!close) return { at: byHours, by: "hours" };
+  const byShift = new Date(Math.max(close.getTime(), since.getTime() + SHIFT_GRACE_MS));
+  return byShift.getTime() < byHours.getTime() ? { at: byShift, by: "shift" } : { at: byHours, by: "hours" };
+}
+
+/** Cuándo vence la pausa; null si no es una pausa manual o nunca vence. */
+export function manualPauseResumeAt(c: PausaConv, settings: BusinessHoursSettings): Date | null {
+  return manualPauseResume(c, settings)?.at ?? null;
 }
 
 export function manualPauseExpired(
@@ -77,41 +87,17 @@ export function manualPauseExpired(
   settings: BusinessHoursSettings,
   now: Date = new Date()
 ): boolean {
-  if (c.handoffReason !== "manual_reply" || !c.handoffAt) return false;
-  const at = manualPauseResumeAt(c, settings);
-  if (!at) return false; // "nunca"
-  if (now.getTime() >= at.getTime()) return true;
-  // Turno del agente: la pausa nació dentro del horario del equipo y ahora
-  // estamos fuera → le toca al agente. Una pausa nacida fuera de horario (el
-  // dueño atendiendo de noche a mano) solo vence por horas.
-  const since = new Date(c.handoffAt);
-  return (
-    resumesOnShiftStart(settings) &&
-    now.getTime() - since.getTime() >= SHIFT_GRACE_MS &&
-    isOutsideBusinessHours(settings, now) &&
-    isBusinessHoursOpen(settings, since)
-  );
+  const resume = manualPauseResume(c, settings);
+  return resume !== null && now.getTime() >= resume.at.getTime();
 }
 
-/**
- * Lo que la bandeja le dice al dueño (ConversationDto). `aiResumeOnShiftStart`
- * solo es verdad para ESTA pausa: nació dentro del horario del equipo y por
- * eso termina cuando empiece el turno del agente. Una pausa de domingo (ya
- * fuera de horario) solo vence por horas, y decir "cuando empiece su turno"
- * ahí sería mentir: el turno ya está corriendo.
- */
+/** Lo que la bandeja le dice al dueño (ConversationDto): cuándo vuelve la IA y por qué. */
 export function pausaInfo(
   c: PausaConv,
   settings: BusinessHoursSettings
-): { aiResumeAt: string | null; aiResumeOnShiftStart: boolean } {
-  const at = manualPauseResumeAt(c, settings);
-  return {
-    aiResumeAt: at ? at.toISOString() : null,
-    aiResumeOnShiftStart:
-      at !== null &&
-      resumesOnShiftStart(settings) &&
-      isBusinessHoursOpen(settings, new Date(c.handoffAt as Date | string)),
-  };
+): { aiResumeAt: string | null; aiResumeBy: "hours" | "shift" | null } {
+  const resume = manualPauseResume(c, settings);
+  return { aiResumeAt: resume?.at.toISOString() ?? null, aiResumeBy: resume?.by ?? null };
 }
 
 /**

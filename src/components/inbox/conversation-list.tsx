@@ -326,9 +326,9 @@ export function ConversationList({
                           </span>
                         )}
                       </span>
-                      <span className="mt-1.5 flex items-center gap-1.5">
+                      <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
                         {c.stageName && (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2">
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] font-medium text-text-2">
                             <span
                               className="h-[7px] w-[7px] rounded-full"
                               style={{
@@ -339,13 +339,16 @@ export function ConversationList({
                           </span>
                         )}
                         {c.handoffAt && c.handoffReason === "manual_reply" && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] text-text-2">
-                            <UserRound className="h-3 w-3" strokeWidth={1.7} />
+                          <span
+                            data-state="pausado"
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--st-soft,var(--border-strong))] bg-[var(--st-soft,var(--bg))] px-2 py-0.5 text-[11px] font-medium text-[var(--st-ink,var(--text-2))]"
+                          >
+                            <span aria-hidden className="h-[7px] w-[7px] rounded-full bg-[var(--st,var(--text-3))]" />
                             La atiendes tú
                           </span>
                         )}
                         {c.handoffAt && c.handoffReason !== "manual_reply" && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-warning-soft bg-warning-tint px-2 py-0.5 text-[11px] text-warning-text">
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning-soft bg-warning-tint px-2 py-0.5 text-[11px] text-warning-text">
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana
                           </span>

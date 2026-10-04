@@ -6,6 +6,7 @@ import {
   isValidTimeZone,
   weekdayKeyOf,
   WEEKDAYS,
+  zonedWallClockToUtc,
   type WeekdayKey,
 } from "@/lib/time/slots";
 import { hasSaaSPlan } from "@/server/agencia/entitlements";
@@ -114,6 +115,55 @@ export function isOutsideBusinessHours(
   now = new Date(),
 ): boolean {
   return hasConfiguredBusinessHours(settings) && !isBusinessHoursOpen(settings, now);
+}
+
+/**
+ * Fork — pausa que vence: el instante en que CIERRA el tramo del horario del
+ * equipo que está abierto en `from` (= cuando empieza el turno del agente en
+ * modo fuera de horario). Camina los tramos contiguos (09–13 y 13–18 cierran
+ * a las 18). null si en `from` el equipo no atiende, si el modo es todo el
+ * día, o si el horario nunca cierra (24 h todos los días).
+ */
+export function businessHoursCloseAfter(
+  settings: BusinessHoursSettings,
+  from: Date,
+): Date | null {
+  if (settings.responseMode === "all_day" || !hasConfiguredBusinessHours(settings)) return null;
+  if (!isBusinessHoursOpen(settings, from)) return null;
+  const tz = settings.timezone;
+  let cursor = from;
+  for (let step = 0; step < 16; step++) {
+    const day = dayIsoInTz(cursor, tz);
+    const weekday = weekdayKeyOf(day, tz);
+    const previousDay = weekdayKeyOf(addDaysISO(day, -1), tz);
+    if (!weekday || !previousDay) return null;
+    const minute = localMinute(cursor, tz);
+    let close: Date | null = null;
+    for (const interval of settings.weeklyHours[weekday] ?? []) {
+      if (isAllDayInterval(interval)) {
+        close = zonedWallClockToUtc(addDaysISO(day, 1), "00:00", tz);
+        break;
+      }
+      if (intervalIsOpenNow(interval, minute)) {
+        close = intervalRunsPastMidnight(interval)
+          ? zonedWallClockToUtc(addDaysISO(day, 1), interval.end, tz)
+          : zonedWallClockToUtc(day, interval.end, tz);
+        break;
+      }
+    }
+    if (!close) {
+      for (const interval of settings.weeklyHours[previousDay] ?? []) {
+        if (intervalRunsPastMidnight(interval) && minute < toMinutes(interval.end)) {
+          close = zonedWallClockToUtc(day, interval.end, tz);
+          break;
+        }
+      }
+    }
+    if (!close || close.getTime() <= cursor.getTime()) return null;
+    if (!isBusinessHoursOpen(settings, close)) return close;
+    cursor = close; // el siguiente tramo empieza justo al cerrar éste: seguir
+  }
+  return null;
 }
 
 export async function getBusinessHours(organizationId: string): Promise<BusinessHoursSettings> {
