@@ -18,6 +18,9 @@ const GRID_COLS: Record<number, string> = {
   3: "md:grid-cols-3",
 };
 
+/** Esencial solo contesta fuera del horario; durante la prueba (Completo, todo el día) el dueño debe saberlo antes de elegirlo. */
+export const BASIC_DURING_TRIAL_NOTE = "Desde hoy tu agente contesta solo fuera de tu horario.";
+
 /** Punto + palabra de cada punto del plan. El color es el estado, no un adorno. */
 const KIND_STATUS: Record<PlanKind, { dot: SystemState; word: string } | null> = {
   trial: { dot: "activo", word: "En prueba" },
@@ -221,6 +224,9 @@ export function BillingClient({
                     <p className="kicker">Cuándo contesta</p>
                     <p className="mt-1 text-sm leading-snug text-foreground">{plan.answers}</p>
                   </div>
+                  {freeTrial && plan.id === "basic" && (
+                    <p className="mt-3 text-sm font-medium leading-snug text-foreground">{BASIC_DURING_TRIAL_NOTE}</p>
+                  )}
                   <Button className="mt-5 min-h-11 w-full" variant={plan.id === "pro" ? "default" : "outline"} onClick={() => void goToCheckout(plan.id)} disabled={loading !== null}>
                     {loading === plan.id ? "Abriendo el pago…" : <>Elegir {plan.name}<ArrowRight className="ml-2 h-4 w-4" aria-hidden /></>}
                   </Button>
