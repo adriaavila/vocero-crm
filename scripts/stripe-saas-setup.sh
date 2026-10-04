@@ -44,14 +44,23 @@ if [ -z "$HOOK" ]; then
     -d "enabled_events[]=invoice.payment_failed" | field "d['secret']")
 else
   SECRET="(ya existía $HOOK: usa el whsec que guardaste)"
+  HOOK_VERSION=$(api "webhook_endpoints/$HOOK" | field "d.get('api_version') or ''")
+  if [ "$HOOK_VERSION" != "2026-04-22.dahlia" ]; then
+    echo "AVISO: el webhook $HOOK usa api_version '${HOOK_VERSION:-(predeterminada de la cuenta)}', no 2026-04-22.dahlia." >&2
+    echo "       El código lee los campos de esa versión. La versión no se puede cambiar: crea otro endpoint con esa versión y borra este." >&2
+  else
+    echo "Webhook $HOOK: api_version $HOOK_VERSION"
+  fi
 fi
 
-# Portal del cliente: sin esto no puede cambiar de plan ni cancelar solo. Se
-# actualiza la configuración por defecto (o se crea si no hay), así que correrlo
-# dos veces deja lo mismo. Esencial y Completo se intercambian; Agencia no entra
-# (se vende hablando).
-PORTAL=$(api "billing_portal/configurations?limit=20" | field "next((c['id'] for c in d['data'] if c['is_default']), '')")
+# Portal del cliente: sin esto no puede cambiar de plan ni cancelar solo. Es una
+# configuración PROPIA (marcada con metadata[allok_saas]=portal), no la
+# predeterminada de la cuenta: esa puede servir a otro producto y no se toca.
+# Se encuentra por esa metadata, así que correrlo dos veces deja lo mismo.
+# Esencial y Completo se intercambian; Agencia no entra (se vende hablando).
+PORTAL=$(api "billing_portal/configurations?limit=100" | field "next((c['id'] for c in d['data'] if (c.get('metadata') or {}).get('allok_saas') == 'portal'), '')")
 PORTAL_ARGS=(
+  -d "metadata[allok_saas]=portal"
   -d "business_profile[headline]=Tu plan de allok"
   -d "features[invoice_history][enabled]=true"
   -d "features[payment_method_update][enabled]=true"
@@ -67,7 +76,7 @@ PORTAL_ARGS=(
 )
 if [ -z "$PORTAL" ]; then
   PORTAL=$(api billing_portal/configurations "${PORTAL_ARGS[@]}" | field "d['id']")
-  PORTAL_NOTE="creada $PORTAL (si no queda como predeterminada, márcala en Stripe: Ajustes > Facturación > Portal del cliente)"
+  PORTAL_NOTE="creada $PORTAL"
 else
   api "billing_portal/configurations/$PORTAL" "${PORTAL_ARGS[@]}" | field "d['id']" >/dev/null
   PORTAL_NOTE="actualizada $PORTAL (cambiar entre Esencial y Completo, cancelar al final del periodo, actualizar pago)"
@@ -82,4 +91,5 @@ ALLOK_SAAS_STRIPE_BASIC_PRICE_ID=$BASIC
 ALLOK_SAAS_STRIPE_PRO_PRICE_ID=$PRO
 ALLOK_SAAS_STRIPE_INMO_PRICE_ID=$INMO
 ALLOK_SAAS_STRIPE_WEBHOOK_SECRET=$SECRET
+ALLOK_SAAS_STRIPE_PORTAL_CONFIG_ID=$PORTAL
 EOF

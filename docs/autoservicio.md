@@ -35,11 +35,12 @@ scripts/stripe-saas-setup.sh
 ```
 
 Es idempotente. Crea (o reutiliza) los productos y precios de Esencial, Completo
-y Agencia, el webhook (fijado a la versión `2026-04-22.dahlia`) y deja el portal
-del cliente configurado: actualizar pago, cambiar entre Esencial y Completo y
+y Agencia, el webhook (fijado a la versión `2026-04-22.dahlia`) y una configuración PROPIA del portal
+del cliente (no toca la predeterminada de la cuenta): actualizar pago, cambiar entre Esencial y Completo y
 cancelar al final del periodo. Imprime los ids de precio. **El `whsec_` del
 webhook se ve una sola vez**: guárdalo en `~/CreativOS/_secrets/` en ese momento.
-Si el webhook ya existía, usa el que guardaste.
+Si el webhook ya existía, usa el que guardaste; el script imprime su `api_version`
+y avisa si no es `2026-04-22.dahlia`.
 
 Además, en el panel de Stripe (modo real): Ajustes, Facturación, Suscripciones y
 correos: activa "Enviar correos por cobros fallidos" y los reintentos
@@ -54,6 +55,7 @@ automáticos. Es lo que avisa al cliente cuando su tarjeta falla.
 | `ALLOK_SAAS_STRIPE_BASIC_PRICE_ID` | Esencial, US$49 |
 | `ALLOK_SAAS_STRIPE_PRO_PRICE_ID` | Completo, US$99 |
 | `ALLOK_SAAS_STRIPE_INMO_PRICE_ID` | Agencia (solo si `SAAS_PLANS` la incluye) |
+| `ALLOK_SAAS_STRIPE_PORTAL_CONFIG_ID` | `bpc_…` que imprime el script (portal propio; sin ella se usa el predeterminado de la cuenta) |
 | `RESEND_API_KEY` | llave de Resend, permiso "Sending access" |
 | `EMAIL_FROM` | `allok <no-reply@allok.fun>` (dominio verificado en Resend con SPF y DKIM) |
 | `META_APP_ID` | app de Meta |
