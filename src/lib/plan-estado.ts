@@ -139,13 +139,11 @@ export function planHeadline(state: PlanState, timeZone?: string): string {
   switch (state.kind) {
     case "trial": {
       const days = plural(state.daysLeft ?? 0, "día", "días");
-      const used = state.replies ? ` Usaste ${state.replies.used} de ${state.replies.cap} respuestas.` : "";
-      return `Prueba gratis de Completo: te quedan ${days}.${used}`;
+      return `Prueba gratis de Completo: te quedan ${days}.`;
     }
     case "trial_ending": {
-      const used = state.replies ? ` Usaste ${state.replies.used} de ${state.replies.cap} respuestas.` : "";
       const when = (state.daysLeft ?? 1) <= 1 ? "en menos de un día" : `en ${state.daysLeft} días`;
-      return `Tu prueba termina ${when}.${used} Elige un plan para que tu agente siga contestando.`;
+      return `Tu prueba termina ${when}. Elige un plan para que tu agente siga contestando.`;
     }
     case "trial_cap":
       return `Usaste las ${state.replies?.cap ?? TRIAL_AI_REPLIES} respuestas de la prueba. Tu agente está en pausa hasta que elijas un plan.`;

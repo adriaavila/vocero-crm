@@ -273,14 +273,14 @@ function PlanStrip({ plan, timezone, owner }: { plan: PlanState; timezone: strin
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b px-5 py-4 md:px-7">
       <div className="min-w-0">
-        <p className="flex items-center gap-2.5 text-[15px] leading-relaxed text-text-2">
-          {ending && (
-            <>
-              <StateDot state="atencion" size={9} decorative />
-              <span className="font-semibold text-foreground">Termina pronto</span>
-            </>
-          )}
-          <span suppressHydrationWarning>{planHeadline(plan, timezone)}</span>
+        {ending && (
+          <p className="mb-1 flex items-center gap-2.5 text-[15px] font-semibold">
+            <StateDot state="atencion" size={9} decorative />
+            Termina pronto
+          </p>
+        )}
+        <p className="text-[15px] leading-relaxed text-text-2" suppressHydrationWarning>
+          {planHeadline(plan, timezone)}
         </p>
         {trial && plan.replies && (
           <div className="mt-2 flex items-center gap-3">
