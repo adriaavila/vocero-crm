@@ -7,7 +7,8 @@
  *
  * Uso (servidor en modo SaaS con el autoservicio encendido):
  *   ALLOK_SAAS_MODE=true SAAS_SELF_SERVE=true node --env-file=.env scripts/saas-autoservicio-check.mjs
- * Requiere: WA_MOCK_ENABLED=true, META_GRAPH_BASE_URL → wa-mock,
+ * Requiere: WA_MOCK_ENABLED=true, EMAIL_API_URL=<APP_BASE_URL>/api/dev/email-sink
+ * (el correo cae en un sumidero en memoria, no en Resend), META_GRAPH_BASE_URL → wa-mock,
  * META_APP_ID/META_ES_CONFIG_ID, BD migrada. Sale con 0 solo si todo pasa.
  *
  * Tramos 9 a 11: equipo, estados del plan (prueba, tope, vencida, cobro fallido,
@@ -18,7 +19,7 @@
  *
  * El último tramo (8) recupera la contraseña desde el subdominio del negocio y
  * solo corre con el conector de correo encendido (RESEND_API_KEY + EMAIL_FROM);
- * apagado, lo anuncia y lo salta. Nunca manda correo de verdad: lee el token de
+ * apagado, lo anuncia y lo salta. Nunca manda correo de verdad (va al sumidero local): lee el token de
  * la tabla `verification`, que es el mismo que viaja en el enlace.
  */
 import postgres from "postgres";
@@ -111,7 +112,19 @@ const REQUIRED_ENV = [
   ["META_ES_CONFIG_ID", (v) => Boolean(v), "configuración de Embedded Signup"],
   ["RESEND_API_KEY", (v) => Boolean(v), "correo: recuperar contraseña y avisos de la prueba"],
   ["EMAIL_FROM", (v) => Boolean(v), "correo: remitente verificado"],
+  // El guion crea negocios y pide recuperaciones de contraseña de verdad: el
+  // correo tiene que caer en el sumidero local, nunca en Resend.
+  ["EMAIL_API_URL", isLocalEmailSink, "correo: sumidero local (EMAIL_API_URL=<APP_BASE_URL>/api/dev/email-sink), nunca Resend"],
 ];
+
+function isLocalEmailSink(value) {
+  try {
+    const url = new URL(value ?? "");
+    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && url.pathname === "/api/dev/email-sink";
+  } catch {
+    return false;
+  }
+}
 
 const signWebhook = (payload, secret, t = Math.floor(Date.now() / 1000)) =>
   `t=${t},v1=${createHmac("sha256", secret).update(`${t}.${payload}`).digest("hex")}`;
@@ -347,6 +360,8 @@ async function main() {
     ok("el dueño pide el enlace desde su subdominio: misma respuesta 200", asked.res.status === 200 && asked.json?.status === true, JSON.stringify(asked.json));
     const token = await tokenFor(ownerEmail);
     ok("queda un enlace pendiente a su nombre", Boolean(token));
+    const sunk = await fetch(`${process.env.EMAIL_API_URL}?to=${encodeURIComponent(ownerEmail)}`).then((r) => r.json()).catch(() => null);
+    ok("y el correo cayó en el sumidero local, no en Resend", (sunk?.emails?.length ?? 0) >= 1, JSON.stringify(sunk));
 
     const callback = await stranger(tenantHost, `/api/auth/reset-password/${token}?callbackURL=%2Freset-password`);
     const where = callback.res.headers.get("location") ?? "";

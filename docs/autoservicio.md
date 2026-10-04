@@ -117,7 +117,15 @@ Link; `/rei` y "A tu medida" siguen en WhatsApp.
 
 `pnpm test:e2e:autoservicio` (contra un servidor local con Stripe en modo prueba,
 el wa-mock y el correo apuntando a un registro local) falla si falta una pieza:
-el tramo 0 lista las variables de arriba. Cubre registro, Embedded Signup, los
+el tramo 0 lista las variables de arriba. El correo local va al sumidero en
+memoria: `EMAIL_API_URL=http://localhost:3000/api/dev/email-sink` en el servidor
+y en el guion (con `WA_MOCK_ENABLED=true`; `GET` en esa URL lista lo recibido).
+Sin eso el tramo 0 falla, para que ni el guion ni un servidor de desarrollo
+escriban a un correo real.
+
+**Nunca corras el guion ni un servidor de desarrollo con `SAAS_SELF_SERVE=true`
+contra una base con datos reales:** el guion crea negocios y usuarios, y los
+correos de la prueba salen a quien esté en la tabla. Usa una base desechable. Cubre registro, Embedded Signup, los
 estados del plan, el cobro con eventos firmados, el equipo y los correos.
 
 ## Apagarlo

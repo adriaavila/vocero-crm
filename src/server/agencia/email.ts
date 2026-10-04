@@ -8,6 +8,7 @@
  *   RESEND_API_KEY  → resend.com → API Keys (permiso "Sending access")
  *   EMAIL_FROM      → remitente de un dominio verificado en Resend,
  *                     p. ej.  allok <no-reply@allok.fun>
+ *   EMAIL_API_URL   → opcional: otro endpoint (sumidero de desarrollo)
  *
  * Sin las dos, `isEmailConfigured()` es false y nada de aquí hace red. Quien
  * lo use (hoy, "olvidé mi contraseña") decide su camino sin correo.
@@ -19,6 +20,16 @@
  */
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
+
+/**
+ * `EMAIL_API_URL` reemplaza el endpoint (mismo formato que Resend). En local
+ * apunta al sumidero `/api/dev/email-sink`, que guarda el correo en memoria en
+ * vez de enviarlo: así el guion de autoservicio y los servidores de desarrollo
+ * nunca escriben a un correo real.
+ */
+function endpoint(): string {
+  return process.env.EMAIL_API_URL?.trim() || RESEND_ENDPOINT;
+}
 const SEND_TIMEOUT_MS = 8_000;
 
 export type EmailMessage = {
@@ -52,7 +63,7 @@ export async function sendEmail(message: EmailMessage): Promise<EmailResult> {
 
   let response: Response;
   try {
-    response = await fetch(RESEND_ENDPOINT, {
+    response = await fetch(endpoint(), {
       method: "POST",
       headers: {
         authorization: `Bearer ${key}`,
