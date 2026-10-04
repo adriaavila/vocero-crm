@@ -308,11 +308,57 @@ export const SELF_SERVE_TRIAL_DAYS = 7;
 export const SELF_SERVE_TRIAL_AI_REPLIES = 300;
 
 /**
- * Checkout se niega solo con una suscripción de Stripe viva. La prueba de
- * autoservicio (vigente o vencida) siempre puede pagar.
+ * Por qué Checkout se niega, o null si puede abrirse. La prueba de autoservicio
+ * (vigente o vencida) siempre puede pagar. Con una suscripción de Stripe viva
+ * el cambio de plan es del portal; con un cobro fallido (`past_due`/`unpaid`)
+ * también: es la misma suscripción, y un checkout nuevo la dejaría cobrando
+ * dos veces. Cancelada o sin plan, sí abre uno nuevo.
  */
+export function checkoutBlockedReason(
+  billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">,
+): "active" | "payment_failed" | null {
+  if (isSelfServeTrial(billing)) return null;
+  if (billing.status === "active" || billing.status === "trialing") return "active";
+  if ((billing.status === "past_due" || billing.status === "unpaid") && billing.subscriptionId !== null) {
+    return "payment_failed";
+  }
+  return null;
+}
+
 export function checkoutBlocked(billing: Pick<SaaSBillingState, "source" | "subscriptionId" | "status">): boolean {
-  return (billing.status === "active" || billing.status === "trialing") && !isSelfServeTrial(billing);
+  return checkoutBlockedReason(billing) !== null;
+}
+
+/**
+ * ¿La suscripción terminará al final del periodo? El portal de Stripe de las
+ * versiones recientes de la API no marca `cancel_at_period_end`: pone la fecha
+ * en `cancel_at`. Mirar solo el booleano dejaba a Facturación diciendo
+ * «Próxima renovación» de un plan que ya se había cancelado.
+ */
+export function subscriptionEndsAtPeriodEnd(
+  subscription: { cancel_at_period_end?: boolean | null; cancel_at?: number | null },
+  now = Date.now(),
+): boolean {
+  return (
+    subscription.cancel_at_period_end === true ||
+    (typeof subscription.cancel_at === "number" && subscription.cancel_at * 1000 > now)
+  );
+}
+
+/**
+ * La suscripción de una factura. Desde la API de Basil (2025-03-31) ya no es
+ * `invoice.subscription` sino `invoice.parent.subscription_details.subscription`;
+ * leer solo la vieja dejaba sin efecto la guarda de «factura de una suscripción
+ * anterior».
+ */
+export function invoiceSubscriptionId(invoice: unknown): string | null {
+  const read = (value: unknown): string | null =>
+    typeof value === "string" ? value : value && typeof value === "object" && typeof (value as { id?: unknown }).id === "string" ? (value as { id: string }).id : null;
+  const raw = invoice as {
+    subscription?: unknown;
+    parent?: { subscription_details?: { subscription?: unknown } | null } | null;
+  } | null;
+  return read(raw?.subscription) ?? read(raw?.parent?.subscription_details?.subscription);
 }
 
 /**
@@ -379,11 +425,21 @@ export async function startSelfServeTrial(
  * pisar la concesión. También cubre el caso de una suscripción activa
  * distinta (`current.subscriptionId` ya apunta a otra).
  */
-export function isCurrentOrFirstSubscriptionEvent(current: SaaSBillingState, incomingSubscriptionId: string): boolean {
-  return (
-    current.subscriptionId === incomingSubscriptionId ||
-    (current.subscriptionId === null && current.detachedSubscriptionId !== incomingSubscriptionId)
-  );
+export function isCurrentOrFirstSubscriptionEvent(
+  current: SaaSBillingState,
+  incomingSubscriptionId: string,
+  eventType = "",
+): boolean {
+  if (current.subscriptionId === incomingSubscriptionId) return true;
+  if (current.subscriptionId === null) return current.detachedSubscriptionId !== incomingSubscriptionId;
+  // La suscripción guardada ya terminó (cancelada, impaga o a medias): una
+  // suscripción NUEVA que nace (`created`) la reemplaza. Sin esto, quien se da
+  // de baja y vuelve a suscribirse pagaba y su plan nunca se enteraba de la
+  // fecha de renovación nueva. Un evento tardío de la vieja (updated/deleted)
+  // sigue ignorado cuando ya hay una vigente: ahí `current` no es terminal.
+  const deadStatus =
+    current.status === "canceled" || current.status === "unpaid" || current.status === "incomplete" || current.status === "inactive";
+  return eventType === "customer.subscription.created" && deadStatus && current.detachedSubscriptionId !== incomingSubscriptionId;
 }
 
 export async function rememberBillingEvent(

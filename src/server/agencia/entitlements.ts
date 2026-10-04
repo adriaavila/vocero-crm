@@ -108,11 +108,13 @@ export function automationAccessFromMetadata(
 }
 
 /**
- * Tope de respuestas de IA de la prueba de autoservicio. Solo frena al
- * agente, nunca las respuestas a mano del dueño ni la conexión de WhatsApp.
+ * Respuestas de IA de la prueba de autoservicio (hasta el tope), o null si el
+ * negocio no está en una prueba de autoservicio. Cuenta hasta el tope y para
+ * (`limit`): nunca recorre todo el historial importado. El Laboratorio
+ * (conversaciones de prueba) no gasta el tope.
  */
-export async function trialAiQuotaReached(organizationId: string): Promise<boolean> {
-  if (!isAllokSaaSMode()) return false;
+export async function trialAiRepliesUsed(organizationId: string): Promise<number | null> {
+  if (!isAllokSaaSMode()) return null;
   const db = getDb();
   const rows = await db
     .select({ metadata: schema.organization.metadata })
@@ -123,11 +125,9 @@ export async function trialAiQuotaReached(organizationId: string): Promise<boole
   try {
     billing = (JSON.parse(rows[0]?.metadata ?? "{}") as { allok?: { billing?: TrialFields } }).allok?.billing ?? null;
   } catch {
-    return false;
+    return null;
   }
-  if (!isSelfServeTrialBilling(billing)) return false;
-  // Cuenta hasta el tope y para (`limit`): nunca recorre todo el historial
-  // importado. El Laboratorio (conversaciones de prueba) no gasta el tope.
+  if (!isSelfServeTrialBilling(billing)) return null;
   const counted = await db.execute(sql`
     select count(*)::int as n from (
       select 1 from message m
@@ -136,8 +136,16 @@ export async function trialAiQuotaReached(organizationId: string): Promise<boole
         and m.origin = 'ai' and m.direction = 'out' and not c.is_test
       limit ${SELF_SERVE_TRIAL_AI_REPLIES}
     ) s`);
-  const n = Number((counted as unknown as { n: number }[])[0]?.n ?? 0);
-  return n >= SELF_SERVE_TRIAL_AI_REPLIES;
+  return Number((counted as unknown as { n: number }[])[0]?.n ?? 0);
+}
+
+/**
+ * Tope de respuestas de IA de la prueba de autoservicio. Solo frena al
+ * agente, nunca las respuestas a mano del dueño ni la conexión de WhatsApp.
+ */
+export async function trialAiQuotaReached(organizationId: string): Promise<boolean> {
+  const used = await trialAiRepliesUsed(organizationId);
+  return used !== null && used >= SELF_SERVE_TRIAL_AI_REPLIES;
 }
 
 export async function canAutomate(organizationId: string): Promise<boolean> {

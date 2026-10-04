@@ -179,7 +179,8 @@ export async function saveBusinessHours(
       businessTimezone: next.timezone,
       responseMode: next.responseMode,
       handoffResumeHours: next.handoffResumeHours,
-      updatedAt: new Date(),
+      // Sin `updatedAt`: el horario no cambia lo que el agente dice, así que no
+      // vuelve vieja la prueba (ver `server/agencia/contenido-perfil.ts`).
     })
     .where(scoped(schema.agentProfile.organizationId, organizationId))
     .returning({ id: schema.agentProfile.id });
@@ -192,10 +193,13 @@ export async function canAgentRespondNow(organizationId: string, now = new Date(
   if (!isAllokSaaSMode()) return true;
   const settings = await getBusinessHours(organizationId);
   if (!hasConfiguredBusinessHours(settings)) return false;
-  if (settings.responseMode === "all_day") {
-    return hasSaaSPlan(organizationId, "pro");
-  }
-  return isOutsideBusinessHours(settings, now);
+  // «Todo el día» es de Completo. Con Esencial (se bajó de plan, o lo eligió
+  // durante la prueba) el agente contesta solo fuera del horario: el plan que
+  // el dueño pagó, no un agente mudo (ver `coverage` en lib/cobertura).
+  if (settings.responseMode === "all_day" && (await hasSaaSPlan(organizationId, "pro"))) return true;
+  // `isOutsideBusinessHours` ve `all_day` como «siempre abierto» y devolvería
+  // false: Esencial se evalúa como `outside_hours` con el mismo horario.
+  return isOutsideBusinessHours({ ...settings, responseMode: "outside_hours" }, now);
 }
 
 function isBusinessInterval(value: unknown): value is BusinessInterval {

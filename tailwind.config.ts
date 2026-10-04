@@ -39,6 +39,8 @@ const config: Config = {
         destructive: {
           DEFAULT: "var(--danger)",
           foreground: "var(--danger-fg)",
+          // Texto rojo sobre fondo claro/oscuro (pasa AA); `DEFAULT` queda para puntos y rellenos.
+          text: "var(--danger-text)",
         },
         muted: {
           DEFAULT: "var(--bg-panel)",

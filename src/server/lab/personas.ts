@@ -57,7 +57,7 @@ export const PERSONAS: Persona[] = [
   },
   {
     key: "fuera_de_kb",
-    label: "Pregunta fuera del conocimiento",
+    label: "Pregunta que no está en lo que escribiste",
     description: "Pregunta por políticas que podrían no estar en el conocimiento cargado.",
     phone: "5210000000004",
     contactName: "[Prueba] Fuera del conocimiento",

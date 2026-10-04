@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError, parseBody, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
+import { touchAgentContent } from "@/server/agencia/version-contenido";
 
 export const dynamic = "force-dynamic";
 
@@ -49,5 +50,9 @@ export const DELETE = withOwner(async (session, _req: Request, ctx: Params) => {
     )
     .returning();
   if (!deleted[0]) return apiError(404, "not_found", "Entrada no encontrada");
+  // Borrar conocimiento cambia lo que el agente dice, pero no deja una fecha
+  // nueva que lo delate (el máximo de `updated_at` de lo que queda no sube): sin
+  // esto una prueba hecha con esa información seguiría pareciendo vigente.
+  await touchAgentContent(session.organizationId);
   return Response.json({ deleted: true });
 });

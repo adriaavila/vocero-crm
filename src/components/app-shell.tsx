@@ -90,9 +90,11 @@ export function AppShell({
               : pathname.startsWith("/settings")
                 ? "Configuración"
                 : pathname.startsWith("/lab")
-                  ? `Probar ${productLabel}`
+                  ? "Probar tu agente"
                   : pathname.startsWith("/agent")
                     ? "Tu agente"
+                    : pathname.startsWith("/decisiones")
+                      ? "Cómo decidió"
                     : productLabel;
 
   const shell = (

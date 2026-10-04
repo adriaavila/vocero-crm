@@ -22,9 +22,11 @@ describe("cobertura", () => {
     expect(gaps([[0, 1440]])).toEqual([]);
   });
 
-  it("the agent stays silent without hours, and all_day needs Pro", () => {
+  it("the agent stays silent without hours, and all_day needs Completo to cover the whole day", () => {
     expect(coverage({}, "outside_hours", true, "mon").agent).toEqual([]);
-    expect(coverage({ mon: [open] }, "all_day", false, "mon").agent).toEqual([]);
+    // Esencial con «todo el día» guardado: contesta fuera del horario, no calla.
+    expect(coverage({ mon: [open] }, "all_day", false, "mon").agent).toEqual(coverage({ mon: [open] }, "outside_hours", false, "mon").agent);
+    expect(coverage({ mon: [open] }, "all_day", false, "mon").agent.length).toBeGreaterThan(0);
     expect(coverage({ mon: [open] }, "all_day", true, "mon").agent).toEqual([[0, 1440]]);
   });
 

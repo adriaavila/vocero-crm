@@ -313,6 +313,13 @@ export function ContactPanel({
               <AnuncioOrigen anuncio={anuncio} />
             </div>
           )}
+          {/* Capa de agencia: qué decidió el agente en esta conversación. */}
+          <Link
+            href={`/decisiones?c=${conversation.id}`}
+            className="mt-3 inline-flex min-h-11 items-center gap-1 text-[12px] font-medium text-text-2 hover:text-foreground md:min-h-0"
+          >
+            Ver cómo decidió el agente <ChevronRight className="h-3 w-3" aria-hidden />
+          </Link>
         </section>
 
         {/* Stepper de etapa */}

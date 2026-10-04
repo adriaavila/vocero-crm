@@ -2,6 +2,7 @@ import { z } from "zod";
 import { apiError, parseBody, withOwner } from "@/lib/api";
 import { AI_DEFAULT_MODELS, type AiProvider } from "@/lib/ai/config";
 import { probeAiProvider } from "@/lib/ai";
+import { touchAgentContent } from "@/server/agencia/version-contenido";
 import {
   deleteAiCredential,
   listAiCredentialStatuses,
@@ -45,6 +46,8 @@ export const PUT = withOwner(async (session, req: Request) => {
     apiKey: body.data.apiKey,
     model,
   });
+  // Otro modelo o clave contesta distinto: la prueba anterior ya no vale.
+  await touchAgentContent(session.organizationId);
   return Response.json({
     ok: true,
     credentials: await listAiCredentialStatuses(session.organizationId),
@@ -57,6 +60,7 @@ export const DELETE = withOwner(async (session, req: Request) => {
     return apiError(422, "invalid_provider", "Proveedor de IA inválido");
   }
   await deleteAiCredential(session.organizationId, provider.data);
+  await touchAgentContent(session.organizationId);
   return Response.json({
     ok: true,
     credentials: await listAiCredentialStatuses(session.organizationId),

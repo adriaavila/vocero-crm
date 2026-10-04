@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * A SaaS business straight out of signup must be able to answer: its inbound
- * message queues an agent_job and the schedule gate the worker applies lets
- * the reply through. Runs the real signup, ingest, trigger and gate against an
+ * A SaaS business straight out of signup is PAUSED: its first customers get no
+ * reply from the agent until the owner presses «Activar». Once activated, the
+ * inbound message queues an agent_job and the schedule gate the worker applies
+ * lets the reply through. Runs the real signup, ingest, trigger and gate against an
  * in-memory Postgres stand-in (rows per table; `where` is ignored because the
  * test only ever holds one business).
  */
@@ -92,8 +93,10 @@ async function receiveMessage(organizationId: string) {
   });
 }
 
-async function signUpAndReceiveMessage() {
+async function signUpAndReceiveMessage({ activate = true } = {}) {
   const organizationId = await signUp();
+  // The owner pressed «Activar» (new workspaces are born paused).
+  if (activate) Object.assign(rowsOf(schema.agentProfile)[0]!, { enabled: true });
   await receiveMessage(organizationId);
   return organizationId;
 }
@@ -117,7 +120,18 @@ describe("new SaaS tenant with default settings", () => {
     resetEnvCacheForTests();
   });
 
-  it("queues an agent_job for an inbound message and is allowed to answer", async () => {
+  it("is born paused: the first inbound is stored in a conversation the agent may not answer", async () => {
+    const organizationId = await signUpAndReceiveMessage({ activate: false });
+
+    expect(rowsOf(schema.agentProfile)[0]).toMatchObject({ enabled: false, name: "Asistente" });
+    expect(rowsOf(schema.message)).toHaveLength(1);
+    // The conversation is born with the AI off. A turn may still be queued, but
+    // pipeline.ts exits on `!aiEnabled || !profile.enabled` and send.ts refuses
+    // with `ai_disabled`, so nothing goes out until the owner activates.
+    expect(rowsOf(schema.conversation)[0]).toMatchObject({ organizationId, aiEnabled: false });
+  });
+
+  it("once the owner activates, an inbound message queues an agent_job and is allowed to answer", async () => {
     const organizationId = await signUpAndReceiveMessage();
 
     const [profile] = rowsOf(schema.agentProfile);
