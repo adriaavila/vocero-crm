@@ -457,6 +457,51 @@ export const conversation = pgTable(
   ]
 );
 
+/**
+ * Data spine — el cambio del webhook TAL COMO LLEGÓ, guardado ANTES de
+ * procesarlo. Es la fuente replayable: lo derivado (message, contact, lead…)
+ * se puede reconstruir desde aquí, no al revés.
+ *
+ * `organization_id` es NULL a propósito mientras el evento no se pudo enrutar
+ * (un `phone_number_id` que todavía no está conectado): se rellena cuando el
+ * replay lo logra. Es la única tabla de dominio sin tenant obligatorio; por eso
+ * jamás se expone por una ruta de miembro, solo por el replay del admin SaaS.
+ *
+ * `channel` deja que Instagram/Messenger usen la misma tabla. `status`:
+ * pending | processed | failed | unrouted | unmatched | ignored (text sin
+ * CHECK: agregar un valor es aditivo). `error` es corto y sin contenido de
+ * mensajes ni secretos.
+ */
+export const rawEvent = pgTable(
+  "raw_event",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").references(() => organization.id, {
+      onDelete: "cascade",
+    }),
+    channel: text("channel").notNull().default("whatsapp"),
+    /** phone_number_id (o WABA en eventos de plantilla): para enrutar un replay. */
+    accountRef: text("account_ref"),
+    field: text("field").notNull(),
+    /** sha256(field + JSON canónico del value): un reintento de Meta no duplica. */
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    payload: jsonb("payload").notNull(),
+    receivedAt: timestamp("received_at").notNull().defaultNow(),
+    processedAt: timestamp("processed_at"),
+    status: text("status", {
+      enum: ["pending", "processed", "failed", "unrouted", "unmatched", "ignored"],
+    })
+      .notNull()
+      .default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    error: text("error"),
+  },
+  (t) => [
+    index("raw_event_status_received_idx").on(t.status, t.receivedAt),
+    index("raw_event_org_received_idx").on(t.organizationId, t.receivedAt),
+  ]
+);
+
 export const message = pgTable(
   "message",
   {
@@ -508,6 +553,25 @@ export const message = pgTable(
      */
     transcript: text("transcript"),
     waTimestamp: timestamp("wa_timestamp"),
+    /** Data spine — wamid del mensaje al que este responde (`context.id`). */
+    replyToWaId: text("reply_to_wa_id"),
+    /**
+     * Data spine — cuándo confirmó Meta cada estado (su `timestamp`, no el
+     * nuestro). Se llenan aunque el estado no suba de rango: un `delivered`
+     * tardío después de `read` igual llena `delivered_at` si estaba vacío.
+     */
+    sentAt: timestamp("sent_at"),
+    deliveredAt: timestamp("delivered_at"),
+    readAt: timestamp("read_at"),
+    failedAt: timestamp("failed_at"),
+    /** Data spine — el evento crudo del que salió (entrantes y echoes). */
+    rawEventId: text("raw_event_id").references(() => rawEvent.id, {
+      onDelete: "set null",
+    }),
+    /** Data spine — el usuario del CRM que lo mandó (envíos del operador). */
+    senderUserId: text("sender_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -516,6 +580,59 @@ export const message = pgTable(
       t.conversationId,
       t.createdAt
     ),
+    // Data spine: "¿qué mensajes salieron de este evento?" y el ON DELETE SET
+    // NULL de raw_event no recorren toda la tabla. Parcial: casi todo mensaje
+    // saliente y los de antes de la columna no la llevan.
+    index("message_raw_event_idx")
+      .on(t.rawEventId)
+      .where(sql`${t.rawEventId} is not null`),
+  ]
+);
+
+/**
+ * Data spine — una decisión del agente por turno real (Nea o Rei): qué hizo,
+ * por qué lo entregó a un humano, con qué modelo y prompt, a qué mensajes
+ * respondió y qué contestó. El veredicto lo pone una persona (bien | fallo) y
+ * alimenta la mejora del agente. Los turnos del Laboratorio no se registran.
+ *
+ * `steps`: [{ tool, summary, ok }] — sin contenido de mensajes.
+ */
+export const agentDecision = pgTable(
+  "agent_decision",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    brain: text("brain", { enum: ["nea", "rei"] }).notNull(),
+    dispatchId: text("dispatch_id"),
+    action: text("action").notNull(),
+    handoffReason: text("handoff_reason"),
+    steps: jsonb("steps").notNull().default(sql`'[]'::jsonb`),
+    model: text("model"),
+    promptVersion: text("prompt_version"),
+    latencyMs: integer("latency_ms"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    triggerMessageIds: jsonb("trigger_message_ids").notNull().default(sql`'[]'::jsonb`),
+    replyMessageIds: jsonb("reply_message_ids").notNull().default(sql`'[]'::jsonb`),
+    verdict: text("verdict", { enum: ["bien", "fallo"] }),
+    verdictNote: text("verdict_note"),
+    verdictBy: text("verdict_by"),
+    verdictAt: timestamp("verdict_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("agent_decision_org_created_idx").on(t.organizationId, t.createdAt.desc()),
+    index("agent_decision_conv_created_idx").on(t.conversationId, t.createdAt.desc()),
+    // Un despacho = una decisión: un reintento nunca duplica la fila. Rei no
+    // tiene dispatch_id (null) y puede tener varias por conversación.
+    uniqueIndex("agent_decision_dispatch_uq")
+      .on(t.conversationId, t.dispatchId)
+      .where(sql`${t.dispatchId} is not null`),
   ]
 );
 

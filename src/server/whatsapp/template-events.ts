@@ -7,7 +7,8 @@ import { applyTemplateStatusEvent } from "@/server/whatsapp/templates";
  */
 export async function processTemplateStatusValue(
   wabaId: string | null,
-  value: WebhookValue
+  value: WebhookValue,
+  opts: { notAfter?: Date } = {}
 ): Promise<void> {
-  await applyTemplateStatusEvent(wabaId, value);
+  await applyTemplateStatusEvent(wabaId, value, opts);
 }

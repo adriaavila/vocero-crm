@@ -130,6 +130,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | De qué anuncio llegó cada conversación (siempre visible) | `src/server/attribution/referral.ts` (normalización) · `creativo.ts` (copia de la imagen, solo hosts de Meta) · `store.ts` · tarjeta en `src/components/anuncio-origen.tsx` |
 | Los números de Resultados (ventas, agente, origen y anuncios, higiene) | `src/server/analytics/` (un módulo por sección; periodo en la zona del negocio en `period.ts`; exclusión del Laboratorio en `shared.ts`) · contratos y tasas en `src/lib/analytics.ts` · UI en `src/components/results/` · spec [019](specs/019-resultados/spec.md) |
 | La atribución de anuncios y el reporte a Meta | `src/server/attribution/` — el `ctwa_clid`, la CAPI y Ajustes → Anuncios detrás de la bandera `ATRIBUCION` (`flag.ts`) + `src/lib/meta/capi.ts` · guía: [docs/atribucion-capi.md](docs/atribucion-capi.md) |
+| Datos durables del webhook (`raw_event`, replay) y decisiones del agente (`agent_decision`, veredicto) | `src/server/agencia/raw-events*.ts` · `decisions*.ts` · guía: [docs/data-spine.md](docs/data-spine.md) |
 | UI | `src/components/` + `src/app/(app)/` |
 | **Cualquier cosa propia del fork** | `src/server/agencia/` · `src/components/agencia/` (ver arriba) |
 

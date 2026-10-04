@@ -104,6 +104,8 @@ export type WebhookMessage = {
   };
   /** 016: origen del anuncio, cuando la conversación nació de uno. */
   referral?: WebhookReferral;
+  /** Data spine: `context.id` = wamid del mensaje al que este responde. */
+  context?: { id?: string; from?: string };
 };
 
 export type WebhookStatus = {

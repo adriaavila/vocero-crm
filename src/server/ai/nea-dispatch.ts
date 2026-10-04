@@ -105,6 +105,12 @@ export type NeaResponseBody = {
   action: "replied" | "silent" | "noop" | "reset";
   llm?: { source: "platform" | "org"; status: string };
   handoff?: { reason: string; applied: boolean };
+  /**
+   * Data spine: cómo razonó Nea este turno (modelo, prompt, pasos, tokens).
+   * OPCIONAL y sin validar aquí: `recordNeaDecision` lo valida con Zod; un Nea
+   * que aún no lo manda sigue funcionando igual.
+   */
+  decision?: unknown;
 };
 
 export type NeaDispatchOutcome =
