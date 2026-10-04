@@ -355,6 +355,7 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       const phone = nextPhone();
       await deliver(waBody([inbound(`wamid.in.${SFX}.echo0`, phone)])); // abre la conversación
       hoisted.maybeRunAgentTurn.mockClear();
+      const antes = (await conversationOf(phone))!;
       const wamid = `wamid.echo.${SFX}.1`;
       const change = {
         field: "smb_message_echoes",
@@ -391,11 +392,15 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       expect(secs(msg.sentAt)).toBe(1790000100);
       expect(hoisted.maybeRunAgentTurn).not.toHaveBeenCalled();
       const cv = (await conversationOf(phone))!;
-      // Fork — pausa que vence: esta conversación nació con la IA apagada
-      // (ORG_A no tiene agente), así que no hay nada que pausar ni marcar;
-      // `manual_reply` queda para cuando el dueño toma un chat que la IA
-      // atendía (ver pausa-manual-realdb.test.ts).
-      expect(cv).toMatchObject({ aiEnabled: false, handoffReason: null });
+      // Fork — pausa que vence: si la conversación nació con la IA encendida
+      // (depende del perfil con que nace el negocio: en SaaS sí, en dedicada
+      // no), el echo la pausa con reloj; si nació apagada, no hay nada que
+      // pausar ni marcar (ver pausa-manual-realdb.test.ts).
+      expect(cv).toMatchObject(
+        antes.aiEnabled
+          ? { aiEnabled: false, handoffReason: "manual_reply", handoffAt: new Date(1790000100 * 1000) }
+          : { aiEnabled: false, handoffReason: null }
+      );
     });
 
     it("campo desconocido: se guarda y queda ignored", async () => {
