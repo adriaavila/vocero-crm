@@ -1,4 +1,5 @@
 import { activeBrandId, type BrandId } from "@/lib/brand";
+import { SUGGESTED_HANDOFF } from "@/lib/negocio";
 import { isValidTimeZone } from "@/lib/time/slots";
 import type { WeeklyBusinessHours } from "@/server/business-hours";
 
@@ -18,8 +19,8 @@ export const DEFAULT_AGENT_PROFILE = {
   tone: "Profesional, cálido, cercano y consultivo.",
   instructions:
     "Somos un negocio que atiende consultas de clientes por WhatsApp. Informa con claridad y orienta a cada persona según su necesidad. Usa únicamente la ficha y la knowledge base de este negocio como fuente de verdad. Nunca inventes precios, horarios, disponibilidad, políticas, enlaces ni datos de contacto. Si falta información, indica que la confirmarás con el equipo. Cuando corresponda, solicita los datos necesarios para que el equipo dé seguimiento.",
-  escalationRules:
-    "Pasa la conversación a un humano si el cliente lo solicita, si pide una excepción o decisión que no esté documentada, si hay una queja sensible o si la información necesaria no está en lo que sabes del negocio.",
+  // En voz del dueño y marcada como sugerencia en «Tu negocio» (ver `SUGGESTED_HANDOFF`).
+  escalationRules: SUGGESTED_HANDOFF,
   greeting: "¡Hola! Soy Rei, el asistente virtual de este negocio. ¿En qué puedo ayudarte?",
   activationEnabled: false,
   activationMessages: [] as string[],

@@ -194,7 +194,7 @@ export function HorarioRespuesta({
             className={`rounded-md border p-3 text-left transition-colors ${current.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}
           >
             <span className="block text-sm font-semibold">Fuera de horario</span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Ideal para Esencial: {brandName} cubre las horas en que tu equipo descansa.</span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">Responde cuando tu equipo no atiende.</span>
           </button>
           <button
             type="button"
@@ -203,9 +203,13 @@ export function HorarioRespuesta({
             className={`rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-55 ${current.responseMode === "all_day" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}
           >
             <span className="flex items-center gap-2 text-sm font-semibold">
-              Todo el día <Badge variant="success">Completo</Badge>
+              Todo el día {!canUseAllDay && <Badge variant="secondary">Plan Completo</Badge>}
             </span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Responde durante toda la jornada, con supervisión humana siempre disponible.</span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">
+              {canUseAllDay
+                ? "Responde toda la jornada, con una persona siempre disponible para tomar la conversación."
+                : "Responde toda la jornada. Está en el plan Completo."}
+            </span>
           </button>
         </div>
 
@@ -242,7 +246,8 @@ export function HorarioRespuesta({
                           type="button"
                           disabled={disabled}
                           onClick={() => setDayAllDay(day.key, false)}
-                          className="inline-flex min-h-11 items-center text-xs font-semibold text-text-3 hover:text-foreground sm:min-h-9"
+                          aria-label={`${day.label}: definir horario`}
+                          className="inline-flex min-h-11 min-w-11 items-center text-xs font-semibold text-text-3 hover:text-foreground sm:min-h-9"
                         >
                           Definir horario
                         </button>
@@ -254,7 +259,8 @@ export function HorarioRespuesta({
                           type="button"
                           disabled={disabled}
                           onClick={() => setDayAllDay(day.key, true)}
-                          className="inline-flex min-h-11 items-center justify-self-end text-xs font-semibold text-brand-text hover:underline sm:order-last sm:min-h-9"
+                          aria-label={`${day.label}: abierto las 24 horas`}
+                          className="inline-flex min-h-11 min-w-11 items-center justify-center justify-self-end text-xs font-semibold text-brand-text hover:underline sm:order-last sm:min-h-9"
                         >
                           24 h
                         </button>

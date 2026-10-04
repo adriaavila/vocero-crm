@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isSuggestedHandoff, SUGGESTED_HANDOFF } from "@/lib/negocio";
 import {
   DEFAULT_AGENT_PROFILE,
   DEFAULT_AGENT_TEMPLATE_VERSION,
@@ -35,8 +36,11 @@ describe("plantilla SaaS del agente", () => {
     expect(defaultAgentProfile().name).toBe("Asistente");
   });
 
-  it("la regla de escalado que ve el dueño no habla de «knowledge base»", () => {
-    expect(defaultAgentProfile("allok").escalationRules).not.toMatch(/knowledge base/i);
+  it("la regla de escalado que ve el dueño está en su voz y es la sugerida", () => {
+    const rules = defaultAgentProfile("allok").escalationRules;
+    expect(rules).toBe(SUGGESTED_HANDOFF);
+    expect(rules).not.toMatch(/knowledge base|^Pasa /i);
+    expect(isSuggestedHandoff(rules)).toBe(true);
   });
 
   it("devuelve objetos independientes para cada alta", () => {

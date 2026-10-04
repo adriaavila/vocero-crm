@@ -3,13 +3,15 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowUpRight, Check } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { STATE_HINT, stateLabelFor, type SystemSnapshot, type SystemState } from "@/lib/estado";
 import { planHeadline, type PlanState } from "@/lib/plan-estado";
 import { CheckoutReturn } from "@/components/agencia/checkout-return";
 import type { Centro } from "@/server/agencia/estado";
 import type { getOverview } from "@/server/overview";
 import type { ReadinessResponse } from "@/server/readiness";
+import { SetupProgressNav } from "@/components/agencia/setup-progress";
+import { deriveSetupProgress, SETUP_STEP_CTA } from "@/lib/setup-steps";
 import { previewText } from "@/components/inbox/helpers";
 import { cn } from "@/lib/utils";
 import { Anillo, Cifra } from "./cifra";
@@ -31,6 +33,7 @@ function actionLabel(snapshot: SystemSnapshot, plan: PlanState): string | null {
       // Un solo camino: pagar cuando falta un plan, actualizar el pago cuando falló.
       return plan.kind === "payment_failed" ? "Actualizar pago" : "Elegir plan";
     case "/agent":
+    case "/agent#activar":
       return "Encender el agente";
     case "/inbox":
       return "Abrir conversaciones";
@@ -438,81 +441,44 @@ function Upsell({ owner }: { owner: boolean }) {
   );
 }
 
+/**
+ * La puesta en marcha en Inicio: los MISMOS cuatro pasos que Tu agente, Probar
+ * y WhatsApp (`lib/setup-steps`, derivados de la preparación que ya cargó la
+ * página), en vez de su propio contador de 7 u 8. Con el agente apagado nunca
+ * dice «completa»: lo último que falta es encenderlo. Con el agente activo no
+ * hay asistente de alta; si algo quedó viejo (la prueba, la conexión), una línea.
+ */
 function Readiness({ readiness }: { readiness: ReadinessResponse }) {
-  const done = readiness.steps.filter((s) => s.status === "complete").length;
-  const next = readiness.steps.find((s) => s.status === "pending" || s.status === "stale");
-  const complete = !next;
-  const n = readiness.steps.length;
-  const mdFill = (2 - (n % 2)) % 2;
-  const xlFill = (3 - (n % 3)) % 3;
+  const progress = deriveSetupProgress(readiness);
+  const current = progress.steps.find((step) => step.key === progress.current);
+  if (!current) return null;
+
+  if (!progress.active) {
+    return (
+      <p className="mt-5 text-[13px] text-text-3">
+        Por revisar:{" "}
+        <Link href={current.href} className="font-semibold text-foreground underline-offset-2 hover:underline">
+          {current.label}
+        </Link>
+        .
+      </p>
+    );
+  }
   return (
-    <details open={!complete} className="group mt-5 overflow-hidden rounded-lg border bg-background">
-      <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
-        <span className="min-w-0 flex-1">
-          <span className="block text-[15px] font-semibold tracking-[-0.01em]">
-            {complete ? "Puesta en marcha completa" : "Puesta en marcha"}
-          </span>
-          <span className="mt-0.5 block text-[13px] text-text-3">
-            {next ? `Siguiente: ${next.label}.` : "Tu agente tiene todo lo que necesita para atender."} Probar nunca le escribe a tus clientes.
-          </span>
-        </span>
-        <span className="hidden w-40 items-center gap-3 sm:flex">
-          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--ground-3)]">
-            <span
-              className="block h-full rounded-full bg-foreground"
-              style={{ width: `${Math.round((done / readiness.steps.length) * 100)}%` }}
-            />
-          </span>
-          <span className="font-mono text-[11px] text-text-3">
-            {done}/{readiness.steps.length}
-          </span>
-        </span>
-        <ArrowRight className="h-4 w-4 shrink-0 text-text-3 transition-transform group-open:rotate-90" aria-hidden />
-      </summary>
-      <ol className="grid gap-px border-t bg-border md:grid-cols-2 xl:grid-cols-3">
-        {readiness.steps.map((step) => {
-          const isNext = step.id === next?.id;
-          return (
-            <li key={step.id} className="bg-background">
-              <Link
-                href={step.href}
-                aria-current={isNext ? "step" : undefined}
-                className={cn(
-                  "flex h-full gap-3 px-5 py-4 transition-colors hover:bg-[var(--bg-hover)]",
-                  isNext && "bg-[var(--bg-hover)]",
-                )}
-              >
-                <span
-                  data-state={step.status === "complete" ? "activo" : isNext ? "atencion" : undefined}
-                  className={cn(
-                    "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px]",
-                    step.status === "complete"
-                      ? "border-transparent bg-[var(--st-soft)] text-[var(--st-ink)]"
-                      : isNext
-                        ? "border-[var(--st)] text-[var(--st-ink)]"
-                        : "text-text-4",
-                  )}
-                >
-                  {step.status === "complete" ? <Check className="h-3 w-3" strokeWidth={3} /> : step.status === "unavailable" ? "—" : "→"}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[14px] font-semibold">{step.label}</span>
-                  <span className="mt-0.5 block text-[12.5px] leading-relaxed text-text-3">{step.detail}</span>
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-        {/* Rellena la última fila: si no, el fondo de la rejilla asoma como un
-            bloque gris donde falta un paso. */}
-        {Array.from({ length: Math.max(xlFill, mdFill) }, (_, i) => (
-          <li
-            key={`fill-${i}`}
-            aria-hidden
-            className={cn("hidden bg-background", i < mdFill && "md:block", i < xlFill ? "xl:block" : "xl:hidden")}
-          />
-        ))}
-      </ol>
-    </details>
+    <section aria-labelledby="puesta-en-marcha" className="mt-5 rounded-lg border bg-background p-5">
+      <h2 id="puesta-en-marcha" className="text-[15px] font-semibold tracking-[-0.01em]">
+        Puesta en marcha
+      </h2>
+      <p className="mt-0.5 text-[13px] text-text-3">
+        Siguiente: {current.label.toLowerCase()}. Probar nunca le escribe a tus clientes.
+      </p>
+      <SetupProgressNav progress={progress} className="mt-4 max-w-2xl" />
+      <Link
+        href={current.href}
+        className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[transform] active:scale-[0.97]"
+      >
+        {SETUP_STEP_CTA[current.key]} <ArrowRight className="h-4 w-4" aria-hidden />
+      </Link>
+    </section>
   );
 }

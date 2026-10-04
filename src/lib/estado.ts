@@ -199,7 +199,7 @@ export function systemState(i: SystemInput): SystemVerdict {
     };
   }
   if (!i.agentOn) {
-    return { state: "pausado", reason: "El agente está apagado: contestas tú.", href: own("/agent") };
+    return { state: "pausado", reason: "El agente está apagado: contestas tú.", href: own("/agent#activar") };
   }
   if (i.working > 0) {
     return {

@@ -22,6 +22,7 @@ import { ActivarSection } from "@/components/agencia/activar";
 import { useBusinessHours } from "@/components/agencia/horario-respuesta";
 import { SetupProgressNav } from "@/components/agencia/setup-progress";
 import { TuNegocio } from "@/components/agencia/tu-negocio";
+import { SYSTEM_STATE_EVENT } from "@/components/agencia/allok/system-state";
 import { postKbEntry, saveResult, type SaveResult } from "@/lib/negocio";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 
@@ -121,20 +122,43 @@ export function AgentClient({
   }, [ready, gate.kind, hours.loaded]);
 
   if (!profile) {
+    // Con la forma de lo que viene: el avance, «Tu negocio» (tres campos, horario,
+    // regla, guardar) y «Activar». Así al cargar nada salta de sitio.
     return (
-      <div className="h-full overflow-y-auto">
+      <div className="h-full overflow-y-auto" aria-busy="true" aria-label="Cargando Tu agente">
         <header className="flex items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-6 w-11 rounded-full" />
+          <Skeleton className="h-5 w-28" />
+          <Skeleton className="h-6 w-24 rounded-full" />
         </header>
         <div className="max-w-3xl space-y-4 p-4 sm:space-y-6 sm:p-6">
+          <Skeleton className="h-4 w-72 max-w-full" />
+          <Skeleton className="h-11 w-full" />
           <Card>
             <CardHeader>
               <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-full max-w-md" />
             </CardHeader>
-            <CardContent className="space-y-3">
-              <Skeleton className="h-9 w-full" />
-              <Skeleton className="h-20 w-full" />
+            <CardContent className="space-y-5">
+              {[0, 1, 2].map((n) => (
+                <div key={n} className="space-y-1.5">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-[74px] w-full" />
+                </div>
+              ))}
+              <Skeleton className="h-16 w-full" />
+              <div className="space-y-1.5">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-[74px] w-full" />
+              </div>
+              <Skeleton className="h-11 w-44" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-5 w-40" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-24 w-full" />
             </CardContent>
           </Card>
         </div>
@@ -150,7 +174,12 @@ export function AgentClient({
         body: JSON.stringify(patch),
       }),
     );
-    if (result.ok) await refetch();
+    if (result.ok) {
+      // El estado del lateral (el punto, «Pausado» / «all ok») se relee ya: sin
+      // esto tardaba hasta un minuto en reflejar que se activó o se pausó.
+      window.dispatchEvent(new Event(SYSTEM_STATE_EVENT));
+      await refetch();
+    }
     return result;
   }
 
@@ -173,7 +202,10 @@ export function AgentClient({
     if (!result.ok) {
       // Pudo haber cambiado lo que falta: se vuelve a leer.
       void reloadSetup();
-      return result.message;
+      // Sin respuesta del servidor no sabemos qué pasó: se dice, y se puede reintentar.
+      return result.network
+        ? "No pudimos activarlo. Revisa tu conexión y vuelve a intentarlo."
+        : result.message;
     }
     return null;
   }

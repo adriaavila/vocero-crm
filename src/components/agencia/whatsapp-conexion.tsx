@@ -52,7 +52,7 @@ function EvidenceLine({ line, now }: { line: Line; now: Date }) {
           <span className={cn(line.verified && "text-foreground")}>{word}</span>
         </span>
       </div>
-      {!line.verified && <p className="mt-1 text-xs leading-5 text-text-3">{line.hint}</p>}
+      {!line.verified && <p className="mt-1 hidden text-xs leading-5 text-text-3 sm:block">{line.hint}</p>}
     </li>
   );
 }
@@ -137,25 +137,19 @@ export function ConnectionCard({
           </span>
         </div>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-4 sm:space-y-5">
         <ul aria-live="polite" className="divide-y divide-border overflow-hidden rounded-md border border-border">
           {lines.map((line) => (
             <EvidenceLine key={line.label} line={line} now={now} />
           ))}
         </ul>
-        {notice && <p className="text-sm leading-6 text-text-3">{notice}</p>}
-        {changeNumberHref && (
-          <p className="flex items-start gap-2 text-xs leading-5 text-text-3">
-            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span>
-              Para escribirle tú primero a un cliente (plantillas), Meta pide un método de pago en tu cuenta.{" "}
-              <a href={META_PAYMENT_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground underline-offset-2 hover:underline">
-                Agrégalo aquí
-              </a>
-              .
-            </span>
+        {!(evidence?.lastInboundAt && evidence?.lastDeliveredAt) && (
+          // En el teléfono las pistas de cada línea ocupan más que la acción: una sola.
+          <p className="text-xs leading-5 text-text-3 sm:hidden">
+            Para verificar lo que falta, escríbele a este número desde otro teléfono y responde desde Conversaciones.
           </p>
         )}
+        {notice && <p className="text-sm leading-6 text-text-3">{notice}</p>}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Link href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
             {next.label}
@@ -170,6 +164,18 @@ export function ConnectionCard({
             </a>
           )}
         </div>
+        {changeNumberHref && (
+          <p className="flex items-start gap-2 text-xs leading-5 text-text-3">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              Para escribirle tú primero a un cliente (plantillas), Meta pide un método de pago en tu cuenta.{" "}
+              <a href={META_PAYMENT_URL} target="_blank" rel="noreferrer" className="font-medium text-foreground underline-offset-2 hover:underline">
+                Agrégalo aquí
+              </a>
+              .
+            </span>
+          </p>
+        )}
         {footer}
       </CardContent>
     </Card>

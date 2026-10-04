@@ -7,6 +7,14 @@ import { useEvents } from "@/components/use-events";
 
 const ICON_ID = "allok-state-icon";
 
+/**
+ * Evento de ventana para pedir que el estado se relea YA. Quien cambia algo que
+ * el estado refleja (activar o pausar el agente) lo dispara al guardar: el
+ * estado solo se releía con un evento del chat o cada 60 s, y el lateral decía
+ * «Pausado» casi un minuto después de activar.
+ */
+export const SYSTEM_STATE_EVENT = "allok:estado";
+
 const SystemStateContext = createContext<{ snapshot: SystemSnapshot; revision: number } | null>(null);
 
 /** El estado de la operación, o null fuera del SaaS. */
@@ -62,6 +70,13 @@ export function SystemStateProvider({
     onConversationUpdated: refresh,
     onReconnect: refresh,
   });
+
+  useEffect(() => {
+    const onChange = () => refresh();
+    window.addEventListener(SYSTEM_STATE_EVENT, onChange);
+    return () => window.removeEventListener(SYSTEM_STATE_EVENT, onChange);
+    // `refresh` solo usa refs y el setter: es estable en la práctica.
+  }, []);
 
   // «Atendiendo» caduca solo (diez minutos sin respuesta pasan a «te toca»):
   // sin eventos no hay quién lo note, así que se relee cada minuto a la vista.

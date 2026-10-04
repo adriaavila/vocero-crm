@@ -8,7 +8,6 @@ import { SetupProgressNav } from "@/components/agencia/setup-progress";
 import { useSetup } from "@/components/agencia/activation-gate";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { casesToFix, probarKind, PASS_SCORE, type CaseLite, type CaseToFix, type ProbarKind } from "@/lib/probar";
@@ -69,6 +68,9 @@ export function ProbarPanel({
   }, [latestId, reload]);
 
   const probarDone = progress?.steps.find((step) => step.key === "probar")?.done ?? null;
+  // Con el agente ya activo no hay a dónde «seguir»: solo el resultado y, si
+  // quiere, probar de nuevo.
+  const agentOn = progress ? !progress.active : false;
   const kind = probarKind({
     latest: latest ? { status: latest.status, score: latest.score } : null,
     cases,
@@ -91,7 +93,7 @@ export function ProbarPanel({
           <p className="max-w-2xl text-sm leading-6 text-text-2" role="status">
             {kind === "en_curso" && runProgress
               ? `Seis clientes simulados están conversando con tu agente (${runProgress.done} de ${runProgress.total}).`
-              : BODY[kind](latest?.score ?? null, toFix)}
+              : BODY[kind](latest?.score ?? null, toFix, agentOn)}
           </p>
 
           {toFix.length > 0 && (
@@ -103,13 +105,19 @@ export function ProbarPanel({
           )}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {kind === "paso" ? (
+            {kind === "paso" && !agentOn ? (
               <Link href="/agent#activar" className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
                 Seguir: activar tu agente
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             ) : (
-              <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={busy} onClick={onLaunch}>
+              <Button
+                type="button"
+                variant={kind === "paso" ? "outline" : "default"}
+                className="min-h-11 w-full sm:w-auto"
+                disabled={busy}
+                onClick={onLaunch}
+              >
                 {busy ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Probando…
@@ -138,12 +146,13 @@ const TITLE: Record<ProbarKind, string> = {
   no_paso: "Tu agente todavía no pasa la prueba",
 };
 
-const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[]) => string> = {
+const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[], agentOn: boolean) => string> = {
   sin_prueba: () =>
     "Seis clientes simulados le escriben con casos reales: precios, dudas, reclamos. Un revisor califica cada respuesta, y así ves cómo contesta antes de que hable con tus clientes de verdad.",
   en_curso: () => "Seis clientes simulados están conversando con tu agente.",
   no_termino: () => "Hubo un problema al correr la prueba. Vuelve a intentarlo en un momento.",
-  paso: (score) => `Sacó ${score} de 100 y no tuvo problemas graves. Ya puedes activarlo.`,
+  paso: (score, _toFix, agentOn) =>
+    `Sacó ${score} de 100 y no tuvo problemas graves.${agentOn ? "" : " Ya puedes activarlo."}`,
   vieja: (score) =>
     `Pasó con ${score} de 100, pero cambiaste tu información después de esa prueba. Vuelve a probar para asegurarte de que sigue contestando bien.`,
   no_paso: (score, toFix) => {
@@ -253,7 +262,7 @@ function AddAnswer({
     <div className="mt-2 space-y-3 rounded-md border border-border-strong bg-subtle p-3">
       <div className="space-y-1.5">
         <Label htmlFor={`fix-q-${caseId}-${index}`}>Pregunta</Label>
-        <Input id={`fix-q-${caseId}-${index}`} className="min-h-11" value={pregunta} onChange={(e) => setPregunta(e.target.value)} />
+        <Textarea id={`fix-q-${caseId}-${index}`} rows={2} className="resize-y break-words" value={pregunta} onChange={(e) => setPregunta(e.target.value)} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor={`fix-a-${caseId}-${index}`}>Respuesta</Label>

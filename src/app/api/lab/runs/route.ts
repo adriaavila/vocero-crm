@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { count, desc, eq, inArray } from "drizzle-orm";
 import { apiError, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
@@ -24,8 +24,9 @@ export const GET = withOwner(async (session) => {
         .select({ runId: schema.agentTestCase.runId, n: count() })
         .from(schema.agentTestCase)
         .where(
-          and(
-            eq(schema.agentTestCase.organizationId, session.organizationId),
+          scoped(
+            schema.agentTestCase.organizationId,
+            session.organizationId,
             inArray(schema.agentTestCase.runId, runs.map((run) => run.id)),
             eq(schema.agentTestCase.veredicto, "rojo"),
           ),

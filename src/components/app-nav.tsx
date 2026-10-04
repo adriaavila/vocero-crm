@@ -68,14 +68,14 @@ const NAV: NavItem[] = [
   { href: "/results", label: "Resultados", icon: ChartColumn, owner: true },
 ];
 
-function allokNavItems(productLabel: string): NavItem[] {
+function allokNavItems(): NavItem[] {
   return [
     { href: "/overview", label: "Inicio", icon: Gauge },
     { href: "/inbox", label: "Conversaciones", icon: Inbox, badge: true },
     // 019 §4: "Tu agente" contesta "¿qué sabe y cómo contesta?" (conocimiento
     // y horario). Sin esta entrada, /agent solo se alcanzaba con la URL.
     { href: "/agent", label: "Tu agente", icon: Sparkles, owner: true },
-    { href: "/lab", label: `Probar ${productLabel}`, icon: FlaskConical, owner: true },
+    { href: "/lab", label: "Probar tu agente", icon: FlaskConical, owner: true },
   ];
 }
 
@@ -122,10 +122,12 @@ export function buildAllokNav(
   pro: boolean,
   agenda: boolean,
   realty: boolean = false,
-  productLabel = "allok"
+  // Se conserva por compatibilidad de llamada: ya no se usa (la pantalla de
+  // pruebas se llama igual en todas partes: «Probar tu agente»).
+  _productLabel = "allok"
 ): NavItem[] {
   return [
-    ...allokNavItems(productLabel),
+    ...allokNavItems(),
     ...(pro
       ? ALLOK_PRO_NAV.filter(
           (item) =>
@@ -204,7 +206,7 @@ export function AppNav({
   saasMode?: boolean;
   /** El diseño allok (barra de tinta, all ● k con el estado). Solo la marca allok. */
   allokBrand?: boolean;
-  /** Nombre del producto para el nav ("Probar allok" / "Probar Rei"). Resuelto en el servidor. */
+  /** Nombre del producto para el nav ("allok" / "Rei"). Resuelto en el servidor. */
   productLabel?: string;
   saasPlan?: SaaSPlan | null;
   /** Solo aplica por debajo de `lg`: en escritorio el lateral es fijo. */

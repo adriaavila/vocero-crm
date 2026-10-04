@@ -100,7 +100,7 @@ export function DayLine({ day, timezone, owner, productLabel = "allok" }: { day:
 
   let action: { href: string; label: string } | null = null;
   if (owner && !day.configured) action = { href: "/agent", label: "Definir horario" };
-  else if (owner && !day.agentOn) action = { href: "/agent", label: "Encender tu agente" };
+  else if (owner && !day.agentOn) action = { href: "/agent#activar", label: "Encender tu agente" };
   else if (owner && day.agentOn && !day.billingActive)
     action = { href: "/settings/billing", label: "Elegir plan" };
   else if (owner) action = { href: "/agent", label: "Cambiar horario" };

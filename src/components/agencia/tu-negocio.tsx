@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, Loader2, Trash2 } from "lucide-react";
 import { HorarioRespuesta, type HoursController } from "@/components/agencia/horario-respuesta";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  isSuggestedHandoff,
   NEGOCIO_FIELDS,
   NEGOCIO_MAX_CHARS,
   negocioFromEntries,
@@ -118,6 +120,8 @@ export function TuNegocio({
   const [faqOpen, setFaqOpen] = useState(faqs.length === 0);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [errors, setErrors] = useState<string[]>([]);
+  // Lo que falta ANTES de mandar nada se dice bajo el campo, no en el aviso de arriba.
+  const [fieldErrors, setFieldErrors] = useState<{ handoff?: string; faq?: string }>({});
   const [removeError, setRemoveError] = useState<string | null>(null);
 
   const faqDraft = question.trim().length > 0 || answer.trim().length > 0;
@@ -143,12 +147,23 @@ export function TuNegocio({
   }
 
   async function save() {
+    // Primero lo que se puede revisar sin mandar nada: así el aviso va junto al
+    // campo, con el foco en él, y no hay un «no se guardó todo» cuando no se envió nada.
+    setErrors([]);
     if (!handoff.trim()) {
-      setErrors(["Escribe cuándo quieres que tu agente te pase la conversación."]);
+      setFieldErrors({ handoff: "Escribe en qué casos quieres que tu agente te pase la conversación." });
+      document.getElementById("negocio-handoff")?.focus();
       return;
     }
+    if (faqDraft && (!question.trim() || !answer.trim())) {
+      setFaqOpen(true);
+      setFieldErrors({ faq: question.trim() ? "Falta la respuesta de la pregunta." : "Falta la pregunta de esa respuesta." });
+      // El campo se monta ya abierto el cajón: se espera al siguiente cuadro para enfocarlo.
+      requestAnimationFrame(() => document.getElementById(question.trim() ? "faq-answer" : "faq-question")?.focus());
+      return;
+    }
+    setFieldErrors({});
     setStatus("saving");
-    setErrors([]);
     const failures: string[] = [];
 
     for (const op of planNegocioSave(saved, draft)) {
@@ -172,21 +187,13 @@ export function TuNegocio({
       if (!result.ok) failures.push(`Horario de respuesta: ${result.message}`);
     }
     if (faqDraft) {
-      if (!question.trim() || !answer.trim()) {
-        failures.push(
-          question.trim()
-            ? "Pregunta frecuente: falta la respuesta."
-            : "Pregunta frecuente: falta la pregunta.",
-        );
+      const result = await postKbEntry({ kind: "qa", question, answer });
+      // Si no se guardó, la pregunta y la respuesta se quedan en el campo.
+      if (result.ok) {
+        setQuestion("");
+        setAnswer("");
       } else {
-        const result = await postKbEntry({ kind: "qa", question, answer });
-        // Si no se guardó, la pregunta y la respuesta se quedan en el campo.
-        if (result.ok) {
-          setQuestion("");
-          setAnswer("");
-        } else {
-          failures.push(`Pregunta frecuente: ${result.message}`);
-        }
+        failures.push(`Pregunta frecuente: ${result.message}`);
       }
     }
 
@@ -253,22 +260,34 @@ export function TuNegocio({
         )}
 
         <div className="space-y-1.5">
-          <Label htmlFor="negocio-handoff">Cuándo pasar con una persona</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor="negocio-handoff">Cuándo pasar con una persona</Label>
+            {isSuggestedHandoff(handoff) && <Badge variant="secondary">Sugerencia</Badge>}
+          </div>
           <GrowingTextarea
             id="negocio-handoff"
             rows={3}
             maxLength={4000}
             className="resize-y break-words"
-            aria-describedby="negocio-handoff-hint"
+            aria-invalid={fieldErrors.handoff ? true : undefined}
+            aria-describedby={fieldErrors.handoff ? "negocio-handoff-error negocio-handoff-hint" : "negocio-handoff-hint"}
             value={handoff}
             disabled={busy}
             onChange={(event) => {
               setHandoff(event.target.value);
               setStatus("idle");
+              setFieldErrors((prev) => ({ ...prev, handoff: undefined }));
             }}
           />
+          {fieldErrors.handoff && (
+            <p id="negocio-handoff-error" role="alert" className="text-sm text-danger-text">
+              {fieldErrors.handoff}
+            </p>
+          )}
           <p id="negocio-handoff-hint" className="text-xs text-text-3">
-            En qué casos tu agente deja de responder y te avisa. Ejemplo: cuando pidan un descuento, tengan un reclamo o quieran hablar con alguien.
+            {isSuggestedHandoff(handoff)
+              ? "Es una sugerencia para empezar: cámbiala por lo que de verdad te sirva. Cuando la edites, deja de ser una sugerencia."
+              : "En qué casos tu agente deja de responder y te avisa. Ejemplo: cuando pidan un descuento, tengan un reclamo o quieran hablar con alguien."}
           </p>
         </div>
 
@@ -330,13 +349,21 @@ export function TuNegocio({
                   className="min-h-11"
                   maxLength={500}
                   placeholder="Ej. ¿Hacen entregas a domicilio?"
+                  aria-invalid={fieldErrors.faq && !question.trim() ? true : undefined}
+                  aria-describedby={fieldErrors.faq && !question.trim() ? "faq-error" : undefined}
                   value={question}
                   disabled={busy}
                   onChange={(event) => {
                     setQuestion(event.target.value);
                     setStatus("idle");
+                    setFieldErrors((prev) => ({ ...prev, faq: undefined }));
                   }}
                 />
+                {fieldErrors.faq && !question.trim() && (
+                  <p id="faq-error" role="alert" className="text-sm text-danger-text">
+                    {fieldErrors.faq}
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="faq-answer">Respuesta</Label>
@@ -346,13 +373,21 @@ export function TuNegocio({
                   maxLength={4000}
                   className="resize-y break-words"
                   placeholder="Ej. Sí, entregamos en el este de la ciudad. El envío cuesta $3."
+                  aria-invalid={fieldErrors.faq && !answer.trim() ? true : undefined}
+                  aria-describedby={fieldErrors.faq && !answer.trim() ? "faq-error" : undefined}
                   value={answer}
                   disabled={busy}
                   onChange={(event) => {
                     setAnswer(event.target.value);
                     setStatus("idle");
+                    setFieldErrors((prev) => ({ ...prev, faq: undefined }));
                   }}
                 />
+                {fieldErrors.faq && !answer.trim() && question.trim() && (
+                  <p id="faq-error" role="alert" className="text-sm text-danger-text">
+                    {fieldErrors.faq}
+                  </p>
+                )}
               </div>
             </div>
           </details>

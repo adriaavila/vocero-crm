@@ -79,12 +79,13 @@ itálicas de adorno.
 - **Portada** (`auth-frame.tsx` + `noche.tsx`): «Mientras duermes», un tablero
   de conversaciones de una noche cualquiera en el código de color. Es la
   promesa, no un dato: no lleva cifras.
-- **Puesta en marcha** (`setup-progress.tsx`, `server/agencia/setup-progress.ts`):
-  cuatro pasos, **Conectar WhatsApp · Tu negocio · Probar · Activar**, derivados
-  de la preparación del servidor y dibujados igual en WhatsApp, Tu agente y
-  Probar (Inicio los puede reusar). Cada paso es punto + palabra: listo es
-  *all ok*, el que toca es *atención* («Ahora», te toca a ti), el resto
-  *pausado*. Crear la cuenta pasa antes y no es un paso. **Sin contadores
+- **Puesta en marcha** (`setup-progress.tsx`, `lib/setup-steps.ts`): cuatro
+  pasos, **Conectar WhatsApp · Tu negocio · Probar · Activar**, derivados de la
+  preparación del servidor y dibujados igual en WhatsApp, Tu agente, Probar e
+  Inicio. Cada paso es punto + palabra: listo es *all ok* (verde, «Listo»), el
+  que toca es **un punto de tinta** («Ahora») y el resto *pausado* (gris,
+  «Pendiente»). En el teléfono es una fila: los cuatro puntos y el nombre del
+  paso de ahora. Crear la cuenta pasa antes y no es un paso. **Sin contadores
   escritos a mano** («paso 2 de 6»): el avance sale del servidor o no se dice.
   Con el agente activo no se dibuja: el dueño que vuelve ve su operación.
 - **Tarjeta del número** (`whatsapp-conexion.tsx`): el número y tres hechos por
@@ -157,7 +158,9 @@ allok»):
 
 - **Sí**: tokens por nombre, nunca hex en un componente; estado = punto + palabra;
   una acción principal por pantalla; español, segunda persona, `allok` en minúscula.
-- **No**: colores de adorno, degradados, emoji en la interfaz, un verde que no
+- **No**: el ámbar para «el paso que toca» (el ámbar es *atención*: algo que
+  espera por una persona o está roto; un paso de la puesta en marcha que
+  simplemente toca va en tinta), colores de adorno, degradados, emoji en la interfaz, un verde que no
   signifique «todo bien», un número inventado, un movimiento que no diga nada,
   un contador de pasos escrito a mano, jerga al dueño (WABA, token, webhook,
   prompt) fuera de «Avanzado» y «Conexión manual (soporte)», y rellenar con

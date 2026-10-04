@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// La primera importación de una ruta compila medio proyecto: con la máquina cargada pasa de 5 s.
+vi.setConfig({ testTimeout: 30_000 });
+
 /**
  * PUT /api/agent/profile: activar y pausar no tocan la versión del contenido
  * (la prueba sigue vigente), solo un cambio de lo que el agente dice la mueve,
@@ -108,8 +111,14 @@ describe("PUT /api/agent/profile: la prueba no se invalida por operar", () => {
     expect(state.sets[0]).toHaveProperty("updatedAt");
   });
 
-  it("cambiar el proveedor o la allowlist no es cambiar el contenido", async () => {
-    await put({ aiProvider: "openai", allowlistEnabled: false });
+  it("cambiar el proveedor de IA sí mueve updatedAt: otro modelo contesta distinto", async () => {
+    state.stored = stored({ aiProvider: "openrouter" });
+    await put({ aiProvider: "openai" });
+    expect(state.sets[0]).toHaveProperty("updatedAt");
+  });
+
+  it("la allowlist y los activadores no son contenido", async () => {
+    await put({ allowlistEnabled: false, activationEnabled: false });
     expect(state.sets[0]).not.toHaveProperty("updatedAt");
   });
 });
