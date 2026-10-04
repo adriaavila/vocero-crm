@@ -118,7 +118,19 @@ export function AgentClient({
   useEffect(() => {
     if (jumped.current || !ready || gate.kind === "loading" || !hours.loaded) return;
     jumped.current = true;
-    if (window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" });
+    const hash = window.location.hash.slice(1);
+    if (!hash) return;
+    if (hash === "horario") {
+      // Fork — «Cambiar cuándo vuelve la IA» desde la bandeja: abrir la sección y
+      // llevar el selector a la vista (queda debajo del editor de horas).
+      setHoursOpen(true);
+      const t = window.setTimeout(
+        () => document.getElementById("handoff-resume")?.scrollIntoView({ block: "center" }),
+        100
+      );
+      return () => window.clearTimeout(t);
+    }
+    document.getElementById(hash)?.scrollIntoView({ block: "start" });
   }, [ready, gate.kind, hours.loaded]);
 
   if (!profile) {

@@ -234,6 +234,22 @@ describeReal("pausa manual que vence — Postgres real", { timeout: 30_000 }, ()
     expect((await row(activa.id)).handoffAt).toBeNull();
   });
 
+  it("una pausa anterior al deploy (sin reloj) no vence; el reloj arranca con la próxima respuesta", async () => {
+    const legacy = await seedConversation(ORG, { aiEnabled: false, handoffAt: null, handoffReason: "manual_reply" });
+    expect(await m.pausa.reanudarSiVencio({ ...(await row(legacy.id)), organizationId: ORG })).toBe(false);
+    await m.pausa.barrerPausasVencidas();
+    let c = await row(legacy.id);
+    expect(c.aiEnabled).toBe(false);
+    expect(c.handoffReason).toBe("manual_reply");
+
+    const contesta = ago(13);
+    expect(await m.pausa.pausarPorRespuestaManual(legacy.id, contesta)).toBe("extended");
+    c = await row(legacy.id);
+    expect(c.handoffAt?.getTime()).toBe(contesta.getTime());
+    expect(await m.pausa.reanudarSiVencio({ ...c, organizationId: ORG })).toBe(true);
+    expect((await row(legacy.id)).aiEnabled).toBe(true);
+  });
+
   it("el interruptor reemplaza la pausa automática: apagar queda apagado, encender retoma ya", async () => {
     const apagar = await seedConversation(ORG, { aiEnabled: false, handoffAt: ago(13), handoffReason: "manual_reply" });
     await m.queries.updateConversation(ORG, apagar.id, { aiEnabled: false });

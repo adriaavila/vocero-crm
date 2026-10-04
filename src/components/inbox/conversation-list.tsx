@@ -338,7 +338,7 @@ export function ConversationList({
                             {c.stageName}
                           </span>
                         )}
-                        {c.handoffAt && c.handoffReason === "manual_reply" && (
+                        {c.handoffReason === "manual_reply" && (
                           <span
                             data-state="pausado"
                             className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--st-soft,var(--border-strong))] bg-[var(--st-soft,var(--bg))] px-2 py-0.5 text-[11px] font-medium text-[var(--st-ink,var(--text-2))]"

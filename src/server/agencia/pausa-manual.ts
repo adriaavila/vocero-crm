@@ -29,6 +29,9 @@ import {
  *     respuesta, que es justo lo que ese modo promete cubrir.
  *   - Los traspasos del agente (`cliente`, `modelo`, `error`, `ventana`,
  *     `hostilidad`) NO vencen: ahí alguien pidió una persona.
+ *   - Las pausas anteriores al deploy (migración 9015) quedan sin reloj
+ *     (`handoff_at` NULL): no vencen hasta que el dueño vuelva a contestar
+ *     ese chat, y desde esa respuesta aplica la regla nueva.
  *   - Un chat que el dueño apagó a propósito (toggle, `ai_enabled=false` sin
  *     traspaso) no se marca al contestar: no había IA que apartar, y marcarlo
  *     haría que "venciera" y se encendiera sola contra su decisión.

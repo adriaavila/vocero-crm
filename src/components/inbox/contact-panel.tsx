@@ -230,7 +230,7 @@ export function ContactPanel({
             </div>
           </div>
 
-          {conversation.handoffAt && conversation.handoffReason === "manual_reply" && (
+          {conversation.handoffReason === "manual_reply" && (
             <div
               data-state="pausado"
               className="mt-3 rounded-md border border-[var(--st-soft,var(--border))] bg-[var(--st-soft,var(--bg-subtle))] p-3"
@@ -256,6 +256,12 @@ export function ContactPanel({
                   {falloReactivar}
                 </p>
               )}
+              <Link
+                href="/agent#horario"
+                className="mt-2 inline-flex min-h-6 items-center text-xs text-text-3 underline-offset-2 hover:underline"
+              >
+                Cambiar cuándo vuelve la IA
+              </Link>
             </div>
           )}
 
@@ -290,11 +296,11 @@ export function ContactPanel({
               <div className="min-w-0">
                 <p className="text-[13px] font-medium">IA en esta conversación</p>
                 <p className="text-[11px] text-text-3">
-                  {conversation.handoffAt
-                    ? conversation.handoffReason === "manual_reply"
-                      ? "En pausa · la atiendes tú"
-                      : "En pausa · atención humana"
-                    : !conversation.aiEnabled
+                  {conversation.handoffReason === "manual_reply"
+                    ? "En pausa · la atiendes tú"
+                    : conversation.handoffAt
+                      ? "En pausa · atención humana"
+                      : !conversation.aiEnabled
                       ? "En pausa"
                       : agentReady
                         ? "Respondiendo"
