@@ -33,6 +33,8 @@ export function ControlCenter({
   prioridades,
   metricas,
   funnel,
+  askRemaining,
+  hasDecisions,
   readiness,
   pro,
   billingNotice,
@@ -47,6 +49,10 @@ export function ControlCenter({
   metricas: CentroMetricas;
   /** Los leads por etapa, ahora. */
   funnel: StageCount[];
+  /** Preguntas libres que le quedan hoy al negocio (0: el campo nace deshabilitado). */
+  askRemaining: number;
+  /** El agente ya tomó alguna decisión: si no, no hay nada que revisar. */
+  hasDecisions: boolean;
   readiness: ReadinessResponse | null;
   /** Ventas, Agenda y Equipo (plan Completo activo). */
   pro: boolean;
@@ -94,13 +100,16 @@ export function ControlCenter({
     billingActive: centro.day.billingActive,
     agentOn: centro.day.agentOn,
     needsYou: prioridades.needsYou,
+    capped: prioridades.capped,
     live: prioridades.live,
     closed: prioridades.closed,
     productLabel,
     owner,
   });
   const tz = centro.timezone;
-  const firstName = userName.trim().split(/\s+/)[0];
+  const firstWord = (text: string) => text.trim().split(/\s+/)[0] ?? "";
+  // Si el «nombre» es la primera palabra del negocio («Panadería»), saludar por él suena a error.
+  const firstName = firstWord(userName).toLowerCase() === firstWord(businessName).toLowerCase() ? "" : firstWord(userName);
   const today = new Intl.DateTimeFormat("es", { weekday: "long", day: "numeric", month: "long", timeZone: tz }).format(new Date());
   // El saludo va con la hora del negocio, no con la del servidor.
   const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "2-digit", hourCycle: "h23", timeZone: tz }).format(new Date()));
@@ -141,7 +150,7 @@ export function ControlCenter({
             <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-3">
               {status.strip.reason && <p className="text-[14px] leading-snug text-text-2">{status.strip.reason}</p>}
               {status.strip.href && status.strip.actionLabel && (
-                <Link href={status.strip.href} className={cn(buttonVariants({ size: "lg" }), "min-h-11 md:min-h-10")}>
+                <Link href={status.strip.href} className={cn(buttonVariants({ size: "lg" }), "min-h-11 [@media(pointer:fine)]:min-h-10")}>
                   {status.strip.actionLabel}
                   <ArrowRight className="h-4 w-4" strokeWidth={2} aria-hidden />
                 </Link>
@@ -150,16 +159,16 @@ export function ControlCenter({
           )}
         </section>
 
-        <PrioridadesSection data={prioridades} productLabel={productLabel} connected={snapshot.whatsapp.status === "connected"} />
+        <PrioridadesSection data={prioridades} productLabel={productLabel} connected={snapshot.whatsapp.status === "connected"} hasDecisions={hasDecisions} />
 
-        <AskBox productLabel={productLabel} />
-
-        <MetricasSection metricas={metricas} funnel={funnel} pro={pro} owner={owner} productLabel={productLabel} />
+        <AskBox productLabel={productLabel} remainingToday={askRemaining} />
 
         {/* La firma de la pantalla: el día del negocio, hora por hora. */}
         <section aria-label="Hoy, hora por hora" className="ak-ink mt-5 overflow-hidden rounded-[22px] border border-border bg-background shadow-md">
           <DayLine day={centro.day} timezone={tz} owner={owner} productLabel={productLabel} />
         </section>
+
+        <MetricasSection metricas={metricas} funnel={funnel} pro={pro} owner={owner} productLabel={productLabel} />
 
         {owner && readiness && <Readiness readiness={readiness} />}
       </div>

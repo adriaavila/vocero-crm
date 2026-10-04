@@ -52,10 +52,10 @@ export function MetricasSection({
               <LeadsTile metricas={metricas} />
             </Tile>
             <Tile label={`Respondió ${productLabel}`}>
-              <RepliesTile replies={metricas.replies} />
+              <RepliesTile replies={metricas.replies} productLabel={productLabel} />
             </Tile>
           </div>
-          <Tile label="Embudo" className="lg:col-start-2 lg:row-span-2 lg:row-start-1" aside={pro ? <TableroLink /> : undefined} flush>
+          <Tile label="Embudo" className="lg:col-start-2 lg:row-span-2 lg:row-start-1" aside={pro ? <TableroLink /> : <span className="kicker">Ahora</span>} flush>
             <FunnelTile funnel={funnel} pro={pro} owner={owner} />
           </Tile>
         </div>
@@ -83,7 +83,7 @@ function PeriodToggle({ active }: { active: PeriodKey }) {
           scroll={false}
           aria-current={key === active ? "true" : undefined}
           className={cn(
-            "inline-flex min-h-11 items-center rounded-[8px] px-3 text-[13px] font-medium transition-colors md:min-h-9 md:px-3.5",
+            "inline-flex min-h-11 items-center rounded-[8px] px-3 text-[13px] font-medium transition-colors [@media(pointer:fine)]:min-h-9 md:px-3.5",
             key === active ? "bg-foreground text-background" : "text-text-2 hover:text-foreground",
           )}
         >
@@ -129,12 +129,18 @@ function ConversationsTile({ metricas }: { metricas: CentroMetricas }) {
     return <p className="text-[14px] leading-relaxed text-text-2">Nadie escribió {metricas.period === "hoy" ? "hoy" : "en este periodo"}.</p>;
   }
   const hourly = metricas.granularity === "hour";
+  // En «Hoy» las barras por hora eran ruido (casi todo ceros): solo la cifra.
+  if (hourly) {
+    return (
+      <BigNumber>
+        <Cifra value={fmtNumber(total)} />
+        <span className="text-[14px] font-medium tracking-normal text-text-3">con mensajes del cliente</span>
+      </BigNumber>
+    );
+  }
   const max = Math.max(...series.map((p) => p.count), 1);
   const first = series[0]?.label ?? "";
-  const last = series.at(-1)?.label ?? "";
-  const summary = hourly
-    ? `Conversaciones por hora: ${series.filter((p) => p.count > 0).map((p) => `${p.label} h ${p.count}`).join(", ")}`
-    : `Conversaciones por día: ${series.length} días, ${total} en total`;
+  const summary = `Conversaciones por día: ${series.length} días, ${total} en total`;
   return (
     <>
       <BigNumber>
@@ -145,16 +151,15 @@ function ConversationsTile({ metricas }: { metricas: CentroMetricas }) {
         {series.map((p, i) => (
           <span
             key={p.label}
-            title={hourly ? `${p.label} h: ${p.count}` : `${dayLabel(p.label)}: ${p.count}`}
+            title={`${dayLabel(p.label)}: ${p.count}`}
             className={cn("ak-grow-y min-w-[2px] flex-1 rounded-[2px]", p.label === metricas.current ? "bg-foreground" : p.count > 0 ? "bg-[var(--ground-4)]" : "bg-[var(--ground-3)]")}
             style={{ height: `${Math.max(p.count > 0 ? 10 : 4, (p.count / max) * 100)}%`, "--i": Math.min(i, 20) } as React.CSSProperties}
           />
         ))}
       </div>
       <div aria-hidden className="mt-1.5 flex justify-between font-mono text-[10.5px] text-text-3">
-        <span>{hourly ? `${first} h` : dayLabel(first)}</span>
-        {hourly && <span>12 h</span>}
-        <span>{hourly ? `${last} h` : "hoy"}</span>
+        <span>{dayLabel(first)}</span>
+        <span>hoy</span>
       </div>
     </>
   );
@@ -174,7 +179,7 @@ function LeadsTile({ metricas }: { metricas: CentroMetricas }) {
   );
 }
 
-function RepliesTile({ replies }: { replies: CentroMetricas["replies"] }) {
+function RepliesTile({ replies, productLabel }: { replies: CentroMetricas["replies"]; productLabel: string }) {
   const total = replies.ai + replies.owner;
   if (total === 0) return <p className="text-[14px] leading-relaxed text-text-2">Todavía no hay respuestas en este periodo.</p>;
   const pct = (replies.ai / total) * 100;
@@ -186,7 +191,7 @@ function RepliesTile({ replies }: { replies: CentroMetricas["replies"] }) {
       </BigNumber>
       <div
         role="img"
-        aria-label={`Respondió la IA ${fmtNumber(replies.ai)} y respondiste tú ${fmtNumber(replies.owner)}`}
+        aria-label={`Respondió ${productLabel} ${fmtNumber(replies.ai)} y respondiste tú ${fmtNumber(replies.owner)}`}
         className="mt-4 flex h-2 overflow-hidden rounded-full bg-[var(--ground-3)]"
       >
         <span data-state="activo" className="ak-grow-x block h-full bg-[var(--st)]" style={{ width: `${pct}%`, transformOrigin: "0 50%" }} />
@@ -194,7 +199,7 @@ function RepliesTile({ replies }: { replies: CentroMetricas["replies"] }) {
       </div>
       <p className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[12px] tabular-nums">
         <StateDot state="activo" size={7} decorative />
-        <span>IA {fmtNumber(replies.ai)}</span>
+        <span>{productLabel} {fmtNumber(replies.ai)}</span>
         <span aria-hidden className="text-text-4">
           ·
         </span>
@@ -207,7 +212,17 @@ function RepliesTile({ replies }: { replies: CentroMetricas["replies"] }) {
 
 function TableroLink() {
   return (
-    <Link href="/pipeline" className="inline-flex min-h-11 items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground md:min-h-0">
+    <span className="flex items-center gap-4">
+      {/* El embudo es de hoy, no del periodo que se eligió arriba. */}
+      <span className="kicker">Ahora</span>
+      <TableroAnchor />
+    </span>
+  );
+}
+
+function TableroAnchor() {
+  return (
+    <Link href="/pipeline" className="inline-flex min-h-11 items-center gap-1 text-[12.5px] font-medium text-text-2 hover:text-foreground [@media(pointer:fine)]:min-h-0">
       Ver tablero <ArrowRight className="h-3.5 w-3.5" aria-hidden />
     </Link>
   );

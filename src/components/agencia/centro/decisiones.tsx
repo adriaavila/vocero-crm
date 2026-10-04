@@ -32,7 +32,7 @@ const EMPTY: Record<DecisionFilter, { title: string; body: string }> = {
 };
 
 const btn =
-  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] border px-3.5 text-[13.5px] font-semibold transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 md:min-h-9";
+  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] border px-3.5 text-[13.5px] font-semibold transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [@media(pointer:fine)]:min-h-9";
 
 /**
  * «Cómo decidió el agente»: la revisión diaria de sus turnos, hecha para ser
@@ -73,6 +73,8 @@ export function DecisionesClient({
   const seq = useRef<Record<string, number>>({});
   const refs = useRef<Record<string, HTMLElement | null>>({});
   const noteInput = useRef<HTMLInputElement | null>(null);
+  // Lo que se lleva escrito en la nota de cada fila: si guardar falla, no se pierde.
+  const drafts = useRef<Record<string, string>>({});
   const now = useRef(new Date());
 
   const patchRow = useCallback((id: string, patch: Partial<Row>) => {
@@ -108,9 +110,10 @@ export function DecisionesClient({
       setErrors(({ [id]: _drop, ...rest }) => rest);
       const rollback = (message: string) => {
         patchRow(id, { verdict: before.verdict, verdictNote: before.verdictNote });
-        // Si lo que falló fue la marca misma, la nota no tiene a qué colgarse; si fue
-        // guardar la nota, se queda abierta para no perder lo escrito.
-        if (before.verdict !== "fallo") setNoteFor((open) => (open === id ? null : open));
+        // Si falló la marca y no hay nada escrito, la nota no tiene a qué colgarse; si hay
+        // un borrador (o falló guardar la nota), se queda abierta para no perderlo.
+        if (before.verdict !== "fallo" && !drafts.current[id]?.trim()) setNoteFor((open) => (open === id ? null : open));
+        focusRow(id);
         setErrors((e) => ({ ...e, [id]: message }));
         notify(message, "error");
       };
@@ -135,7 +138,7 @@ export function DecisionesClient({
         if (mine === seq.current[id]) setPending(({ [id]: _drop, ...rest }) => rest);
       }
     },
-    [rows, patchRow, notify],
+    [rows, patchRow, notify, focusRow],
   );
 
   // El teclado: no compite con quien escribe una nota ni con atajos del navegador.
@@ -192,7 +195,7 @@ export function DecisionesClient({
   return (
     <div className="h-full overflow-y-auto bg-subtle">
       <div className="mx-auto w-full max-w-[960px] px-4 pb-24 pt-6 md:px-8 md:pt-10">
-        <Link href="/overview" className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-text-2 hover:text-foreground md:min-h-0">
+        <Link href="/overview" className="inline-flex min-h-11 items-center gap-1.5 text-[13px] font-medium text-text-2 hover:text-foreground [@media(pointer:fine)]:min-h-0">
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Inicio
         </Link>
         <header className="mt-3">
@@ -205,7 +208,7 @@ export function DecisionesClient({
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           {conversationId ? (
-            <Link href="/decisiones" className="inline-flex min-h-11 items-center gap-1.5 text-[13.5px] font-medium text-text-2 hover:text-foreground md:min-h-9">
+            <Link href="/decisiones" className="inline-flex min-h-11 items-center gap-1.5 text-[13.5px] font-medium text-text-2 hover:text-foreground [@media(pointer:fine)]:min-h-9">
               <ArrowLeft className="h-4 w-4" aria-hidden /> Solo esta conversación · ver todas
             </Link>
           ) : (
@@ -216,7 +219,7 @@ export function DecisionesClient({
                 href={href(f)}
                 aria-current={f === filter ? "true" : undefined}
                 className={cn(
-                  "inline-flex min-h-11 items-center rounded-[8px] px-3.5 text-[13px] font-medium transition-colors md:min-h-9",
+                  "inline-flex min-h-11 items-center rounded-[8px] px-3.5 text-[13px] font-medium transition-colors [@media(pointer:fine)]:min-h-9",
                   f === filter ? "bg-foreground text-background" : "text-text-2 hover:text-foreground",
                 )}
               >
@@ -270,6 +273,9 @@ export function DecisionesClient({
                     if (verdict === "fallo") setNoteFor(row.id);
                     else setNoteFor(null);
                     void mark(row.id, verdict);
+                  }}
+                  onDraft={(v) => {
+                    drafts.current[row.id] = v;
                   }}
                   onOpenNote={() => {
                     setActiveId(row.id);
@@ -326,6 +332,7 @@ function DecisionRow({
   noteRef,
   onActivate,
   onMark,
+  onDraft,
   onOpenNote,
   onSaveNote,
   onCloseNote,
@@ -342,6 +349,7 @@ function DecisionRow({
   noteRef: React.MutableRefObject<HTMLInputElement | null>;
   onActivate: () => void;
   onMark: (verdict: Verdict) => void;
+  onDraft: (value: string) => void;
   onOpenNote: () => void;
   onSaveNote: (note: string) => void;
   onCloseNote: () => void;
@@ -426,12 +434,12 @@ function DecisionRow({
             aria-pressed={row.verdict === "fallo"}
             disabled={pending}
             onClick={() => onMark(row.verdict === "fallo" ? null : "fallo")}
-            className={cn(btn, row.verdict === "fallo" ? "border-destructive bg-destructive/10 text-destructive" : "border-border-strong hover:border-foreground")}
+            className={cn(btn, row.verdict === "fallo" ? "border-destructive bg-destructive/10 text-destructive-text" : "border-border-strong hover:border-foreground")}
           >
             <X className="h-4 w-4" aria-hidden /> Falló
           </button>
           {row.verdict === "fallo" && !noteOpen && (
-            <button type="button" onClick={onOpenNote} className="min-h-11 px-2 text-[13px] font-medium text-text-2 underline-offset-2 hover:text-foreground hover:underline md:min-h-9">
+            <button type="button" onClick={onOpenNote} className="min-h-11 px-2 text-[13px] font-medium text-text-2 underline-offset-2 hover:text-foreground hover:underline [@media(pointer:fine)]:min-h-9">
               {row.verdictNote ? "Editar nota" : "Añadir nota"}
             </button>
           )}
@@ -455,7 +463,10 @@ function DecisionRow({
             value={draft}
             maxLength={NOTE_MAX}
             placeholder="¿Qué falló? (opcional)"
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              onDraft(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 e.preventDefault();
@@ -471,7 +482,7 @@ function DecisionRow({
       )}
 
       {error && (
-        <p role="alert" className="mt-3 text-[13.5px] font-medium text-destructive">
+        <p role="alert" className="mt-3 text-[13.5px] font-medium text-destructive-text">
           {error}
         </p>
       )}
@@ -492,7 +503,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function VerdictBadge({ verdict }: { verdict: Verdict }) {
   if (verdict === "fallo") {
     return (
-      <span className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-destructive">
+      <span className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-destructive-text">
         <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-destructive" /> Falló
       </span>
     );

@@ -40,7 +40,9 @@ Cloud) y **suave** (fondo de píldora):
 - `app/globals.css` los expone como `--st-*`; en un elemento, `data-state="…"`
   fija `--st`, `--st-ink` y `--st-soft` (ya en su versión oscura dentro de tinta).
 - El verde de WhatsApp (#d9fdd3) pinta **burbujas** y nada más. allok pinta estado.
-- El rojo (#e5484d) no es un estado: es un fallo o algo que se borra.
+- El rojo (#e5484d) no es un estado: es un fallo o algo que se borra. Como
+  relleno o punto; el **texto** rojo usa `--danger-text` (`text-destructive-text`,
+  #b42318 en claro, #ff6369 en oscuro), porque #e5484d sobre blanco da 3,9:1.
 - Signal Blue (#315cff) es «trabajando»; su degradado a verde es de la web, no de la app.
 
 ## Tipografía
@@ -66,22 +68,35 @@ itálicas de adorno.
 - **Inicio** (`control-center.tsx`): el centro de mando. Su trabajo es
   contestar «¿qué atiendo ahora?». De arriba abajo: el saludo y **una línea
   que cuenta** cuántas conversaciones te necesitan (o «Todo al día»), con su
-  punto; la tarjeta de estado **compacta** en tinta (estado, número y la única
-  acción del sistema); **«Por dónde arrancar»**, tarjetas con la ventana de 24 h
-  que le queda a cada una (deslizables en el teléfono, rejilla en escritorio) y
-  un solo botón, «Responder»; **«Pregúntale a allok»**; **«Cómo va»** con las
-  cifras de Hoy · 7 · 30 · 90 días; y **la línea del día** (`day-line.tsx`, la
-  firma de la pantalla: un punto por conversación de hoy a su hora, el horario
-  del equipo y el turno del agente). La puesta en marcha queda al final.
-  - La tarjeta de «Por dónde arrancar» es punto + palabra: el punto es el
-    estado (`atencion` con la ventana abierta, `pausado` con la ventana
-    cerrada, `atendiendo` si el agente la está contestando) y la palabra es lo
-    que le queda: «Quedan 3 h», «Ventana cerrada: solo con plantilla».
+  punto; la tarjeta de estado **compacta** en tinta, que describe SOLO al
+  sistema (`activo` «allok contesta por ti», `atendiendo` mientras trabaja,
+  `pausado` si el agente está apagado) y nunca repite la línea de arriba;
+  **«Por dónde arrancar»**, tarjetas con la ventana de 24 h que le queda a cada
+  una (deslizables en el teléfono, rejilla en escritorio) y un solo botón,
+  «Responder»; **«Pregúntale a allok»**; **la línea del día** (`day-line.tsx`,
+  la firma de la pantalla: un punto por conversación de hoy a su hora, el
+  horario del equipo y el turno del agente); y **«Cómo va»** con las cifras de
+  Hoy · 7 · 30 · 90 días. La puesta en marcha queda al final.
+  - **Una sola regla de «esperando»** (`server/agencia/prioridades.ts`): lo
+    último que dijo el cliente no tiene respuesta posterior (un saliente que
+    falló no cuenta; si el agente decidió callar, o ya contestó un traspaso,
+    tampoco se espera a nadie). El encabezado, el punto del logotipo, la barra,
+    el icono de la pestaña y los puntos de la línea del día salen de ella.
+  - La tarjeta es punto + palabra: el punto es el estado (`atencion` con la
+    ventana abierta, `pausado` con la ventana cerrada, `atendiendo` si el
+    agente la está contestando) y la palabra es lo que le queda: «Quedan 3 h»,
+    «Ventana cerrada: solo con plantilla». Con menos de una hora el verbo cambia
+    y pesa más: **«Se cierra en 7 min»**. La primera tarjeta lleva el botón
+    principal; las demás, en contorno. Solo se rotula quién atiende cuando es
+    allok («allok la está contestando»): lo demás es tuyo y no hace falta decirlo.
   - El orden es el de la urgencia: las que se cierran antes primero, después
     las cerradas. La razón (pidió una persona, preguntó el precio, llegó por un
     anuncio, sin respuesta) etiqueta; no ordena.
+  - Las tres preguntas sugeridas de «Pregúntale» se contestan con los datos en
+    el servidor, sin modelo ni cupo; solo el texto libre usa IA, y lo dice.
 - **Embudo** (`embudo.tsx`, a partir del de rei-crm): cuántos llegaron al
-  menos a cada etapa y qué parte pasó desde la anterior; por el centro bajan
+  menos a cada etapa y «de cuántos» (2 / de 2, no 100 %); en Inicio se rotula
+  «Ahora» porque no depende del periodo elegido; por el centro bajan
   puntos. Vertical en Inicio, acostado arriba del tablero. Sin Pro, la forma
   vacía y ninguna cifra.
 - **La semana del agente** (`agent-week.tsx`): 7 × 24 puntos, uno por hora:

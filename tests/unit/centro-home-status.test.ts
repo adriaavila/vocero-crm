@@ -97,9 +97,17 @@ describe("la tarjeta de estado compacta", () => {
     expect(homeStatus({ ...base, snapshot: snap, agentOn: false, needsYou: 2, owner: false }).strip).toMatchObject({ href: null, actionLabel: null });
   });
 
-  it("con gente esperando, la tarjeta no dice «all ok»", () => {
+  it("la tarjeta describe al sistema y nunca repite «Requiere atención» de la línea", () => {
     const s = homeStatus({ ...base, snapshot: snapshot(), needsYou: 2 });
-    expect(s.strip.state).toBe("atencion");
+    expect(s.headline.state).toBe("atencion");
+    expect(s.strip).toMatchObject({ state: "activo", reason: "allok contesta por ti." });
+    const working = homeStatus({ ...base, snapshot: snapshot(), needsYou: 2, live: 1 });
+    expect(working.strip).toMatchObject({ state: "atendiendo", reason: "allok está respondiendo ahora." });
+  });
+
+  it("al llegar al techo dice «200+», no un número exacto", () => {
+    const s = homeStatus({ ...base, snapshot: snapshot(), needsYou: 200, capped: true });
+    expect(s.headline.text).toBe("200+ conversaciones te necesitan ahora.");
   });
 });
 

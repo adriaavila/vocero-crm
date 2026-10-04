@@ -93,6 +93,8 @@ export function AppShell({
                   ? `Probar ${productLabel}`
                   : pathname.startsWith("/agent")
                     ? "Tu agente"
+                    : pathname.startsWith("/decisiones")
+                      ? "Cómo decidió"
                     : productLabel;
 
   const shell = (

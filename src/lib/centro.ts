@@ -49,6 +49,8 @@ export function homeStatus(i: {
   agentOn: boolean;
   /** Ventana abierta y te toca a ti. */
   needsYou: number;
+  /** Se llegó al techo de lo que se evalúa: el número se dice «200+». */
+  capped?: boolean;
   /** El agente las está contestando ahora. */
   live: number;
   /** Ventana cerrada: solo con plantilla. */
@@ -67,11 +69,12 @@ export function homeStatus(i: {
   }
 
   const tail = closed > 0 ? ` ${closed} con la ventana cerrada.` : "";
+  const many = i.capped ? `${needsYou}+` : String(needsYou);
   let headline: HomeStatus["headline"];
   if (needsYou > 0) {
     headline = {
       state: "atencion",
-      text: `${plural(needsYou, "1 conversación te necesita", `${needsYou} conversaciones te necesitan`)} ahora.${tail}`,
+      text: `${needsYou === 1 ? "1 conversación te necesita" : `${many} conversaciones te necesitan`} ahora.${tail}`,
     };
   } else if (live > 0) {
     headline = {
@@ -84,18 +87,20 @@ export function homeStatus(i: {
     headline = { state: "activo", text: "Todo al día. Nadie espera respuesta." };
   }
 
-  // Apagado a propósito pesa más que «todo en orden», no que lo que espera.
-  const off = !i.agentOn && headline.state === "activo";
+  // La tarjeta de tinta describe SOLO al sistema (¿contesta allok?), nunca repite
+  // lo que dice la línea de arriba: apagado, trabajando o contestando.
   const agentOffHref = i.owner ? "/agent" : null;
-  return {
-    headline,
-    strip: {
-      state: off ? "pausado" : headline.state,
-      reason: i.agentOn ? `${productLabel} contesta por ti.` : "El agente está apagado: contestas tú.",
-      href: i.agentOn ? null : agentOffHref,
-      actionLabel: i.agentOn ? null : agentOffHref ? "Encender el agente" : null,
-    },
-  };
+  const strip: HomeStatus["strip"] = !i.agentOn
+    ? {
+        state: "pausado",
+        reason: "El agente está apagado: contestas tú.",
+        href: agentOffHref,
+        actionLabel: agentOffHref ? "Encender el agente" : null,
+      }
+    : live > 0
+      ? { state: "atendiendo", reason: `${productLabel} está respondiendo ahora.`, href: null, actionLabel: null }
+      : { state: "activo", reason: `${productLabel} contesta por ti.`, href: null, actionLabel: null };
+  return { headline, strip };
 }
 
 export const PERIOD_KEYS = ["hoy", "7d", "30d", "90d"] as const;

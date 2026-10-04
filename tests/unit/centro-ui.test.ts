@@ -96,23 +96,63 @@ const row = (over: Partial<CandidateRow> = {}): CandidateRow => ({
 describe("por dónde arrancar", () => {
   it("cada tarjeta tiene una sola acción y abre su conversación", () => {
     const data = summarize(buildCards([row()], false));
-    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true }));
+    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
     expect(html).toContain('href="/inbox?contact=ct_1"');
     expect(html).toContain(">Responder<");
-    expect(html).toContain("Tú atiendes");
+    // La tarjeta es tuya: no hace falta decirlo. Solo se rotula si allok la está contestando.
+    expect(html).not.toContain("Tú atiendes");
+    expect(html).not.toContain("la está contestando");
     expect(html).toContain("Quedan 21 h");
     expect(html).toContain('href="/decisiones"');
   });
 
+  it("la primera tarjeta lleva el botón principal y las demás van en contorno", () => {
+    const data = summarize(buildCards([row({ conversationId: "cv_1", contactId: "ct_1" }), row({ conversationId: "cv_2", contactId: "ct_2", lastInboundAt: new Date(Date.now() - 5 * 3_600_000) })], false));
+    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
+    const buttons = html.match(/<a aria-label="Responder a[^>]*class="[^"]*"/g) ?? [];
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toContain("bg-primary");
+    expect(buttons[1]).not.toContain("bg-primary");
+    expect(buttons[1]).toContain("border-border-strong");
+  });
+
+  it("con menos de una hora, el aviso cambia de verbo y pesa más", () => {
+    const data = summarize(buildCards([row({ lastInboundAt: new Date(Date.now() - (24 * 3_600_000 - 7 * 60_000)) })], false));
+    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
+    expect(html).toMatch(/Se cierra en [67] min/);
+    expect(html).toContain("font-bold");
+  });
+
+  it("allok se rotula solo cuando la está contestando", () => {
+    const data = summarize(buildCards([row({ aiEnabled: true, lastInboundAt: new Date(Date.now() - 60_000) })], true));
+    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
+    expect(html).toContain("allok la está contestando");
+  });
+
+  it("«Ver cómo decidió el agente» no aparece si el agente no ha decidido nada", () => {
+    const data = summarize(buildCards([row()], false));
+    const con = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
+    const sin = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: false }));
+    expect(con).toContain('href="/decisiones"');
+    expect(sin).not.toContain("/decisiones");
+  });
+
+  it("no repite la razón: «Pidió una persona» no lleva debajo «Pidió hablar con alguien»", () => {
+    const data = summarize(buildCards([row({ pendingHandoff: true, handoffAt: new Date(), handoffReason: "cliente" })], false));
+    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
+    expect(html).toContain("Pidió una persona");
+    expect(html).not.toContain("Pidió hablar");
+  });
+
   it("sin nada por atender, una frase; sin WhatsApp, otra", () => {
     const empty = summarize([]);
-    expect(renderToStaticMarkup(createElement(PrioridadesSection, { data: empty, productLabel: "allok", connected: true }))).toContain("Nada por atender");
-    expect(renderToStaticMarkup(createElement(PrioridadesSection, { data: empty, productLabel: "allok", connected: false }))).toContain("Conecta tu WhatsApp");
+    expect(renderToStaticMarkup(createElement(PrioridadesSection, { data: empty, productLabel: "allok", connected: true, hasDecisions: true }))).toContain("Nada por atender");
+    expect(renderToStaticMarkup(createElement(PrioridadesSection, { data: empty, productLabel: "allok", connected: false, hasDecisions: true }))).toContain("Conecta tu WhatsApp");
   });
 
   it("una ventana cerrada lo dice con la frase de la plantilla", () => {
     const data = summarize(buildCards([row({ lastInboundAt: new Date(Date.now() - 30 * 3_600_000) })], false));
-    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true }));
+    const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
     expect(html).toContain("Ventana cerrada: solo con plantilla");
   });
 });
@@ -149,6 +189,12 @@ describe("cómo va", () => {
     expect(out).toContain("Todavía no hay respuestas en este periodo");
   });
 
+  it("en «Hoy» no hay barras por hora, y el embudo dice que es de ahora", () => {
+    const out = html(metricas({ period: "hoy", granularity: "hour", current: "13", conversations: { total: 5, series: [{ label: "13", count: 5 }] } }));
+    expect(out).not.toContain("ak-grow-y");
+    expect(out).toContain("Ahora");
+  });
+
   it("el periodo vive en la URL y marca el activo", () => {
     const out = html(metricas({ period: "30d" }));
     expect(out).toContain('href="/overview?p=hoy"');
@@ -158,7 +204,7 @@ describe("cómo va", () => {
 
   it("IA y tú, con miles en punto", () => {
     const out = html(metricas({ replies: { ai: 35, owner: 2145 } }));
-    expect(out).toContain("IA 35");
+    expect(out).toContain("allok 35");
     expect(out).toContain("tú 2.145");
   });
 });
