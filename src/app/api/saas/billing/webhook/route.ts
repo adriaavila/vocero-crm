@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import {
-  getOrganizationBilling,
+  billingFromMetadata,
+  getOrganizationForBillingLocked,
   hasRememberedBillingEvent,
   invoiceSubscriptionId,
   isCurrentOrFirstSubscriptionEvent,
@@ -14,9 +15,14 @@ import {
 } from "@/server/saas/billing";
 import { apiError } from "@/lib/api";
 import { isSaaSPlan } from "@/lib/saas-plans";
+import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function isLiveStatus(status: string): boolean {
+  return status === "active" || status === "trialing" || status === "past_due";
+}
 
 function metadataOrganizationId(metadata: Stripe.Metadata | null | undefined): string | null {
   const value = metadata?.organizationId;
@@ -73,66 +79,95 @@ export async function POST(request: Request) {
   ]);
   if (!supported.has(event.type)) return Response.json({ received: true });
 
-  if (event.type === "checkout.session.completed") {
-    const checkout = event.data.object as Stripe.Checkout.Session;
-    if (checkout.mode === "subscription") {
-      const current = await getOrganizationBilling(organizationId);
-      const customerId = typeof checkout.customer === "string"
-        ? checkout.customer
-        : current.customerId;
-      const subscriptionId = typeof checkout.subscription === "string"
-        ? checkout.subscription
-        : checkout.subscription?.id ?? current.subscriptionId;
+  // Lee-decide-escribe en una transacción con la fila del negocio bloqueada:
+  // dos eventos del mismo cliente (created y completed suelen llegar juntos)
+  // no se pisan.
+  const ignored = await getDb().transaction(async (tx): Promise<Record<string, boolean> | null> => {
+    const locked = await getOrganizationForBillingLocked(organizationId, tx);
+    if (!locked) return { ignored: true };
+    const current = billingFromMetadata(locked.metadata);
+    const updatedAt = new Date(event.created * 1000).toISOString();
+
+    if (event.type === "checkout.session.completed") {
+      const checkout = event.data.object as Stripe.Checkout.Session;
+      if (checkout.mode === "subscription") {
+        const customerId = typeof checkout.customer === "string"
+          ? checkout.customer
+          : current.customerId;
+        const subscriptionId = typeof checkout.subscription === "string"
+          ? checkout.subscription
+          : checkout.subscription?.id ?? current.subscriptionId;
+        // Sin `status`: el checkout confirma la sesión, no el estado vigente de
+        // la suscripción, y puede llegar después de `customer.subscription.*`
+        // (que ya dejó `active`). `customer.subscription.*` o `invoice.paid`
+        // lo habilitan.
+        await saveOrganizationBilling(organizationId, {
+          plan: isSaaSPlan(checkout.metadata?.plan) ? checkout.metadata.plan : current.plan,
+          customerId,
+          subscriptionId,
+          updatedAt,
+        }, tx);
+      }
+    } else if (event.type.startsWith("customer.subscription.")) {
+      const subscription = event.data.object as Stripe.Subscription;
+      const priceId = subscription.items.data[0]?.price.id ?? null;
+      if (current.detachedSubscriptionId === subscription.id) {
+        return { ignored: true, stale_subscription: true };
+      }
+      if (!isCurrentOrFirstSubscriptionEvent(current, subscription.id, event.type)) {
+        if (event.type === "customer.subscription.created" && current.subscriptionId && isLiveStatus(current.status)) {
+          // Un segundo cobro vivo para el mismo cliente: no se silencia, alguien
+          // tiene que cancelarlo o reembolsarlo en Stripe.
+          console.error("[saas-billing] second live subscription for the same customer", {
+            organizationId,
+            customerId: typeof subscription.customer === "string" ? subscription.customer : null,
+            currentSubscriptionId: current.subscriptionId,
+            newSubscriptionId: subscription.id,
+            newStatus: subscription.status,
+          });
+        }
+        return { ignored: true, stale_subscription: true };
+      }
       await saveOrganizationBilling(organizationId, {
-        plan: isSaaSPlan(checkout.metadata?.plan) ? checkout.metadata.plan : current.plan,
-        customerId,
-        subscriptionId,
-        // El checkout confirma la sesión, no el estado vigente de la suscripción.
-        // `customer.subscription.*` o `invoice.paid` habilita después.
-        status: current.status,
-        updatedAt: new Date(event.created * 1000).toISOString(),
-      });
+        plan: planForPriceId(priceId) ?? current.plan,
+        status: statusFromStripe(subscription.status),
+        customerId: typeof subscription.customer === "string" ? subscription.customer : current.customerId,
+        subscriptionId: subscription.id,
+        priceId,
+        currentPeriodEnd: subscription.items.data[0]?.current_period_end
+          ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
+          : current.currentPeriodEnd,
+        cancelAtPeriodEnd: subscriptionEndsAtPeriodEnd(subscription, event.created * 1000),
+        updatedAt,
+      }, tx);
+    } else {
+      const invoice = event.data.object as Stripe.Invoice;
+      const invoiceData = invoice as unknown as {
+        customer?: string | Stripe.Customer | Stripe.DeletedCustomer | null;
+      };
+      const invoiceSubscription = invoiceSubscriptionId(invoice);
+      // Una suscripción que una concesión manual desenganchó no vuelve por un
+      // cobro tardío.
+      if (invoiceSubscription && current.detachedSubscriptionId === invoiceSubscription) {
+        return { ignored: true, stale_subscription: true };
+      }
+      // Un cobro atrasado de una suscripción vieja no debe pausar una nueva que
+      // ya está vigente tras un cambio de plan o recuperación.
+      if (current.subscriptionId && invoiceSubscription && current.subscriptionId !== invoiceSubscription) {
+        return { ignored: true, stale_subscription: true };
+      }
+      await saveOrganizationBilling(organizationId, {
+        status: current.status === "canceled"
+          ? "canceled"
+          : event.type === "invoice.paid" ? "active" : "past_due",
+        customerId: typeof invoiceData.customer === "string" ? invoiceData.customer : current.customerId,
+        subscriptionId: invoiceSubscription ?? current.subscriptionId,
+        updatedAt,
+      }, tx);
     }
-  } else if (event.type.startsWith("customer.subscription.")) {
-    const subscription = event.data.object as Stripe.Subscription;
-    const priceId = subscription.items.data[0]?.price.id ?? null;
-    const current = await getOrganizationBilling(organizationId);
-    if (!isCurrentOrFirstSubscriptionEvent(current, subscription.id, event.type)) {
-      return Response.json({ received: true, ignored: true, stale_subscription: true });
-    }
-    await saveOrganizationBilling(organizationId, {
-      plan: planForPriceId(priceId) ?? current.plan,
-      status: statusFromStripe(subscription.status),
-      customerId: typeof subscription.customer === "string" ? subscription.customer : current.customerId,
-      subscriptionId: subscription.id,
-      priceId,
-      currentPeriodEnd: subscription.items.data[0]?.current_period_end
-        ? new Date(subscription.items.data[0].current_period_end * 1000).toISOString()
-        : current.currentPeriodEnd,
-      cancelAtPeriodEnd: subscriptionEndsAtPeriodEnd(subscription, event.created * 1000),
-      updatedAt: new Date(event.created * 1000).toISOString(),
-    });
-  } else {
-    const invoice = event.data.object as Stripe.Invoice;
-    const invoiceData = invoice as unknown as {
-      customer?: string | Stripe.Customer | Stripe.DeletedCustomer | null;
-    };
-    const current = await getOrganizationBilling(organizationId);
-    const invoiceSubscription = invoiceSubscriptionId(invoice);
-    // Un cobro atrasado de una suscripción vieja no debe pausar una nueva que
-    // ya está vigente tras un cambio de plan o recuperación.
-    if (current.subscriptionId && invoiceSubscription && current.subscriptionId !== invoiceSubscription) {
-      return Response.json({ received: true, ignored: true, stale_subscription: true });
-    }
-    await saveOrganizationBilling(organizationId, {
-      status: current.status === "canceled"
-        ? "canceled"
-        : event.type === "invoice.paid" ? "active" : "past_due",
-      customerId: typeof invoiceData.customer === "string" ? invoiceData.customer : current.customerId,
-      subscriptionId: invoiceSubscription ?? current.subscriptionId,
-      updatedAt: new Date(event.created * 1000).toISOString(),
-    });
-  }
+    return null;
+  });
+  if (ignored) return Response.json({ received: true, ...ignored });
 
   // Se registra después de persistir el estado: si la BD falla, Stripe debe
   // poder reintentar el evento en vez de encontrar un idempotency key huérfano.
