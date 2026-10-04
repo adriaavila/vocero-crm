@@ -81,7 +81,7 @@ export function FunnelChart({ stages, ghost = false }: { stages: StageCount[]; g
                   <span className="font-mono text-[14px] font-semibold tabular-nums">{s.reached}</span>
                   {s.fromPrev !== null && (
                     <span className="font-mono text-[10.5px] text-text-3" title="Pasó desde la etapa anterior">
-                      {s.fromPrev}%
+                      de {steps[i - 1]?.reached ?? s.reached}
                     </span>
                   )}
                 </>

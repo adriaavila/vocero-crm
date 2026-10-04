@@ -21,7 +21,7 @@ La regla que hace posible seguir fusionando con upstream para siempre:
 | Lógica de servidor propia | `src/server/agencia/` |
 | Componentes propios | `src/components/agencia/` |
 | Migraciones propias | `drizzle/9xxx_*.sql` y `drizzle/meta/9xxx_snapshot.json`: el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` ya las nombra 9xxx solo; no renombres nada a mano (ver "Migraciones y snapshots"). |
-| Pantallas propias | `/overview`, `/account`, `/api/readiness`, `/api/provision` |
+| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
 
 Antes de tocar un archivo de upstream, pregúntate si el cambio cabe en
 `agencia/`. Si no cabe, hazlo pequeño, coméntalo con el porqué, y considera
@@ -142,6 +142,7 @@ externas: el trabajo en segundo plano (agente, Laboratorio) es in-process.
 | La atribución de anuncios y el reporte a Meta | `src/server/attribution/` — el `ctwa_clid`, la CAPI y Ajustes → Anuncios detrás de la bandera `ATRIBUCION` (`flag.ts`) + `src/lib/meta/capi.ts` · guía: [docs/atribucion-capi.md](docs/atribucion-capi.md) |
 | El correo saliente (conector opcional Resend; hoy solo "olvidé mi contraseña") | `src/server/agencia/email.ts` (apagado sin `RESEND_API_KEY` + `EMAIL_FROM`) · `restablecer-contrasena.ts` · pantallas `src/app/(auth)/forgot-password` y `reset-password` · guía de encendido: [docs/autoservicio.md](docs/autoservicio.md) |
 | Datos durables del webhook (`raw_event`, replay) y decisiones del agente (`agent_decision`, veredicto) | `src/server/agencia/raw-events*.ts` · `decisions*.ts` · guía: [docs/data-spine.md](docs/data-spine.md) |
+| Inicio del SaaS (centro de mando): «Por dónde arrancar», cifras por periodo, «Pregúntale a allok» y «Cómo decidió el agente» | `src/server/agencia/prioridades.ts` (qué conversaciones esperan por una persona y en qué orden) · `centro-metricas.ts` (Hoy / 7 / 30 / 90 días en la zona del negocio, `?p=`) · `centro-ask.ts` + `/api/centro/ask` (resumen de la organización → `chatJson`, 20 al día) · `lib/centro.ts` y `lib/decisiones.ts` (frases puras) · UI en `src/components/agencia/centro/` y `allok/control-center.tsx` · `/decisiones` |
 | UI | `src/components/` + `src/app/(app)/` |
 | **Cualquier cosa propia del fork** | `src/server/agencia/` · `src/components/agencia/` (ver arriba) |
 

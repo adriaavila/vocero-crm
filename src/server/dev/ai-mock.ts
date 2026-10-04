@@ -1,4 +1,5 @@
 import { JUDGE_MARKER } from "@/server/ai/prompts";
+import { ASK_MARKER } from "@/server/agencia/centro-ask-prompt";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -43,6 +44,12 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ veredicto: "verde", hallazgos: [] });
   }
 
+  // «Pregúntale a allok» (Inicio): contesta con cifras del SNAPSHOT que recibió,
+  // así una prueba local ve que el resumen llega y es de la organización.
+  if (system.includes(ASK_MARKER)) {
+    return JSON.stringify({ answer: askMockAnswer(lastUser) });
+  }
+
   const text = lastUser.toLowerCase();
 
   // Persona pide_humano (el regex de respaldo captura la frase canónica; esta
@@ -69,4 +76,20 @@ export function aiMockCompletion(messages: InMessage[]): string {
     action: "reply",
     text: `Respuesta de prueba sobre: ${eco}`,
   });
+}
+
+function askMockAnswer(prompt: string): string {
+  const question = prompt.split("\n\nSNAPSHOT:\n")[0]?.replace(/^Pregunta: /, "") ?? "";
+  if (/clima|futbol|receta/i.test(question)) return "Eso no está en los datos de hoy.";
+  try {
+    const snap = JSON.parse(prompt.split("\n\nSNAPSHOT:\n")[1] ?? "{}") as {
+      negocio?: string;
+      hoy?: { conversaciones?: number };
+      porAtender?: { teNecesitan?: number; total?: number; principales?: { contacto?: string; razon?: string }[] };
+    };
+    const first = snap.porAtender?.principales?.[0];
+    return `[mock] ${snap.negocio ?? "Tu negocio"}: hoy ${snap.hoy?.conversaciones ?? 0} conversaciones y ${snap.porAtender?.teNecesitan ?? 0} te necesitan (de ${snap.porAtender?.total ?? 0} por atender).${first ? ` Empieza por ${first.contacto}: ${first.razon}.` : ""}`;
+  } catch {
+    return "[mock] No pude leer el resumen.";
+  }
 }
