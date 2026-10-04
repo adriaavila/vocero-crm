@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TimezoneSelect } from "@/components/ui/timezone-select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 // Capa de agencia (fork). Todo lo propio vive en components/agencia/ para que
 // la próxima fusión con upstream no toque este archivo más que en esta línea.
@@ -219,7 +220,30 @@ type BusinessHoursSettings = {
   weeklyHours: Partial<Record<BusinessDay, BusinessInterval[]>>;
   timezone: string;
   responseMode: "outside_hours" | "all_day";
+  /** Fork — pausa que vence: null = 12 h (default), 0 = nunca. */
+  handoffResumeHours: number | null;
 };
+
+const DEFAULT_RESUME_HOURS = 12;
+const RESUME_CHOICES = [1, 2, 4, 8, 12, 24, 48, 0];
+
+function resumeLabel(hours: number, brandName: string): string {
+  if (hours === 0) return `${brandName} no retoma: la reactivas tú`;
+  if (hours === 1) return `${brandName} retoma a la hora`;
+  if (hours === 24) return `${brandName} retoma al día siguiente (24 h)`;
+  if (hours === 48) return `${brandName} retoma a los 2 días (48 h)`;
+  return `${brandName} retoma a las ${hours} horas${hours === DEFAULT_RESUME_HOURS ? " (recomendado)" : ""}`;
+}
+
+function resumeHint(settings: BusinessHoursSettings, brandName: string): string {
+  const hours = settings.handoffResumeHours ?? DEFAULT_RESUME_HOURS;
+  if (hours === 0) return "Cada chat que tomes desde el teléfono queda tuyo hasta que lo reactives desde la conversación.";
+  const turno =
+    settings.responseMode === "outside_hours" && Object.keys(settings.weeklyHours).length > 0
+      ? ` Y si tu horario termina antes, ${brandName} retoma al terminar.`
+      : "";
+  return `Cuenta desde tu último mensaje en ese chat: mientras escribes, ${brandName} no interrumpe.${turno}`;
+}
 
 const BUSINESS_DAYS: { key: BusinessDay; label: string; short: string }[] = [
   { key: "mon", label: "Lunes", short: "L" },
@@ -342,6 +366,22 @@ function BusinessHoursSection({ brandName }: { brandName: string }) {
           })}
           <p className="mt-2 text-xs leading-5 text-text-3">Un cierre a las 00:00 termina al comenzar el día siguiente. Usa <strong className="font-semibold text-text-2">24 h</strong> para mantener ese día siempre abierto.</p>
         </div>}
+
+        <div className="space-y-1.5">
+          <Label htmlFor="handoff-resume">Cuando respondes desde el teléfono</Label>
+          <Select
+            value={String(settings.handoffResumeHours ?? DEFAULT_RESUME_HOURS)}
+            onValueChange={(value) => { setSettings({ ...settings, handoffResumeHours: Number(value) }); setSaved(false); }}
+          >
+            <SelectTrigger id="handoff-resume" className="w-full sm:max-w-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[...RESUME_CHOICES, ...(settings.handoffResumeHours !== null && !RESUME_CHOICES.includes(settings.handoffResumeHours) ? [settings.handoffResumeHours] : [])]
+                .sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b))
+                .map((hours) => <SelectItem key={hours} value={String(hours)}>{resumeLabel(hours, brandName)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-xs leading-5 text-text-3">{resumeHint(settings, brandName)}</p>
+        </div>
 
         <div className="space-y-1.5"><Label htmlFor="business-timezone">Zona horaria</Label><TimezoneSelect id="business-timezone" value={settings.timezone} onValueChange={(timezone) => setSettings({ ...settings, timezone })} className="w-full" /><p className="text-xs text-text-3">Usa la zona del negocio, no la del servidor.</p></div>
         {error && <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">{error}</p>}

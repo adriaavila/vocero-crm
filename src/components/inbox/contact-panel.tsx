@@ -23,8 +23,34 @@ const HANDOFF_LABELS: Record<string, string> = {
   modelo: "El agente decidió escalar",
   error: "Error del proveedor de IA",
   ventana: "Ventana de 24h cerrada",
-  manual_reply: "Respondiste desde el teléfono — IA en pausa",
 };
+
+/** "hoy a las 21:30", "mañana a las 09:00", "el jueves 8 a las 09:00". */
+function cuando(at: Date, now: Date): string {
+  const hora = at.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const dia = (d: Date) => d.toDateString();
+  if (dia(at) === dia(now)) return `hoy a las ${hora}`;
+  if (dia(at) === dia(new Date(now.getTime() + 86_400_000))) return `mañana a las ${hora}`;
+  return `el ${at.toLocaleDateString("es", { weekday: "long", day: "numeric" })} a las ${hora}`;
+}
+
+/**
+ * Fork — pausa que vence: qué pasa con un chat que el dueño tomó desde el
+ * teléfono. Dice la verdad en los dos despliegues: en SaaS el worker la
+ * reanuda a la hora; en una instancia dedicada, el próximo mensaje del
+ * cliente ("a partir de").
+ */
+function textoDePausaManual(c: ConversationDto, now = new Date()): string {
+  if (!c.aiResumeAt) {
+    return "Respondiste desde el teléfono. La IA no retoma este chat hasta que la reactives.";
+  }
+  const at = new Date(c.aiResumeAt);
+  if (at.getTime() <= now.getTime()) {
+    return "Respondiste desde el teléfono. La IA retoma en cuanto el cliente vuelva a escribir.";
+  }
+  const turno = c.aiResumeOnShiftStart ? " (o antes, cuando empiece su turno)" : "";
+  return `Respondiste desde el teléfono. Si no vuelves a escribir aquí, la IA retoma sola a partir de ${cuando(at, now)}${turno}.`;
+}
 
 export function ContactPanel({
   conversation,
@@ -192,7 +218,26 @@ export function ContactPanel({
             </div>
           </div>
 
-          {conversation.handoffAt && (
+          {conversation.handoffAt && conversation.handoffReason === "manual_reply" && (
+            <div className="mt-3 rounded-md border bg-subtle p-3">
+              <p className="flex items-center gap-1.5 text-[13px] font-medium">
+                <UserRound className="h-4 w-4" strokeWidth={1.7} /> La atiendes tú
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-text-3">
+                {textoDePausaManual(conversation)}
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 w-full"
+                onClick={() => void onPatchConversation({ reactivate: true })}
+              >
+                Que la IA retome ahora
+              </Button>
+            </div>
+          )}
+
+          {conversation.handoffAt && conversation.handoffReason !== "manual_reply" && (
             <div className="mt-3 rounded-md border border-warning-soft bg-warning-tint p-3">
               <p className="flex items-center gap-1.5 text-[13px] font-medium text-warning-text">
                 <UserRound className="h-4 w-4" strokeWidth={1.7} /> Atención humana
@@ -218,7 +263,9 @@ export function ContactPanel({
                 <p className="text-[13px] font-medium">IA en esta conversación</p>
                 <p className="text-[11px] text-text-3">
                   {conversation.handoffAt
-                    ? "En pausa · atención humana"
+                    ? conversation.handoffReason === "manual_reply"
+                      ? "En pausa · la atiendes tú"
+                      : "En pausa · atención humana"
                     : !conversation.aiEnabled
                       ? "En pausa"
                       : agentReady

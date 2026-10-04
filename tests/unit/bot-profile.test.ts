@@ -44,6 +44,7 @@ function profileRow(overrides: Partial<AgentProfile> = {}): AgentProfile {
     businessHours: {},
     businessTimezone: "America/Mexico_City",
     responseMode: "outside_hours",
+    handoffResumeHours: null,
     // Capa de agencia: mensajes de activación, allowlist, última prueba real
     // y proveedor de IA preferido.
     activationEnabled: false,

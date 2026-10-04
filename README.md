@@ -80,7 +80,10 @@ Tres columnas (conversaciones / hilo / contacto), mensajes entrantes en ≤2
 segundos sin recargar, estados enviado/entregado/leído, ventana de 24 horas
 visible y bloqueada correctamente (con envío de plantilla aprobada cuando está
 cerrada), respuestas del agente marcadas como IA y handoff a humano con un
-click.
+click. Si contestas un chat desde la app del teléfono, la IA se aparta de ese
+chat y vuelve sola 12 horas después de tu último mensaje (o en cuanto empieza
+su turno, si solo atiende fuera de horario); en Agente → Horario de respuesta
+eliges las horas o «nunca».
 
 ### 📊 Contactos y pipeline kanban
 

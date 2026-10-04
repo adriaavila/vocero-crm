@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
 import type { ConversationDto } from "@/lib/types";
+import { DEFAULT_BUSINESS_HOURS, getBusinessHours, type BusinessHoursSettings } from "@/server/business-hours";
+import { pausaInfo } from "@/server/agencia/pausa-manual";
 
 /**
  * 018 — El anuncio de origen viaja con la conversación. La llave única
@@ -81,13 +83,16 @@ export async function listConversations(
     )
     .orderBy(desc(sql`coalesce(${schema.conversation.lastMessageAt}, ${schema.conversation.createdAt})`));
 
+  // Una sola lectura por lista: la regla de la pausa es del negocio, no del chat.
+  const horario = await getBusinessHours(organizationId);
   return rows.map((r) =>
     serializeConversation(
       r.conversation,
       r.contact,
       r.preview,
       r.stageName,
-      aAnuncioDeLista(r.anuncio)
+      aAnuncioDeLista(r.anuncio),
+      horario
     )
   );
 }
@@ -150,7 +155,8 @@ export function serializeConversation(
   contact: typeof schema.contact.$inferSelect,
   preview: string | null = null,
   stageName: string | null = null,
-  anuncio: ConversationDto["anuncio"] = null
+  anuncio: ConversationDto["anuncio"] = null,
+  horario: BusinessHoursSettings = DEFAULT_BUSINESS_HOURS
 ): ConversationDto {
   return {
     id: c.id,
@@ -167,6 +173,7 @@ export function serializeConversation(
     windowRemainingMs: windowRemainingMs(c.lastInboundAt),
     preview,
     anuncio,
+    ...pausaInfo(c, horario),
   };
 }
 

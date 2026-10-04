@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  businessHoursFromProfile,
   DEFAULT_BUSINESS_HOURS,
   isBusinessHoursOpen,
   isOutsideBusinessHours,
+  normalizeHandoffResumeHours,
   type BusinessHoursSettings,
 } from "@/server/business-hours";
 
@@ -46,5 +48,23 @@ describe("business hours for agent responses", () => {
   it("supports a full-day interval and the Pro all-day mode", () => {
     expect(isBusinessHoursOpen({ ...base, weeklyHours: { sun: [{ start: "00:00", end: "00:00" }] } }, new Date("2026-09-13T18:00:00Z"))).toBe(true);
     expect(isBusinessHoursOpen({ ...base, responseMode: "all_day" }, new Date("2026-09-13T03:00:00Z"))).toBe(true);
+  });
+});
+
+describe("fork — horas hasta que la IA retoma (pausa que vence)", () => {
+  it("null = default; 0 = nunca; fuera de rango o no entero → null", () => {
+    expect(normalizeHandoffResumeHours(null)).toBeNull();
+    expect(normalizeHandoffResumeHours(undefined)).toBeNull();
+    expect(normalizeHandoffResumeHours(0)).toBe(0);
+    expect(normalizeHandoffResumeHours(12)).toBe(12);
+    expect(normalizeHandoffResumeHours(168)).toBe(168);
+    expect(normalizeHandoffResumeHours(169)).toBeNull();
+    expect(normalizeHandoffResumeHours(-1)).toBeNull();
+    expect(normalizeHandoffResumeHours(1.5)).toBeNull();
+  });
+
+  it("viaja con el horario del perfil", () => {
+    expect(businessHoursFromProfile({ responseMode: "all_day", handoffResumeHours: 6 }).handoffResumeHours).toBe(6);
+    expect(businessHoursFromProfile({ responseMode: "all_day" }).handoffResumeHours).toBeNull();
   });
 });

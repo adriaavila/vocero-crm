@@ -391,7 +391,11 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       expect(secs(msg.sentAt)).toBe(1790000100);
       expect(hoisted.maybeRunAgentTurn).not.toHaveBeenCalled();
       const cv = (await conversationOf(phone))!;
-      expect(cv).toMatchObject({ aiEnabled: false, handoffReason: "manual_reply" });
+      // Fork — pausa que vence: esta conversación nació con la IA apagada
+      // (ORG_A no tiene agente), así que no hay nada que pausar ni marcar;
+      // `manual_reply` queda para cuando el dueño toma un chat que la IA
+      // atendía (ver pausa-manual-realdb.test.ts).
+      expect(cv).toMatchObject({ aiEnabled: false, handoffReason: null });
     });
 
     it("campo desconocido: se guarda y queda ignored", async () => {

@@ -19,13 +19,30 @@ export type BusinessHoursSettings = {
   weeklyHours: WeeklyBusinessHours;
   timezone: string;
   responseMode: BusinessResponseMode;
+  /**
+   * Fork — pausa que vence: horas sin que el dueño escriba desde el teléfono
+   * antes de que la IA retome el chat. null = default (12), 0 = nunca.
+   * Ver `server/agencia/pausa-manual.ts`.
+   */
+  handoffResumeHours: number | null;
 };
 
 export const DEFAULT_BUSINESS_HOURS: BusinessHoursSettings = {
   weeklyHours: {},
   timezone: "America/Mexico_City",
   responseMode: "outside_hours",
+  handoffResumeHours: null,
 };
+
+/** Tope del selector: una semana. Más que eso es "nunca", y para eso está el 0. */
+export const MAX_HANDOFF_RESUME_HOURS = 168;
+
+export function normalizeHandoffResumeHours(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > MAX_HANDOFF_RESUME_HOURS) return null;
+  return n;
+}
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -54,6 +71,7 @@ export function businessHoursFromProfile(profile: {
   businessHours?: unknown;
   businessTimezone?: string;
   responseMode?: string;
+  handoffResumeHours?: number | null;
 }): BusinessHoursSettings {
   const timezone = profile.businessTimezone ?? "";
   return {
@@ -62,6 +80,7 @@ export function businessHoursFromProfile(profile: {
       ? timezone
       : DEFAULT_BUSINESS_HOURS.timezone,
     responseMode: profile.responseMode === "all_day" ? "all_day" : "outside_hours",
+    handoffResumeHours: normalizeHandoffResumeHours(profile.handoffResumeHours),
   };
 }
 
@@ -102,6 +121,7 @@ export async function getBusinessHours(organizationId: string): Promise<Business
     businessHours: schema.agentProfile.businessHours,
     businessTimezone: schema.agentProfile.businessTimezone,
     responseMode: schema.agentProfile.responseMode,
+    handoffResumeHours: schema.agentProfile.handoffResumeHours,
   };
   const rows = await getDb()
     .select(profileFields)
@@ -133,12 +153,24 @@ export async function saveBusinessHours(
     throw new BusinessHoursError("Modo de respuesta desconocido");
   }
 
+  // undefined = no lo mandaron (se conserva); null = "usa el default".
+  const handoffResumeHours =
+    input.handoffResumeHours === undefined
+      ? current.handoffResumeHours
+      : normalizeHandoffResumeHours(input.handoffResumeHours);
+  if (input.handoffResumeHours != null && handoffResumeHours === null) {
+    throw new BusinessHoursError(
+      `Las horas hasta que la IA retoma van de 0 (nunca) a ${MAX_HANDOFF_RESUME_HOURS}`,
+    );
+  }
+
   const next: BusinessHoursSettings = {
     weeklyHours: normalizeBusinessHours(
       input.weeklyHours === undefined ? current.weeklyHours : input.weeklyHours,
     ),
     timezone,
     responseMode,
+    handoffResumeHours,
   };
   const updated = await getDb()
     .update(schema.agentProfile)
@@ -146,6 +178,7 @@ export async function saveBusinessHours(
       businessHours: next.weeklyHours,
       businessTimezone: next.timezone,
       responseMode: next.responseMode,
+      handoffResumeHours: next.handoffResumeHours,
       updatedAt: new Date(),
     })
     .where(scoped(schema.agentProfile.organizationId, organizationId))

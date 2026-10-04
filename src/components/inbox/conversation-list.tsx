@@ -338,7 +338,13 @@ export function ConversationList({
                             {c.stageName}
                           </span>
                         )}
-                        {c.handoffAt && (
+                        {c.handoffAt && c.handoffReason === "manual_reply" && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-border-strong bg-background px-2 py-0.5 text-[11px] text-text-2">
+                            <UserRound className="h-3 w-3" strokeWidth={1.7} />
+                            La atiendes tú
+                          </span>
+                        )}
+                        {c.handoffAt && c.handoffReason !== "manual_reply" && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-warning-soft bg-warning-tint px-2 py-0.5 text-[11px] text-warning-text">
                             <UserRound className="h-3 w-3" strokeWidth={1.7} />
                             Atención humana

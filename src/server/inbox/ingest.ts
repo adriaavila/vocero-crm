@@ -26,6 +26,7 @@ import {
 import { registrarAnuncioDeOrigen } from "@/server/attribution/store";
 import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { pausarPorRespuestaManual, reanudarSiVencio } from "@/server/agencia/pausa-manual";
 import { iaInicialPara } from "@/server/agencia/ia-inicial";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
@@ -433,23 +434,11 @@ async function ingestManualEcho(
   // Pausa automática de la IA, idempotente y atómica (solo si no hay handoff).
   // Un replay reproduce el pasado: la conversación pudo haber seguido su curso
   // (el dueño reactivó la IA, entró otro mensaje...), así que NO la pausa.
+  // Fork: la pausa VENCE (server/agencia/pausa-manual) y cada respuesta
+  // manual adelanta su reloj.
   if (!ctx.replay) {
-    const paused = await db
-      .update(schema.conversation)
-      .set({
-        aiEnabled: false,
-        handoffAt: new Date(),
-        handoffReason: "manual_reply",
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.conversation.id, conversation.id),
-          sql`${schema.conversation.handoffAt} is null`
-        )
-      )
-      .returning();
-    if (paused[0]) {
+    const pausa = await pausarPorRespuestaManual(conversation.id, waTimestamp);
+    if (pausa === "paused") {
       console.log(
         `[webhook] respuesta manual del dueño en ${conversation.id} — IA pausada (manual_reply)`
       );
@@ -546,6 +535,14 @@ export async function ingestInboundMessage(input: {
     .returning();
   const message = inserted[0];
   if (!message) return; // duplicado
+
+  // Fork — la pausa por respuesta manual vence: si ya venció, la IA retoma
+  // ANTES de decidir el turno de este mensaje. Un replay no reanuda nada.
+  if (!input.replay) {
+    await reanudarSiVencio(conversation).catch((err) => {
+      console.warn(`[pausa] no se pudo evaluar la pausa de ${conversation.id}:`, err);
+    });
+  }
 
   const asset = input.media
     ? await attachMediaAsset(organizationId, message.id, input.media)
