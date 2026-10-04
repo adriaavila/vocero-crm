@@ -33,6 +33,7 @@ type Mod = {
   eq: typeof import("drizzle-orm").eq;
   ids: typeof import("@/lib/db/ids");
   prio: typeof import("@/server/agencia/prioridades");
+  estado: typeof import("@/server/agencia/estado");
   metr: typeof import("@/server/agencia/centro-metricas");
 };
 let m: Mod;
@@ -57,6 +58,8 @@ async function conversation(
     handoff?: { at: Date; reason: "cliente" | "modelo" | "manual_reply" };
     ad?: "ad" | "post";
     aiEnabled?: boolean;
+    /** Una decisión del agente en esta conversación (p. ej. `none`: no responder). */
+    decision?: { action: string; at: Date };
   },
 ) {
   const n = ++seq;
@@ -96,6 +99,16 @@ async function conversation(
       waTimestamp: msg.at,
     });
   }
+  if (o.decision) {
+    await m.db.insert(m.schema.agentDecision).values({
+      id: `dec_${SFX}_${n}`,
+      organizationId: org,
+      conversationId: convId,
+      brain: "rei",
+      action: o.decision.action,
+      createdAt: o.decision.at,
+    });
+  }
   if (o.ad) {
     await m.db.insert(m.schema.adAttribution).values({
       id: `aa_${SFX}_${n}`,
@@ -130,6 +143,7 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
       eq: orm.eq,
       ids: await import("@/lib/db/ids"),
       prio: await import("@/server/agencia/prioridades"),
+      estado: await import("@/server/agencia/estado"),
       metr: await import("@/server/agencia/centro-metricas"),
     };
     for (const org of [ORG_A, ORG_B, ORG_M]) {
@@ -161,12 +175,16 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
           { dir: "in", at: ago(4) },
         ],
       });
-      await conversation(ORG_A, "traspaso-con-aviso-del-agente", {
+      await conversation(ORG_A, "traspaso-con-aviso-del-agente-ya-contestado", {
         handoff: { at: ago(5), reason: "cliente" },
         msgs: [
           { dir: "in", at: ago(5), text: "quiero hablar con alguien" },
           { dir: "out", at: ago(4.9), origin: "ai", text: "Te paso con una persona" },
         ],
+      });
+      await conversation(ORG_A, "traspaso-sin-aviso", {
+        handoff: { at: ago(5.9), reason: "cliente" },
+        msgs: [{ dir: "in", at: ago(6), text: "quiero hablar con alguien" }],
       });
       await conversation(ORG_A, "salida-fallida", {
         msgs: [
@@ -180,6 +198,15 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
         msgs: [{ dir: "in", at: ago(7), text: null, type: "image" }],
       });
       // No entran
+      await conversation(ORG_A, "decidio-no-responder", {
+        msgs: [{ dir: "in", at: ago(2), text: "gracias" }],
+        decision: { action: "none", at: ago(1.9) },
+      });
+      await conversation(ORG_A, "none-de-antes-del-mensaje", {
+        // El agente decidió callar ANTES de que el cliente volviera a escribir: ese mensaje sí espera.
+        msgs: [{ dir: "in", at: ago(3), text: "otra cosa" }],
+        decision: { action: "none", at: ago(30) },
+      });
       await conversation(ORG_A, "hace-8-dias", { msgs: [{ dir: "in", at: ago(8 * 24) }] });
       await conversation(ORG_A, "contestada-por-el-agente", {
         msgs: [{ dir: "in", at: ago(2) }, { dir: "out", at: ago(1.9), origin: "ai" }],
@@ -215,19 +242,20 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
           "cerrada-6d",
           "precio",
           "publicacion",
+          "none-de-antes-del-mensaje",
           "salida-fallida",
           "sin-respuesta",
-          "traspaso-con-aviso-del-agente",
+          "traspaso-sin-aviso",
           "ultimo-mensaje-solo-imagen",
         ].sort(),
       );
-      expect(r.total).toBe(10);
+      expect(r.total).toBe(11);
     });
 
     it("las razones salen del hilo y del anuncio", async () => {
       const r = await m.prio.getPrioridades(ORG_A, { agentOn: false, now: NOW, limit: 100 });
       const reason = (n: string) => r.cards.find((c) => c.name === n)?.reason;
-      expect(reason("traspaso-con-aviso-del-agente")).toBe("persona");
+      expect(reason("traspaso-sin-aviso")).toBe("persona");
       expect(reason("precio")).toBe("precio");
       expect(reason("anuncio")).toBe("anuncio");
       // Una publicación no es un anuncio; y quien ya fue atendido una vez, tampoco es «primer contacto».
@@ -250,7 +278,7 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
       expect(order.indexOf("sin-respuesta")).toBeLessThan(order.indexOf("anuncio"));
       expect(order.slice(-2)).toEqual(["cerrada-30h", "cerrada-6d"]);
       expect(r.closed).toBe(2);
-      expect(r.needsYou).toBe(8);
+      expect(r.needsYou).toBe(9);
     });
 
     it("el último mensaje sin texto se muestra por su tipo", async () => {
@@ -261,7 +289,34 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
     it("respeta el tope de tarjetas pero cuenta todas", async () => {
       const r = await m.prio.getPrioridades(ORG_A, { agentOn: false, now: NOW });
       expect(r.cards).toHaveLength(8);
-      expect(r.total).toBe(10);
+      expect(r.total).toBe(11);
+    });
+
+    it("un traspaso al que el agente ya contestó, y lo que el agente decidió no contestar, no esperan a nadie", async () => {
+      const r = await m.prio.getPrioridades(ORG_A, { agentOn: false, now: NOW, limit: 100 });
+      expect(names(r)).not.toContain("traspaso-con-aviso-del-agente-ya-contestado");
+      expect(names(r)).not.toContain("decidio-no-responder");
+    });
+
+    it("UNA regla: el encabezado, el punto, la barra y el icono cuentan lo mismo (getSystemState().waiting === needsYou)", async () => {
+      for (const org of [ORG_A, ORG_B, ORG_M]) {
+        const queue = await m.prio.getPrioridades(org, { agentOn: false, now: new Date(), limit: 100 });
+        const dot = await m.estado.getSystemState(org, true);
+        expect(dot.waiting, org).toBe(queue.needsYou);
+      }
+      // Y no es un cero que cuadra por casualidad.
+      expect((await m.estado.getSystemState(ORG_A, true)).waiting).toBe(9);
+    });
+
+    it("la línea del día pinta cada conversación de hoy con el estado de esa misma regla", async () => {
+      const queue = await m.prio.getPrioridades(ORG_A, { agentOn: false, limit: 100 });
+      const centro = await m.estado.getCentro(ORG_A, queue.stateById);
+      const waiting = centro.day.points.filter((p) => p.state === "atencion").length;
+      const expected = queue.cards.filter((c) => c.state === "atencion" && centro.day.points.some((p) => p.id === c.conversationId)).length;
+      expect(waiting).toBe(expected);
+      // Una contestada (hoy) sale como all ok, no como pendiente.
+      const answered = centro.day.points.find((p) => p.name === "contestada-por-persona");
+      expect(answered?.state ?? "activo").toBe("activo");
     });
 
     it("un negocio nunca ve las conversaciones de otro", async () => {
@@ -374,10 +429,10 @@ describeReal("Inicio — Postgres real", { timeout: 30_000 }, () => {
       expect((await m.metr.getCentroMetricas(ORG_M, "7d", FIXED_NOW)).hasActivity).toBe(true);
     });
 
-    it("cada negocio cuenta lo suyo (A: 16 reales; el del Laboratorio no cuenta. B: 2)", async () => {
+    it("cada negocio cuenta lo suyo (A: 19 reales; el del Laboratorio no cuenta. B: 2)", async () => {
       const a = await m.metr.getCentroMetricas(ORG_A, "30d", NOW);
       const b = await m.metr.getCentroMetricas(ORG_B, "30d", NOW);
-      expect(a.conversations.total).toBe(16);
+      expect(a.conversations.total).toBe(19);
       expect(b.conversations.total).toBe(2);
     });
   });

@@ -87,12 +87,12 @@ describe("la ventana de 24 h, en los bordes", () => {
   it("a las 23:59 queda 1 min", () => {
     const r = windowRemaining(new Date(NOW - (24 * H - 60_000)), NOW);
     expect(r).toBe(60_000);
-    expect(windowLabel(r)).toBe("Quedan 1 min");
+    expect(windowLabel(r)).toBe("Se cierra en 1 min");
   });
   it("a las 23:59:30 sigue abierta, con menos de un minuto", () => {
     const r = windowRemaining(new Date(NOW - (24 * H - 30_000)), NOW);
     expect(r).toBe(30_000);
-    expect(windowLabel(r)).toBe("Quedan menos de 1 min");
+    expect(windowLabel(r)).toBe("Se cierra en menos de 1 min");
   });
   it("pasada la hora no hay tiempo negativo", () => {
     expect(windowRemaining(new Date(NOW - 30 * H), NOW)).toBe(0);
@@ -100,7 +100,7 @@ describe("la ventana de 24 h, en los bordes", () => {
   it("dice horas y minutos en palabras cortas", () => {
     expect(windowLabel(3 * H)).toBe("Quedan 3 h");
     expect(windowLabel(3 * H + 20 * 60_000)).toBe("Quedan 3 h 20 min");
-    expect(windowLabel(45 * 60_000)).toBe("Quedan 45 min");
+    expect(windowLabel(45 * 60_000)).toBe("Se cierra en 45 min"); // con menos de 1 h el verbo cambia
     expect(windowLabel(0)).toBe("Ventana cerrada: solo con plantilla");
   });
 });
@@ -158,7 +158,7 @@ describe("la tarjeta", () => {
       true,
       NOW,
     );
-    expect(c).toMatchObject({ reason: "persona", reasonLabel: "Pidió una persona", reasonDetail: "Pidió hablar con alguien.", handler: "persona", state: "atencion" });
+    expect(c).toMatchObject({ reason: "persona", reasonLabel: "Pidió una persona", reasonDetail: null, handler: "persona", state: "atencion" });
   });
 
   it("si lo pasó el agente, no dice que el cliente lo pidió", () => {
@@ -258,8 +258,21 @@ describe("el resumen", () => {
     expect(s).toMatchObject({ total: 4, needsYou: 2, live: 1, closed: 1 });
   });
 
+  it("al llegar al techo de lo que se evalúa, el total es «200+», no un número exacto", () => {
+    const rows = Array.from({ length: 200 }, (_, i) => row({ conversationId: `cv_${i}`, hoursAgo: 1 }));
+    const s = summarize(buildCards(rows, false, NOW));
+    expect(s.capped).toBe(true);
+    expect(s.total).toBe(200);
+    expect(summarize(buildCards(many, false, NOW)).capped).toBe(false);
+  });
+
+  it("entrega el estado de cada candidata para pintar la línea del día con la misma regla", () => {
+    const s = summarize(buildCards([row({ conversationId: "a" }), row({ conversationId: "b", hoursAgo: 30 })], false, NOW));
+    expect(s.stateById).toEqual({ a: "atencion", b: "pausado" });
+  });
+
   it("sin candidatas: todo en cero", () => {
-    expect(summarize([])).toEqual({ cards: [], total: 0, needsYou: 0, live: 0, closed: 0 });
+    expect(summarize([])).toEqual({ cards: [], total: 0, capped: false, stateById: {}, needsYou: 0, live: 0, closed: 0 });
   });
 });
 

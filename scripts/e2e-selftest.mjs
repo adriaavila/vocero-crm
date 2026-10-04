@@ -802,7 +802,10 @@ async function main() {
   );
 
   console.log("\n== 008: paridad inbox — echoes de coexistence (US1) ==");
-  const LEAD = "5214627008001"; // canónica: 524627008001
+  // Por corrida: con wamids y teléfono fijos, el dedup de raw_event de la data spine
+  // no repite el proceso en una re-corrida y la pausa por echo no vuelve a ocurrir.
+  const R008 = String(Date.now()).slice(-6);
+  const LEAD = `5214627${R008}`; // canónica: 524627${R008}
 
   // Un inbound primero: la conversación existe y la ventana queda abierta.
   await api("/api/dev/wa-mock/inbound", {
@@ -812,13 +815,13 @@ async function main() {
       from: LEAD,
       name: "Lead 008",
       text: "hola, quiero informes",
-      waMessageId: "wamid.e2e.008.in.1",
+      waMessageId: `wamid.e2e.008.${R008}.in.1`,
     }),
   });
   await sleep(1200);
   const findConv008 = async () =>
     (((await api("/api/conversations")).json?.conversations) ?? []).find(
-      (c) => c.contact.phone === "524627008001"
+      (c) => c.contact.phone === `524627${R008}`
     );
   let conv008 = await findConv008();
   ok("conversación del lead 008 creada", Boolean(conv008), "sin conversación");
@@ -831,7 +834,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "te contesto yo, dame un minuto",
-      waMessageId: "wamid.e2e.008.echo.1",
+      waMessageId: `wamid.e2e.008.${R008}.echo.1`,
     }),
   });
   ok("echo entregado al webhook", echo1.res.ok, JSON.stringify(echo1.json));
@@ -864,7 +867,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "te contesto yo, dame un minuto",
-      waMessageId: "wamid.e2e.008.echo.1",
+      waMessageId: `wamid.e2e.008.${R008}.echo.1`,
     }),
   });
   await sleep(700);
@@ -881,7 +884,7 @@ async function main() {
       phoneNumberId: PN,
       to: LEAD,
       text: "segundo mensaje manual",
-      waMessageId: "wamid.e2e.008.echo.2",
+      waMessageId: `wamid.e2e.008.${R008}.echo.2`,
       useMessagesKey: true,
     }),
   });
@@ -899,7 +902,7 @@ async function main() {
       phoneNumberId: PN,
       to: "5214627008002",
       text: "hola, te escribo del anuncio",
-      waMessageId: "wamid.e2e.008.echo.3",
+      waMessageId: `wamid.e2e.008.${R008}.echo.3`,
     }),
   });
   await sleep(700);
@@ -1005,7 +1008,7 @@ async function main() {
       type: "image",
       mediaId: "media-e2e-img-1",
       caption: "foto de mi negocio",
-      waMessageId: "wamid.e2e.008.in.img",
+      waMessageId: `wamid.e2e.008.${R008}.in.img`,
     }),
   });
   await sleep(1600); // ingesta + descarga in-process del binario
@@ -1031,7 +1034,7 @@ async function main() {
       from: LEAD,
       type: "location",
       location: { latitude: 20.5, longitude: -100.8, name: "Mi taller" },
-      waMessageId: "wamid.e2e.008.in.loc",
+      waMessageId: `wamid.e2e.008.${R008}.in.loc`,
     }),
   });
   await sleep(900);
@@ -1052,7 +1055,7 @@ async function main() {
       from: LEAD,
       type: "image",
       mediaId: "broken-no-url",
-      waMessageId: "wamid.e2e.008.in.broken",
+      waMessageId: `wamid.e2e.008.${R008}.in.broken`,
     }),
   });
   await sleep(1600);
@@ -1079,7 +1082,7 @@ async function main() {
       type: "image",
       mediaId: "media-e2e-echo-img",
       caption: "así quedaría tu logo",
-      waMessageId: "wamid.e2e.008.echo.img",
+      waMessageId: `wamid.e2e.008.${R008}.echo.img`,
     }),
   });
   await sleep(1600);

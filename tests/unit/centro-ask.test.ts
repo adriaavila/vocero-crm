@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   getBranding: vi.fn(),
   getAiRuntimeConfig: vi.fn(),
   agentOn: vi.fn(),
+  canAutomate: vi.fn(),
+  businessTimezone: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", async (importOriginal) => ({
@@ -33,11 +35,13 @@ vi.mock("@/server/agencia/centro-metricas", () => ({
   getCentroMetricas: mocks.getCentroMetricas,
   pipelineNow: mocks.pipelineNow,
 }));
-vi.mock("@/server/agencia/prioridades", () => ({ getPrioridades: mocks.getPrioridades }));
+vi.mock("@/server/agencia/prioridades", () => ({ getPrioridades: mocks.getPrioridades, CANDIDATE_CAP: 200 }));
 vi.mock("@/server/agencia/decisions-read", () => ({ listDecisions: mocks.listDecisions }));
 vi.mock("@/server/branding", () => ({ getBranding: mocks.getBranding }));
 vi.mock("@/server/ai/credentials", () => ({ getAiRuntimeConfig: mocks.getAiRuntimeConfig }));
 vi.mock("@/server/agencia/estado", () => ({ agentOn: mocks.agentOn }));
+vi.mock("@/server/agencia/entitlements", () => ({ canAutomate: mocks.canAutomate }));
+vi.mock("@/server/analytics/period", () => ({ businessTimezone: mocks.businessTimezone }));
 
 import { UnauthorizedError } from "@/lib/auth/session";
 import { resetRateLimit } from "@/lib/rate-limit";
@@ -51,6 +55,7 @@ const SECRET_ANSWER = "Respuesta confidencial-9931 para el negocio.";
 
 const metrics = (n: number) => ({
   timezone: "America/Caracas",
+  hasActivity: true,
   conversations: { total: n },
   leads: { total: n + 1 },
   replies: { ai: n + 2, owner: n + 3 },
@@ -72,6 +77,8 @@ beforeEach(() => {
       logged.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
     });
   }
+  mocks.canAutomate.mockResolvedValue(true);
+  mocks.businessTimezone.mockResolvedValue("America/Caracas");
   mocks.agentOn.mockResolvedValue({ on: true, timezone: "America/Caracas" });
   mocks.getBranding.mockImplementation(async (org: string) => ({ name: `Negocio de ${org}` }));
   mocks.getCentroMetricas.mockImplementation(async (_org: string, key: string) => metrics(key === "hoy" ? 3 : 20));
@@ -83,11 +90,15 @@ beforeEach(() => {
         reasonLabel: "Preguntó el precio",
         reasonDetail: null,
         windowLabel: "Quedan 3 h",
+        windowOpen: true,
+        remainingMs: 3 * 3_600_000,
         handler: "persona",
         preview: "¿cuánto cuesta?",
       },
     ],
     total: 1,
+    capped: false,
+    stateById: {},
     needsYou: 1,
     live: 0,
     closed: 0,
@@ -134,7 +145,7 @@ describe("POST /api/centro/ask", () => {
   it("contesta con la organización de la SESIÓN y le manda al modelo solo su resumen", async () => {
     const res = await post({ question: SECRET_QUESTION }, "org_A");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ answer: SECRET_ANSWER, remaining: ASK_DAILY_LIMIT - 1 });
+    expect(await res.json()).toEqual({ answer: SECRET_ANSWER, remaining: ASK_DAILY_LIMIT - 1, source: "ia" });
 
     const [schemaArg, messages, opts] = mocks.chatJson.mock.calls[0]!;
     expect(schemaArg).toBeTruthy();
@@ -211,5 +222,87 @@ describe("POST /api/centro/ask", () => {
     const all = logged.join("\n");
     expect(all).not.toContain("secreto-4417");
     expect(all).not.toContain("confidencial-9931");
+  });
+});
+
+describe("el snapshot que ve el modelo", () => {
+  it("las horas van en la zona del negocio, no en UTC", async () => {
+    const snap = await buildSnapshot("org_A", NOW);
+    expect(snap.ahora).toBe("2026-10-03 14:00"); // 18:00Z en Caracas
+    expect(snap.ahora).not.toMatch(/Z$/);
+    expect(snap.ultimasDecisiones[0]?.cuando).toBe("2026-10-03 13:00");
+  });
+
+  it("el texto de un cliente va rotulado como sin verificar, y el prompt lo dice", async () => {
+    await post({ question: "¿qué pidió?" });
+    const [, messages] = mocks.chatJson.mock.calls[0]!;
+    expect(messages[1].content).toContain("mensajeDelCliente");
+    expect(messages[0].content).toMatch(/NO está verificado/);
+  });
+
+  it("al llegar al techo el total es «200+»", async () => {
+    mocks.getPrioridades.mockResolvedValueOnce({ cards: [], total: 200, capped: true, stateById: {}, needsYou: 200, live: 0, closed: 0 });
+    expect((await buildSnapshot("org_A", NOW)).porAtender.total).toBe("200+");
+  });
+});
+
+describe("las sugeridas no usan el modelo ni el cupo", () => {
+  it.each(["hoy", "riesgo", "semana"])("«%s» se contesta con los datos", async (chip) => {
+    const res = await post({ chip });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({ source: "datos", remaining: null });
+    expect(json.answer.length).toBeGreaterThan(10);
+    expect(mocks.chatJson).not.toHaveBeenCalled();
+  });
+
+  it("21 sugeridas seguidas siguen contestando: no gastan los 20 del día", async () => {
+    for (let i = 0; i < ASK_DAILY_LIMIT + 1; i++) expect((await post({ chip: "hoy" })).status).toBe(200);
+    expect((await post({ question: "¿cómo vamos?" })).status).toBe(200);
+  });
+
+  it("«¿Qué hago hoy?» empieza por la primera tarjeta", async () => {
+    const json = await (await post({ chip: "hoy" })).json();
+    expect(json.answer).toContain("1 conversación te necesita");
+    expect(json.answer).toContain("Cliente de org_A");
+  });
+
+  it("un chip desconocido o con otra cosa en el body es 422", async () => {
+    expect((await post({ chip: "secreto" })).status).toBe(422);
+    expect((await post({ chip: "hoy", question: "x y" })).status).toBe(422);
+  });
+});
+
+describe("el tope y el plan", () => {
+  it("una llamada que falla no gasta cupo: tras 20 fallos todavía caben 20 respuestas", async () => {
+    mocks.chatJson.mockResolvedValue({ ok: false, error: "provider_error", detail: "x" });
+    for (let i = 0; i < ASK_DAILY_LIMIT; i++) expect((await post({ question: "¿cómo vamos?" })).status).toBe(503);
+    mocks.chatJson.mockResolvedValue({ ok: true, data: { answer: SECRET_ANSWER } });
+    for (let i = 0; i < ASK_DAILY_LIMIT; i++) expect((await post({ question: "¿cómo vamos?" })).status).toBe(200);
+    expect((await post({ question: "¿cómo vamos?" })).status).toBe(429);
+  });
+
+  it("sin IA configurada (409) tampoco gasta cupo", async () => {
+    mocks.chatJson.mockResolvedValue({ ok: false, error: "not_configured", detail: "" });
+    for (let i = 0; i < ASK_DAILY_LIMIT + 2; i++) expect((await post({ question: "¿cómo vamos?" })).status).toBe(409);
+  });
+
+  it("el día es el del negocio: a su medianoche local vuelven las 20", async () => {
+    // Caracas es UTC−4: 03:30Z del 4 sigue siendo el 3 local; 04:30Z ya es el 4.
+    const { askCentro } = await import("@/server/agencia/centro-ask");
+    const lateNight = new Date("2026-10-04T03:30:00Z");
+    for (let i = 0; i < ASK_DAILY_LIMIT; i++) expect((await askCentro("org_A", "¿cómo vamos?", lateNight)).ok).toBe(true);
+    expect((await askCentro("org_A", "¿cómo vamos?", lateNight)).ok).toBe(false);
+    expect((await askCentro("org_A", "¿cómo vamos?", new Date("2026-10-04T04:30:00Z"))).ok).toBe(true);
+  });
+
+  it("con el plan inactivo, 402 y el modelo no se llama", async () => {
+    mocks.canAutomate.mockResolvedValue(false);
+    const res = await post({ question: "¿cómo vamos?" });
+    expect(res.status).toBe(402);
+    expect((await res.json()).error.code).toBe("billing_inactive");
+    expect(mocks.chatJson).not.toHaveBeenCalled();
+    // Las sugeridas son solo datos: siguen funcionando.
+    expect((await post({ chip: "semana" })).status).toBe(200);
   });
 });

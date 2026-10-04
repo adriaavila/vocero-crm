@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { LIVE_MS, WINDOW_MS, type SystemState } from "@/lib/estado";
@@ -11,9 +11,13 @@ import { mediaLabel } from "@/components/inbox/helpers";
  * ningún modelo decide el orden.
  *
  * Candidatas (reales, no archivadas, con un entrante en los últimos 7 días):
- *  - la última palabra es del cliente y nadie contestó después, o
- *  - pasó a una persona (`handoff_at`) y ninguna persona contestó desde
- *    entonces (aunque el agente haya mandado un «te paso con alguien»).
+ *  - la última palabra es del cliente y nadie contestó después (un saliente
+ *    que falló no cuenta; si el agente decidió callar —`none`/`silent`—, tampoco
+ *    se espera a nadie). Un traspaso al que el agente ya contestó («te paso con
+ *    alguien») cuenta como contestado: es la regla del punto del logotipo.
+ *
+ * Es LA regla de «esperando»: `getSystemState` (punto, barra, icono) y el
+ * encabezado de Inicio salen de aquí, así que nunca discrepan.
  *
  * Orden: con la ventana de 24 h abierta primero, la que menos tiempo tiene;
  * después las cerradas (solo plantilla), la más reciente arriba.
@@ -49,6 +53,10 @@ export type Prioridades = {
   cards: PriorityCard[];
   /** Cuántas hay en total (las que no caben van en «Ver todas»). */
   total: number;
+  /** Se llegó al techo de lo que se evalúa: `total` es «200+», no un número exacto. */
+  capped: boolean;
+  /** El estado de cada candidata, para pintar la línea del día con la MISMA regla. */
+  stateById: Record<string, SystemState>;
   /** Ventana abierta y le toca a una persona: lo que el encabezado cuenta. */
   needsYou: number;
   /** El agente las está contestando ahora mismo. */
@@ -62,7 +70,7 @@ export const PRIORITY_MAX_CARDS = 8;
 export const PREVIEW_MAX = 90;
 const NAME_MAX = 120;
 /** Techo de lo que se evalúa por consulta; con 7 días de margen sobra. */
-const CANDIDATE_CAP = 200;
+export const CANDIDATE_CAP = 200;
 
 /* ---------- Piezas puras ---------- */
 
@@ -92,7 +100,6 @@ export const REASON_LABEL: Record<PriorityReason, string> = {
 
 /** Por qué pasó a una persona, en palabras llanas (el motivo de `handoff_reason`). */
 const HANDOFF_DETAIL: Record<string, string> = {
-  cliente: "Pidió hablar con alguien.",
   modelo: "El agente no supo cómo seguir.",
   error: "La respuesta automática falló.",
   ventana: "La ventana se cerró antes de contestar.",
@@ -131,10 +138,11 @@ export const WINDOW_CLOSED_LABEL = "Ventana cerrada: solo con plantilla";
 export function windowLabel(remainingMs: number): string {
   if (remainingMs <= 0) return WINDOW_CLOSED_LABEL;
   const totalMin = Math.floor(remainingMs / 60_000);
-  if (totalMin < 1) return "Quedan menos de 1 min";
+  // Con menos de una hora, el verbo cambia: ya no es información, es un aviso.
+  if (totalMin < 1) return "Se cierra en menos de 1 min";
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h === 0) return `Quedan ${m} min`;
+  if (h === 0) return `Se cierra en ${m} min`;
   return m === 0 ? `Quedan ${h} h` : `Quedan ${h} h ${m} min`;
 }
 
@@ -229,6 +237,8 @@ export function summarize(cards: PriorityCard[], limit = PRIORITY_MAX_CARDS): Pr
   return {
     cards: cards.slice(0, limit),
     total: cards.length,
+    capped: cards.length >= CANDIDATE_CAP,
+    stateById: Object.fromEntries(cards.map((c) => [c.conversationId, c.state])),
     needsYou: cards.filter((c) => c.windowOpen && c.handler === "persona").length,
     live: cards.filter((c) => c.handler === "agente").length,
     closed: cards.filter((c) => !c.windowOpen).length,
@@ -272,19 +282,33 @@ const hasAd: SQL<boolean> = sql<boolean>`exists (
 )`;
 
 /**
- * Nadie contestó después de lo último que dijo el cliente. Un saliente que
- * falló no cuenta (el cliente no lo recibió), por eso se mira el hilo y no
- * `last_message_at`; ambas horas son de nuestro reloj (`created_at`), no la de
- * WhatsApp.
+ * Esperando a una persona: lo último que dijo el cliente no tiene respuesta
+ * posterior. Un saliente que falló no cuenta (el cliente no lo recibió), y si
+ * lo último que decidió el agente después de eso fue «no responder» (`none` /
+ * `silent`: el «gracias» que cierra una charla), tampoco se espera a nadie. Un
+ * traspaso al que el agente ya contestó («te paso con alguien») cuenta como
+ * contestado, igual que en el punto del logotipo. Esta es LA regla: el
+ * encabezado, el punto, la barra, el icono y la línea del día salen de aquí.
+ * Ambas horas son de nuestro reloj (`created_at`), no la de WhatsApp.
  */
-const unanswered: SQL<boolean> = sql<boolean>`not exists (
-  select 1 from "message" mu
-  where mu."organization_id" = ${cv.org} and mu."conversation_id" = ${cv.id}
-    and mu."direction" = 'out' and mu."status" <> 'failed'
-    and mu."created_at" > coalesce((
-      select max(mi."created_at") from "message" mi
-      where mi."organization_id" = ${cv.org} and mi."conversation_id" = ${cv.id} and mi."direction" = 'in'
-    ), '-infinity'::timestamp)
+const lastInboundCreatedAt = sql`coalesce((
+  select max(mi."created_at") from "message" mi
+  where mi."organization_id" = ${cv.org} and mi."conversation_id" = ${cv.id} and mi."direction" = 'in'
+), '-infinity'::timestamp)`;
+
+const unanswered: SQL<boolean> = sql<boolean>`(
+  not exists (
+    select 1 from "message" mu
+    where mu."organization_id" = ${cv.org} and mu."conversation_id" = ${cv.id}
+      and mu."direction" = 'out' and mu."status" <> 'failed'
+      and mu."created_at" > ${lastInboundCreatedAt}
+  )
+  and not coalesce((
+    select dn."action" in ('none', 'silent') from "agent_decision" dn
+    where dn."organization_id" = ${cv.org} and dn."conversation_id" = ${cv.id}
+      and dn."created_at" > ${lastInboundCreatedAt}
+    order by dn."created_at" desc limit 1
+  ), false)
 )`;
 
 const lastOutboundAt = sql<Date | null>`(
@@ -299,7 +323,7 @@ const lastOutboundAt = sql<Date | null>`(
  */
 export async function getPrioridades(
   organizationId: string,
-  opts: { agentOn: boolean; now?: Date; limit?: number },
+  opts: { agentOn: boolean; now?: Date; limit?: number; light?: boolean },
 ): Promise<Prioridades> {
   const db = getDb();
   const now = opts.now ?? new Date();
@@ -331,14 +355,16 @@ export async function getPrioridades(
         isNull(ct.archivedAt),
         isNotNull(c.lastInboundAt),
         gte(c.lastInboundAt, since),
-        or(unanswered, pendingHandoff),
+        unanswered,
+        gte(c.lastMessageAt, since),
       ),
     )
     .orderBy(desc(c.lastInboundAt))
     .limit(CANDIDATE_CAP);
 
   const turns = new Map<string, InboundRow[]>();
-  if (candidates.length > 0) {
+  // `light`: solo se necesitan los conteos (el punto), no el texto de las tarjetas.
+  if (candidates.length > 0 && !opts.light) {
     const ids = sql.join(
       candidates.map((r) => sql`${r.conversationId}`),
       sql`, `,

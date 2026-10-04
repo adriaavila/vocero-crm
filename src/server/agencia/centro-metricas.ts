@@ -83,6 +83,9 @@ export async function getCentroMetricas(
   // Rango semiabierto [start, end): el último instante del día no se cuenta dos veces.
   // La zona viaja como parámetro: se agrupa por posición (`group by 1`); repetir la
   // expresión con otro `$n` la hace distinta para Postgres.
+  // Además `c.last_message_at >= start`: una conversación con un mensaje en el rango
+  // tiene su último mensaje en el rango o después, y así `conversation_org_last_idx`
+  // acota la tabla en vez de recorrer todas las conversaciones del negocio.
   const range = [gte(m.createdAt, start), lt(m.createdAt, end)] as const;
 
   const [totals, perBucket, replies, leads, ever] = await Promise.all([
@@ -90,12 +93,12 @@ export async function getCentroMetricas(
       .select({ n: sql<number>`count(distinct ${m.conversationId})::int` })
       .from(m)
       .innerJoin(c, eq(c.id, m.conversationId))
-      .where(scoped(m.organizationId, organizationId, eq(c.isTest, false), eq(m.direction, "in"), ...range)),
+      .where(scoped(m.organizationId, organizationId, eq(c.isTest, false), eq(m.direction, "in"), ...range, gte(c.lastMessageAt, start))),
     db
       .select({ label: bucket, n: sql<number>`count(distinct ${m.conversationId})::int` })
       .from(m)
       .innerJoin(c, eq(c.id, m.conversationId))
-      .where(scoped(m.organizationId, organizationId, eq(c.isTest, false), eq(m.direction, "in"), ...range))
+      .where(scoped(m.organizationId, organizationId, eq(c.isTest, false), eq(m.direction, "in"), ...range, gte(c.lastMessageAt, start)))
       .groupBy(sql`1`),
     db
       .select({
@@ -112,6 +115,7 @@ export async function getCentroMetricas(
           eq(m.direction, "out"),
           sql`${m.status} <> 'failed'`,
           ...range,
+          gte(c.lastMessageAt, start),
         ),
       ),
     contarNuevos(organizationId, start, end),
@@ -162,4 +166,14 @@ export async function pipelineNow(organizationId: string): Promise<StageCount[]>
     .groupBy(schema.pipelineStage.id)
     .orderBy(schema.pipelineStage.position);
   return rows;
+}
+
+/** ¿El agente ha tomado alguna decisión en conversaciones reales? (esconde el enlace a «Cómo decidió» si no.) */
+export async function hasAnyDecision(organizationId: string): Promise<boolean> {
+  const rows = await getDb()
+    .select({ one: sql<number>`1` })
+    .from(schema.agentDecision)
+    .where(scoped(schema.agentDecision.organizationId, organizationId))
+    .limit(1);
+  return rows.length > 0;
 }

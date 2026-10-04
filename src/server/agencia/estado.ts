@@ -1,21 +1,19 @@
-import { count, eq, gte, inArray, sql } from "drizzle-orm";
+import { count, eq, gte, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import {
-  conversationState,
   systemState,
-  WINDOW_MS,
   type SystemSnapshot,
   type SystemState,
   type WhatsAppLink,
 } from "@/lib/estado";
 import { canAutomate } from "@/server/agencia/entitlements";
 import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
-import type { ConversationDto } from "@/lib/types";
 import { automationAccessFromMetadata, hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
-import { dayIsoInTz } from "@/lib/time/slots";
+import { dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
+import { getPrioridades } from "@/server/agencia/prioridades";
 
 /**
  * Capa de agencia (fork) — el estado de la operación con datos reales: el
@@ -40,33 +38,13 @@ export async function agentOn(organizationId: string): Promise<{ on: boolean; ti
 
 export async function getSystemState(organizationId: string, owner: boolean): Promise<SystemSnapshot> {
   const db = getDb();
-  // Solo puede no estar en `activo` lo que tuvo un entrante dentro de la
-  // ventana (traspasos incluidos): el resto ni se trae.
-  const windowStart = new Date(Date.now() - WINDOW_MS);
-  const [creds, agent, rows, jobs, billingActive] = await Promise.all([
+  const [creds, agent, jobs, billingActive] = await Promise.all([
     db
       .select({ status: schema.metaCredentials.status, phone: schema.metaCredentials.displayPhoneNumber })
       .from(schema.metaCredentials)
       .where(scoped(schema.metaCredentials.organizationId, organizationId))
       .limit(1),
     agentOn(organizationId),
-    db
-      .select({
-        aiEnabled: schema.conversation.aiEnabled,
-        handoffAt: schema.conversation.handoffAt,
-        lastInboundAt: schema.conversation.lastInboundAt,
-        lastMessageAt: schema.conversation.lastMessageAt,
-        unreadCount: schema.conversation.unreadCount,
-      })
-      .from(schema.conversation)
-      .where(
-        scoped(
-          schema.conversation.organizationId,
-          organizationId,
-          eq(schema.conversation.isTest, false),
-          gte(schema.conversation.lastInboundAt, windowStart),
-        ),
-      ),
     db
       .select({ n: count() })
       .from(schema.agentJob)
@@ -80,17 +58,14 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
     canAutomate(organizationId),
   ]);
 
-  const now = Date.now();
-  let waiting = 0;
-  let live = 0;
-  for (const row of rows) {
-    const state = conversationState(row, agent.on, now);
-    if (state === "atencion") waiting++;
-    else if (state === "atendiendo") live++;
-  }
+  // LA regla de «esperando» es la de «Por dónde arrancar» (`prioridades.ts`):
+  // el punto, la barra, el icono y el encabezado de Inicio cuentan lo mismo.
+  // `light`: aquí solo importan los conteos, no el texto de las tarjetas.
+  const queue = await getPrioridades(organizationId, { agentOn: agent.on, light: true, limit: 0 });
+  const waiting = queue.needsYou;
   // Un turno en cola es de una conversación que ya puede estar contada como
   // viva: se toma el mayor, no la suma, para no contar dos veces la misma.
-  const working = Math.max(live, jobs[0]?.n ?? 0);
+  const working = Math.max(queue.live, jobs[0]?.n ?? 0);
   const whatsapp: WhatsAppLink = creds[0] ? creds[0].status : "missing";
 
   return {
@@ -105,8 +80,6 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
 export type DayPoint = { id: string; contactId: string; name: string; state: SystemState; minute: number };
 
 export type Centro = {
-  today: { conversations: number; solo: number; nuevos: number };
-  waiting: number;
   timezone: string;
   /** Inicio, «Hoy, hora por hora»: quién escribió y quién contesta cada minuto del día. */
   day: {
@@ -134,69 +107,53 @@ function safeTimeZone(tz: string): string {
 }
 
 /**
- * Inicio del SaaS: lo que pasó hoy (en la zona del negocio) y quién espera.
- * Mismas reglas que el punto, así que la tarjeta y el logotipo nunca se
- * contradicen.
+ * Inicio del SaaS: la línea del día y el horario. Solo se leen las
+ * conversaciones de HOY (en la zona del negocio), y el color de cada punto sale
+ * de la misma regla que el punto del logotipo (`stateById`, de `prioridades`):
+ * lo que no está esperando ni atendiéndose ya fue contestado.
  */
-export async function getCentro(organizationId: string, conversations: ConversationDto[]): Promise<Centro> {
+export async function getCentro(organizationId: string, stateById: Record<string, SystemState>): Promise<Centro> {
   const agent = await agentOn(organizationId);
   const tz = safeTimeZone(agent.timezone);
-  // `created_at` guarda la hora UTC sin zona: la medianoche del negocio se
-  // pasa a esa misma forma para compararla.
-  // El horario y el plan se leen junto con las cifras, no después.
-  const [totals, schedule, orgRows] = await Promise.all([
-    getDb().execute(sql`
-      with bounds as (
-        select ((date_trunc('day', now() at time zone ${tz}) at time zone ${tz}) at time zone 'UTC') as start
-      ),
-      today_out as (
-        select m.conversation_id,
-               bool_or(m.origin = 'ai') as by_ai,
-               bool_or(m.origin in ('operator', 'manual')) as by_person
-        from message m
-        join conversation c on c.id = m.conversation_id
-        cross join bounds b
-        where m.organization_id = ${organizationId} and c.is_test = false
-          and c.handoff_at is null and m.direction = 'out' and m.created_at >= b.start
-        group by m.conversation_id
-      )
-      select
-        (select count(distinct m.conversation_id)
-           from message m
-           join conversation c on c.id = m.conversation_id
-           cross join bounds b
-          where m.organization_id = ${organizationId} and c.is_test = false
-            and m.direction = 'in' and m.created_at >= b.start)::int as conversations,
-        (select count(*) from today_out where by_ai and not by_person)::int as solo,
-        (select count(*)
-           from conversation c
-           cross join bounds b
-          where c.organization_id = ${organizationId} and c.is_test = false
-            and c.created_at >= b.start)::int as nuevos
-    `),
+  const now = Date.now();
+  const today = dayIsoInTz(new Date(now), tz);
+  const dayStart = zonedWallClockToUtc(today, "00:00", tz) ?? new Date(now - 24 * 3_600_000);
+  const [schedule, orgRows, todays] = await Promise.all([
     getBusinessHours(organizationId),
     getDb()
       .select({ metadata: schema.organization.metadata })
       .from(schema.organization)
       .where(eq(schema.organization.id, organizationId))
       .limit(1),
+    getDb()
+      .select({
+        id: schema.conversation.id,
+        contactId: schema.conversation.contactId,
+        name: schema.contact.name,
+        lastInboundAt: schema.conversation.lastInboundAt,
+      })
+      .from(schema.conversation)
+      .innerJoin(schema.contact, eq(schema.contact.id, schema.conversation.contactId))
+      .where(
+        scoped(
+          schema.conversation.organizationId,
+          organizationId,
+          eq(schema.conversation.isTest, false),
+          gte(schema.conversation.lastInboundAt, dayStart),
+        ),
+      ),
   ]);
 
-  const now = Date.now();
-  const rows = conversations.map((c) => ({ c, state: conversationState(c, agent.on, now) }));
-  const row = (totals as unknown as { conversations: number; solo: number; nuevos: number }[])[0];
-
-  // La línea del día: un punto por conversación de hoy, en el minuto en que
-  // el cliente escribió por última vez, con el color de su estado.
-  const today = dayIsoInTz(new Date(now), tz);
-  const points = rows
-    .filter(({ c }) => c.lastInboundAt && dayIsoInTz(new Date(c.lastInboundAt), tz) === today)
-    .map(({ c, state }): DayPoint => ({
+  // Un punto por conversación de hoy, en el minuto en que el cliente escribió
+  // por última vez, con el color de su estado.
+  const points = todays
+    .filter((c) => c.lastInboundAt)
+    .map((c): DayPoint => ({
       id: c.id,
-      contactId: c.contact.id,
-      name: c.contact.name,
-      state,
-      minute: minuteInTz(new Date(c.lastInboundAt as string), tz),
+      contactId: c.contactId,
+      name: c.name,
+      state: stateById[c.id] ?? "activo",
+      minute: minuteInTz(c.lastInboundAt as Date, tz),
     }))
     .sort((a, b) => a.minute - b.minute);
   const allDay = schedule.responseMode === "all_day";
@@ -208,14 +165,6 @@ export async function getCentro(organizationId: string, conversations: Conversat
   const tomorrow = coverage(schedule.weeklyHours, schedule.responseMode, pro, nextDay(weekday)).team[0]?.[0] ?? null;
 
   return {
-    today: {
-      conversations: row?.conversations ?? 0,
-      // Una respuesta de hoy a un mensaje de anoche cuenta en `solo` y no en
-      // `conversations`: nunca más atendidas solas que conversaciones.
-      solo: Math.min(row?.solo ?? 0, row?.conversations ?? 0),
-      nuevos: row?.nuevos ?? 0,
-    },
-    waiting: rows.filter((r) => r.state === "atencion").length,
     timezone: tz,
     day: {
       points,
@@ -228,4 +177,3 @@ export async function getCentro(organizationId: string, conversations: Conversat
     },
   };
 }
-
