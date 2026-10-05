@@ -11,6 +11,10 @@
  * (el correo cae en un sumidero en memoria, no en Resend), META_GRAPH_BASE_URL → wa-mock,
  * META_APP_ID/META_ES_CONFIG_ID, BD migrada. Sale con 0 solo si todo pasa.
  *
+ * Tramo 1b: de dónde llegó el alta (`/api/saas/origen`, primer toque). Tramo 12:
+ * el registro de verdad en Chromium con `?utm_source=test` y el embudo en
+ * /admin (requiere Playwright y un correo en ALLOK_ADMIN_EMAILS).
+ *
  * Tramos 9 a 11: equipo, estados del plan (prueba, tope, vencida, cobro fallido,
  * cancelada, vuelve a suscribirse) con eventos de Stripe firmados con el secreto
  * local y los correos de la prueba (una vez por negocio). El tramo 0 FALLA si
@@ -156,6 +160,26 @@ async function main() {
   const tenantHost = hostFor(slug);
   const view0 = await owner(tenantHost, "/api/onboarding/whatsapp");
   ok("el dueño ve su alta en pendiente", view0.json?.status === "pendiente", JSON.stringify(view0.json));
+
+  console.log("\n== 1b. De dónde llegó el alta: se anota una vez y no toca el cobro ==");
+  const origenOf = async () => JSON.parse((await sql`select metadata from organization where id = ${org.id}`)[0].metadata)?.allok ?? {};
+  const noSession = await client()(APP_HOST, "/api/saas/origen", { method: "POST", body: JSON.stringify({ utm_source: "x" }) });
+  ok("sin sesión: 401", noSession.res.status === 401, String(noSession.res.status));
+  const badJson = await owner(APP_HOST, "/api/saas/origen", { method: "POST", body: "{roto" });
+  ok("body ilegible: 400, no 500", badJson.res.status === 400, String(badJson.res.status));
+  const notObject = await owner(APP_HOST, "/api/saas/origen", { method: "POST", body: JSON.stringify(["utm_source"]) });
+  ok("body que no es objeto: 400", notObject.res.status === 400, String(notObject.res.status));
+  const sent = await owner(APP_HOST, "/api/saas/origen", {
+    method: "POST",
+    body: JSON.stringify({ utm_source: "test", utm_campaign: `api-${stamp}`, referrer: "https://l.facebook.com/l.php?u=x", password: "no-se-guarda" }),
+  });
+  let allok = await origenOf();
+  ok("se anota con 204", sent.res.status === 204 && allok.origen?.utm_source === "test" && allok.origen?.utm_campaign === `api-${stamp}`, `${sent.res.status} ${JSON.stringify(allok.origen)}`);
+  ok("del referente queda solo el host y lo ajeno no entra", allok.origen?.referrer === "l.facebook.com" && !("password" in (allok.origen ?? {})) && typeof allok.origen?.at === "string", JSON.stringify(allok.origen));
+  ok("el cobro sigue igual (prueba de Completo)", allok.billing?.status === "trialing" && allok.billing?.source === "self_serve_trial", JSON.stringify(allok.billing));
+  const second = await owner(APP_HOST, "/api/saas/origen", { method: "POST", body: JSON.stringify({ utm_source: "otra" }) });
+  allok = await origenOf();
+  ok("el primer toque gana", second.res.status === 204 && allok.origen?.utm_source === "test", JSON.stringify(allok.origen));
 
   console.log("\n== 2. Cancela el popup a mitad: queda anotado y puede retomar ==");
   const cfg = await owner(APP_HOST, `/api/whatsapp/embedded-signup/config?org=${slug}&mode=coexistence`);
@@ -399,6 +423,90 @@ async function main() {
     await sql`update verification set expires_at = now() - interval '1 minute' where identifier = ${`reset-password:${stale}`}`;
     const expiredLink = await stranger(tenantHost, `/api/auth/reset-password/${stale}?callbackURL=%2Freset-password`);
     ok("un enlace vencido lleva a error=INVALID_TOKEN", (expiredLink.res.headers.get("location") ?? "").includes("error=INVALID_TOKEN"), expiredLink.res.headers.get("location") ?? "");
+  }
+
+  console.log("\n== 12. El registro de verdad con ?utm_source=test, y el embudo en /admin ==");
+  const browserEmail = `utm-${stamp}@vocero.test`;
+  let browser = null;
+  try {
+    const { chromium } = await import("playwright");
+    try {
+      browser = await chromium.launch();
+    } catch {
+      // Playwright sin su Chromium descargado: el de CHROMIUM_PATH o el que haya en PLAYWRIGHT_BROWSERS_PATH.
+      const { existsSync, readdirSync } = await import("node:fs");
+      const dir = process.env.PLAYWRIGHT_BROWSERS_PATH ?? "";
+      const found = existsSync(dir)
+        ? readdirSync(dir).filter((d) => d.startsWith("chromium-")).map((d) => `${dir}/${d}/chrome-linux/chrome`).find((p) => existsSync(p))
+        : undefined;
+      const executablePath = process.env.CHROMIUM_PATH || found;
+      if (!executablePath) throw new Error("Playwright no encuentra un Chromium (CHROMIUM_PATH)");
+      browser = await chromium.launch({ executablePath });
+    }
+    const page = await browser.newPage();
+    // Con APP_BASE_URL en localhost la sesión sale con `Domain=.localhost`, y
+    // Chromium la tira (no guarda cookies de ese dominio): en local ningún
+    // registro de navegador queda con sesión. Se quita el Domain para que la
+    // cookie quede en app.localhost; en producción (`.allok.fun`) no hace falta.
+    const authRoute = async (route) => {
+      // Node no resuelve `*.localhost` como Chromium: se pide a BASE con el host original reenviado.
+      const original = new URL(route.request().url());
+      const response = await route.fetch({
+        url: `${BASE}${original.pathname}${original.search}`,
+        headers: { ...route.request().headers(), "x-forwarded-host": original.host, "x-forwarded-proto": "http" },
+      });
+      const headers = { ...response.headers() };
+      if (headers["set-cookie"]) headers["set-cookie"] = headers["set-cookie"].replace(/;\s*Domain=\.localhost/gi, "");
+      await route.fulfill({ response, headers });
+    };
+    await page.route("**/api/auth/**", authRoute);
+    // Entra desde un anuncio: la URL trae la UTM y la página la guarda al abrirse.
+    await page.goto(`http://${APP_HOST}/register?utm_source=test&utm_campaign=navegador-${stamp}`, { waitUntil: "networkidle" });
+    await page.fill("#name", `Florería UTM ${stamp}`);
+    await page.fill("#email", browserEmail);
+    await page.fill("#password", "password-e2e-123");
+    await page.click("button[type=submit]");
+    // Tras el alta va al subdominio del negocio (allí, sin la cookie compartida, puede pedir login).
+    await page.waitForURL((url) => url.hostname !== APP_HOST.split(":")[0], { timeout: 60000 });
+    ok("el alta sigue su camino al subdominio de su negocio", new URL(page.url()).hostname.endsWith(".localhost"), page.url());
+
+    // Camino infeliz: el rastreo se cuelga. El alta no espera más que el tope (2,5 s).
+    const slow = await browser.newPage();
+    await slow.route("**/api/auth/**", authRoute);
+    await slow.route("**/api/saas/origen", (route) => setTimeout(() => route.abort().catch(() => {}), 15000));
+    await slow.goto(`http://${APP_HOST}/register?utm_source=colgado`, { waitUntil: "networkidle" });
+    await slow.fill("#name", `Florería Lenta ${stamp}`);
+    await slow.fill("#email", `lenta-${stamp}@vocero.test`);
+    await slow.fill("#password", "password-e2e-123");
+    const t0 = Date.now();
+    await slow.click("button[type=submit]");
+    await slow.waitForURL((url) => url.hostname !== APP_HOST.split(":")[0], { timeout: 12000 });
+    ok("con el rastreo colgado el alta sigue igual, sin esperar de más", Date.now() - t0 < 10000, `${Date.now() - t0} ms`);
+  } catch (err) {
+    ok("el registro en el navegador corre", false, String(err?.message ?? err));
+  } finally {
+    await browser?.close();
+  }
+  const [browserOrg] = await sql`
+    select o.metadata from organization o join member m on m.organization_id = o.id join "user" u on u.id = m.user_id
+    where u.email = ${browserEmail}`;
+  const browserAllok = JSON.parse(browserOrg?.metadata ?? "{}")?.allok ?? {};
+  ok("el negocio guardó su origen desde el formulario", browserAllok.origen?.utm_source === "test" && browserAllok.origen?.utm_campaign === `navegador-${stamp}` && browserAllok.origen?.landing === "/register", JSON.stringify(browserAllok.origen));
+  ok("y su prueba nació igual", browserAllok.billing?.source === "self_serve_trial", JSON.stringify(browserAllok.billing));
+
+  const admin = client();
+  const adminEmail = (process.env.ALLOK_ADMIN_EMAILS ?? "").split(",")[0]?.trim();
+  if (!adminEmail) {
+    ok("ALLOK_ADMIN_EMAILS tiene un correo para entrar a /admin", false);
+  } else {
+    const up = await admin(APP_HOST, "/api/auth/sign-up/email", { method: "POST", body: JSON.stringify({ name: "Admin E2E", email: adminEmail, password: "password-admin-123" }) });
+    if (!up.res.ok) await admin(APP_HOST, "/api/auth/sign-in/email", { method: "POST", body: JSON.stringify({ email: adminEmail, password: "password-admin-123" }) });
+    const panel = await admin(hostFor("admin"), "/admin");
+    const html = await panel.res.text();
+    ok("/admin abre para el operador", panel.res.status === 200, String(panel.res.status));
+    ok("muestra el embudo con sus columnas", html.includes("De dónde llegan y cuántos pagan") && ["Altas", "WhatsApp conectado", "Agente activo", "Pagando", "MRR"].every((c) => html.includes(c)));
+    const row = html.match(/title="test"[^>]*>test<\/th><td[^>]*>(\d+)<\/td>/);
+    ok("la fila 'test' cuenta al menos las dos altas de esta corrida", Number(row?.[1] ?? 0) >= 2, row?.[0] ?? "sin fila 'test'");
   }
 
   console.log(`\n${failures === 0 ? "TODO VERDE" : "CON FALLOS"} — ${checks - failures}/${checks} checks`);

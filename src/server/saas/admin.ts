@@ -5,6 +5,7 @@ import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { isAllokSaaSMode, isSaaSAdminEmail, isSaaSAdminHost } from "@/lib/tenant-host";
+import { origenFromMetadata, type OrigenGuardado } from "@/lib/origen-alta";
 import {
   billingFromMetadata,
   getOrganizationForBillingLocked,
@@ -80,6 +81,8 @@ export type SaaSTenantStatus = {
   whatsapp: "connected" | "reconnect_required" | "not_connected";
   agentEnabled: boolean;
   billing: Pick<SaaSBillingState, "plan" | "status" | "source" | "subscriptionId">;
+  /** Fork (agencia): de dónde llegó el alta (`metadata.allok.origen`); null si no se anotó. */
+  origen: OrigenGuardado | null;
   /** Alta de WhatsApp de autoservicio: dónde quedó, para soporte. */
   onboarding: {
     status: "pendiente" | "conectado" | "webhook_ok" | "primer_mensaje" | "error";
@@ -124,6 +127,7 @@ export async function listSaaSTenantStatus(): Promise<SaaSTenantStatus[]> {
       billingFromMetadata(organization.metadata)
     ),
     onboarding: onboardingSummary(onboardingByOrg.get(organization.id), credentialStatus.has(organization.id)),
+    origen: origenFromMetadata(organization.metadata),
   }));
 }
 
