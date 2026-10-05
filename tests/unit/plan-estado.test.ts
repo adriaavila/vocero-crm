@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   derivePlanState,
   planActionLabel,
@@ -20,6 +20,11 @@ import {
 import { buildTrialEndedEmail, buildTrialEndingEmail } from "@/server/agencia/trial-correos";
 
 const NOW = Date.parse("2026-10-03T12:00:00Z");
+
+// `billingFromMetadata` lee el reloj real para dar la prueba por vencida:
+// sin fijarlo, este archivo se rompe solo cuando la fecha real pasa a NOW.
+beforeAll(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
+afterAll(() => { vi.useRealTimers(); });
 const DAY = 86_400_000;
 const meta = (billing: Record<string, unknown>) => JSON.stringify({ allok: { billing } });
 const state = (billing: Record<string, unknown>, replies: number | null = 0) =>
