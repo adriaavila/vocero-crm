@@ -470,6 +470,20 @@ async function main() {
     await page.waitForURL((url) => url.hostname !== APP_HOST.split(":")[0], { timeout: 60000 });
     ok("el alta sigue su camino al subdominio de su negocio", new URL(page.url()).hostname.endsWith(".localhost"), page.url());
 
+    // Camino infeliz: el navegador no deja cargar el SDK de Meta (bloqueador,
+    // navegador de Instagram). El botón no se queda en «Cargando Meta…»: dice
+    // por qué y ofrece copiar el enlace.
+    const browserSlug = new URL(page.url()).hostname.split(".")[0];
+    await page.route(/connect\.facebook\.net/, (route) => route.abort());
+    await page.goto(`http://${APP_HOST}/conectar-whatsapp?org=${browserSlug}`);
+    const blocked = await page
+      .getByText("Tu navegador no abrió la ventana de Meta", { exact: true })
+      .first()
+      .waitFor({ timeout: 30000 })
+      .then(() => true, () => false);
+    ok("con el SDK de Meta bloqueado, el puente lo dice en vez de quedarse cargando", blocked, page.url());
+    ok("y ofrece copiar el enlace para abrirlo en otro navegador", await page.getByRole("button", { name: "Copiar enlace" }).isVisible().catch(() => false));
+
     // Camino infeliz: el rastreo se cuelga. El alta no espera más que el tope (2,5 s).
     const slow = await browser.newPage();
     await slow.route("**/api/auth/**", authRoute);

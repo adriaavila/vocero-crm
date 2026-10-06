@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, MessageCircle, RotateCw, Smartphone } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, Copy, Loader2, MessageCircle, RotateCw, Smartphone } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorKeyForCancel, onboardingErrorCopy } from "@/lib/onboarding-errors";
+import { META_SDK_TIMEOUT_MS, inAppBrowserName } from "@/lib/navegador-meta";
 
 /**
  * Bridge de Embedded Signup EN la app (fork). Puerto de
@@ -127,6 +128,9 @@ export function EmbeddedSignupBridge({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [success, setSuccess] = useState<SuccessDetails | null>(null);
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
+  // Fork (agencia): Instagram/Facebook/TikTok abren la página en su navegador
+  // interno, donde la ventana de Meta no avisa de vuelta.
+  const [inApp, setInApp] = useState<string | null>(null);
 
   const pendingRef = useRef<Pending>({});
   const exchangeStartedRef = useRef(false);
@@ -134,6 +138,7 @@ export function EmbeddedSignupBridge({
   const configRef = useRef<Config | null>(null);
   const modeRef = useRef<Mode>("coexistence");
   const cancelReportedRef = useRef(false);
+  const sdkTimerRef = useRef<number | null>(null);
 
   const loadConfig = useCallback(async (nextMode: Mode) => {
     setStatus("loading");
@@ -171,7 +176,10 @@ export function EmbeddedSignupBridge({
   }, [orgSlug]);
 
   function loadFbSdk(cfg: Config) {
+    if (sdkTimerRef.current) window.clearTimeout(sdkTimerRef.current);
     const initialize = () => {
+      if (sdkTimerRef.current) window.clearTimeout(sdkTimerRef.current);
+      sdkTimerRef.current = null;
       window.FB?.init({ appId: cfg.appId, autoLogAppEvents: true, xfbml: true, version: cfg.graphVersion });
       setSdkReady(true);
     };
@@ -180,9 +188,24 @@ export function EmbeddedSignupBridge({
       initialize();
       return;
     }
+    // Fork (agencia): sin esto, un SDK bloqueado dejaba el botón en «Cargando
+    // Meta…» para siempre. Si no carga a tiempo (o falla), se dice por qué y
+    // se ofrece abrir el enlace en otro navegador.
+    const blocked = () => {
+      if (sdkTimerRef.current) window.clearTimeout(sdkTimerRef.current);
+      sdkTimerRef.current = null;
+      if (window.FB) return;
+      // El script fallido se quita para que «Reintentar» lo pida de nuevo.
+      document.getElementById("facebook-jssdk")?.remove();
+      setStatus("error");
+      setErrorKind("meta_blocked");
+      setErrorMessage(null);
+    };
+    sdkTimerRef.current = window.setTimeout(blocked, META_SDK_TIMEOUT_MS);
     const existing = document.getElementById("facebook-jssdk");
     if (existing) {
       existing.addEventListener("load", initialize, { once: true });
+      existing.addEventListener("error", blocked, { once: true });
       return;
     }
     const script = document.createElement("script");
@@ -191,6 +214,7 @@ export function EmbeddedSignupBridge({
     script.async = true;
     script.defer = true;
     script.crossOrigin = "anonymous";
+    script.addEventListener("error", blocked, { once: true });
     document.body.appendChild(script);
   }
 
@@ -272,6 +296,10 @@ export function EmbeddedSignupBridge({
 
   useEffect(() => {
     void loadConfig(mode);
+    setInApp(inAppBrowserName(navigator.userAgent));
+    return () => {
+      if (sdkTimerRef.current) window.clearTimeout(sdkTimerRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -407,6 +435,18 @@ export function EmbeddedSignupBridge({
                   </p>
                 </div>
               )}
+              {inApp && (
+                <div className="space-y-2 rounded-lg border border-warning-soft bg-warning-tint p-3 text-sm text-warning-text">
+                  <p className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Estás en el navegador de {inApp}. Ahí la ventana de Meta suele no abrir: copia el enlace y
+                      ábrelo en Chrome o Safari.
+                    </span>
+                  </p>
+                  <CopyLinkButton />
+                </div>
+              )}
               <div role="radiogroup" aria-label="Modo de conexión" className="space-y-3">
                 <ModeOption
                   icon={Smartphone}
@@ -496,6 +536,7 @@ export function EmbeddedSignupBridge({
                 {errorAction(errorKind)!.label}
               </a>
             )}
+            {errorKind === "meta_blocked" && <CopyLinkButton />}
             {errorKind !== "plan_inactive" && onboardingErrorCopy(errorKind).retry && (
               <Button type="button" variant="outline" className="mt-2 min-h-11 w-full" onClick={() => void loadConfig(mode)}>
                 <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />
@@ -571,5 +612,29 @@ function ModeOption({
         <span className="mt-0.5 block text-xs text-text-3">{description}</span>
       </span>
     </button>
+  );
+}
+
+/**
+ * Fork (agencia): copia la URL de esta página para abrirla en Chrome o Safari.
+ * Allí se pide iniciar sesión (la sesión del navegador de Instagram no viaja).
+ */
+function CopyLinkButton() {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // Sin portapapeles (navegador interno viejo): se muestra el enlace para copiarlo a mano.
+      window.prompt("Copia este enlace y ábrelo en Chrome o Safari:", window.location.href);
+    }
+  }
+  return (
+    <Button type="button" variant="outline" className="min-h-11 w-full" onClick={() => void copy()}>
+      {copied ? <Check className="mr-2 h-4 w-4" aria-hidden="true" /> : <Copy className="mr-2 h-4 w-4" aria-hidden="true" />}
+      {copied ? "Enlace copiado" : "Copiar enlace"}
+    </Button>
   );
 }

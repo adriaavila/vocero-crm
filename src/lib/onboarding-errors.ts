@@ -24,6 +24,7 @@ export type OnboardingErrorKey =
   | "register_limit"
   | "webhook"
   | "meta_unavailable"
+  | "meta_blocked"
   | "session_expired";
 
 export type OnboardingErrorCopy = {
@@ -108,6 +109,13 @@ const COPY: Record<OnboardingErrorKey, OnboardingErrorCopy> = {
   meta_unavailable: {
     title: "Meta no respondió",
     body: "Puede ser algo pasajero de Meta. Vuelve a intentar en un momento.",
+    retry: true,
+  },
+  // Fork (agencia): el SDK de Meta no cargó en este navegador (bloqueador o
+  // navegador de Instagram/Facebook). Lo pone el puente, nunca el servidor.
+  meta_blocked: {
+    title: "Tu navegador no abrió la ventana de Meta",
+    body: "Pasa con los bloqueadores de anuncios y dentro de Instagram o Facebook. Copia el enlace y ábrelo en Chrome o Safari, o pausa el bloqueador y reintenta.",
     retry: true,
   },
   session_expired: {
