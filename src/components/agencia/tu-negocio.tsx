@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, Check, ChevronRight, Loader2, Trash2 } from "lucide-react";
+import { ArrowRight, Check, ChevronRight, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { HorarioRespuesta, type HoursController } from "@/components/agencia/horario-respuesta";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -39,7 +39,15 @@ import type { SetupProgress } from "@/server/agencia/setup-progress";
  * ya existe (bloques y preguntas de la base de conocimiento, la regla del
  * perfil, el horario) y solo entra lo que el dueño escribió: ningún campo se
  * rellena solo. Si algo falla, lo escrito se queda donde está y se dice por qué.
+ *
+ * «Llénalo por mí» es la excepción que confirma la regla: el dueño pega SU
+ * texto o el enlace a SU web y un borrador ordena eso en los campos (sin
+ * inventar, ver `server/agencia/borrador-negocio-prompt.ts`). Llena solo lo
+ * vacío y no guarda nada: el dueño lo lee y guarda con el mismo botón.
  */
+
+type PendingFaq = { pregunta: string; respuesta: string };
+type BorradorResponse = { borrador: { oferta: string; precios: string; zona: string; preguntas: PendingFaq[] } };
 
 type KbEntry = {
   id: string;
@@ -123,13 +131,17 @@ export function TuNegocio({
   // Lo que falta ANTES de mandar nada se dice bajo el campo, no en el aviso de arriba.
   const [fieldErrors, setFieldErrors] = useState<{ handoff?: string; faq?: string }>({});
   const [removeError, setRemoveError] = useState<string | null>(null);
+  // Preguntas que trajo el borrador: se guardan con el botón, como todo lo demás.
+  const [pendingFaqs, setPendingFaqs] = useState<PendingFaq[]>([]);
+  const [drafted, setDrafted] = useState(false);
 
   const faqDraft = question.trim().length > 0 || answer.trim().length > 0;
   const dirty =
     NEGOCIO_FIELDS.some((f) => draft[f.key].trim() !== savedDraft[f.key]) ||
     handoff.trim() !== savedHandoff.trim() ||
     Boolean(hours?.dirty) ||
-    faqDraft;
+    faqDraft ||
+    pendingFaqs.length > 0;
 
   // Lo guardado manda mientras el dueño no haya tocado nada; si ya escribió,
   // una recarga no le pisa el texto.
@@ -140,6 +152,22 @@ export function TuNegocio({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedDraft, savedHandoff]);
+
+  function applyBorrador(borrador: BorradorResponse["borrador"]) {
+    // Solo lo vacío: lo que el dueño ya escribió manda sobre el borrador.
+    setDraft((prev) => {
+      const next = { ...prev };
+      for (const field of NEGOCIO_FIELDS) {
+        const text = borrador[field.key]?.trim();
+        if (text && !prev[field.key].trim()) next[field.key] = text;
+      }
+      return next;
+    });
+    const known = new Set(faqs.map((faq) => (faq.question ?? "").trim().toLowerCase()));
+    setPendingFaqs(borrador.preguntas.filter((faq) => !known.has(faq.pregunta.trim().toLowerCase())));
+    setDrafted(true);
+    setStatus("idle");
+  }
 
   function edit(key: NegocioKey, value: string) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -186,6 +214,15 @@ export function TuNegocio({
       const result = await hours.save();
       if (!result.ok) failures.push(`Horario de respuesta: ${result.message}`);
     }
+    const keptFaqs: PendingFaq[] = [];
+    for (const faq of pendingFaqs) {
+      const result = await postKbEntry({ kind: "qa", question: faq.pregunta, answer: faq.respuesta });
+      if (!result.ok) {
+        keptFaqs.push(faq);
+        failures.push(`Pregunta frecuente: ${result.message}`);
+      }
+    }
+    setPendingFaqs(keptFaqs);
     if (faqDraft) {
       const result = await postKbEntry({ kind: "qa", question, answer });
       // Si no se guardó, la pregunta y la respuesta se quedan en el campo.
@@ -204,6 +241,7 @@ export function TuNegocio({
       return;
     }
     setStatus("saved");
+    setDrafted(false);
   }
 
   async function removeFaq(id: string) {
@@ -229,6 +267,16 @@ export function TuNegocio({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <LlenarPorMi
+          startOpen={NEGOCIO_FIELDS.every((field) => !draft[field.key].trim()) && faqs.length === 0}
+          disabled={busy}
+          onDraft={applyBorrador}
+        />
+        {drafted && dirty && (
+          <p role="status" className="rounded-md border border-info-soft bg-info-tint px-3 py-2 text-sm leading-relaxed text-info-text">
+            Listo. Revisa lo que llenamos, corrige lo que haga falta y toca «Guardar mi negocio». Todavía no se guardó nada.
+          </p>
+        )}
         {NEGOCIO_FIELDS.map((field) => (
           <div key={field.key} className="space-y-1.5">
             <Label htmlFor={`negocio-${field.key}`}>{field.label}</Label>
@@ -301,6 +349,30 @@ export function TuNegocio({
             </p>
           </div>
 
+          {pendingFaqs.length > 0 && (
+            <ul className="space-y-2" aria-label="Preguntas del borrador, sin guardar">
+              {pendingFaqs.map((faq, index) => (
+                <li key={`${faq.pregunta}-${index}`} className="flex items-start gap-2 rounded-md border border-dashed border-border-strong p-3">
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="break-words font-medium">{faq.pregunta}</p>
+                    <p className="mt-0.5 whitespace-pre-wrap break-words text-text-2">{faq.respuesta}</p>
+                    <p className="mt-1 text-xs text-text-3">Sin guardar</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-11 w-11 shrink-0"
+                    aria-label={`Descartar la pregunta: ${faq.pregunta}`}
+                    disabled={busy}
+                    onClick={() => setPendingFaqs((prev) => prev.filter((_, i) => i !== index))}
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
           {faqs.length > 0 && (
             <ul className="space-y-2">
               {faqs.map((faq) => (
@@ -435,5 +507,110 @@ export function TuNegocio({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * «Llénalo por mí»: el dueño pega el enlace de su web o lo que diría de su
+ * negocio (su bio, su lista de precios) y recibe un borrador de los campos.
+ */
+function LlenarPorMi({
+  startOpen,
+  disabled,
+  onDraft,
+}: {
+  startOpen: boolean;
+  disabled: boolean;
+  onDraft: (borrador: BorradorResponse["borrador"]) => void;
+}) {
+  const [open, setOpen] = useState(startOpen);
+  const [fuente, setFuente] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    if (fuente.trim().length < 3) {
+      setError("Pega el enlace de tu web o cuéntanos de tu negocio.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    const response = await fetch("/api/agent/borrador", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ fuente: fuente.trim() }),
+    }).catch(() => null);
+    const payload = (await response?.json().catch(() => null)) as
+      | (BorradorResponse & { error?: undefined })
+      | { error?: { message?: string } }
+      | null;
+    setLoading(false);
+    if (!response?.ok || !payload || !("borrador" in payload)) {
+      setError(
+        (payload && "error" in payload && payload.error?.message) ||
+          "No pudimos armar el borrador ahora. Prueba de nuevo o escríbelo abajo.",
+      );
+      return;
+    }
+    onDraft(payload.borrador);
+    setOpen(false);
+    setFuente("");
+  }
+
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="group rounded-lg border border-brand-soft bg-brand-tint"
+    >
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+        <span className="inline-flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-brand-text" aria-hidden="true" />
+          Llénalo por mí
+        </span>
+        <ChevronRight
+          className="h-4 w-4 shrink-0 text-text-3 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="space-y-3 px-4 pb-4">
+        <p className="text-sm leading-relaxed text-text-2">
+          Pega el enlace de tu página web, o el texto de tu perfil o tu lista de precios. Lo ordenamos en los campos de abajo
+          y tú lo revisas antes de guardar.
+        </p>
+        <Label htmlFor="negocio-fuente" className="sr-only">
+          Tu web o lo que dirías de tu negocio
+        </Label>
+        <GrowingTextarea
+          id="negocio-fuente"
+          rows={3}
+          maxLength={8000}
+          className="resize-y break-words bg-background"
+          placeholder="Ej. miclinica.com  ·  o: Somos una clínica dental en Polanco. Limpieza $600, blanqueamiento $2,500…"
+          value={fuente}
+          disabled={disabled || loading}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "negocio-fuente-error" : undefined}
+          onChange={(event) => {
+            setFuente(event.target.value);
+            setError(null);
+          }}
+        />
+        {error && (
+          <p id="negocio-fuente-error" role="alert" className="text-sm text-danger-text">
+            {error}
+          </p>
+        )}
+        <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={disabled || loading} onClick={() => void run()}>
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Leyendo tu negocio…
+            </>
+          ) : (
+            "Llenar por mí"
+          )}
+        </Button>
+      </div>
+    </details>
   );
 }

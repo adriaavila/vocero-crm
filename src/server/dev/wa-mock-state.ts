@@ -122,3 +122,8 @@ const boot = Math.random().toString(36).slice(2, 8);
 export function nextOutboundWamid(): string {
   return `wamid.mock.out.${boot}.${nextN()}`;
 }
+
+/** Lo mismo para lo que «llega» (entrantes y ecos): sin el sello, la segunda corrida tras reiniciar se descarta como duplicado. */
+export function nextMockWamid(kind: "in" | "echo"): string {
+  return `wamid.mock.${kind}.${boot}.${nextN()}`;
+}

@@ -181,6 +181,23 @@ async function main() {
   allok = await origenOf();
   ok("el primer toque gana", second.res.status === 204 && allok.origen?.utm_source === "test", JSON.stringify(allok.origen));
 
+  console.log("\n== 1c. «Llénalo por mí»: borrador de «Tu negocio» sin guardar nada ==");
+  const kbBefore = (await sql`select count(*)::int as n from kb_entry where organization_id = ${org.id}`)[0].n;
+  const draftRes = await owner(tenantHost, "/api/agent/borrador", {
+    method: "POST",
+    body: JSON.stringify({ fuente: "Panadería de masa madre en la colonia Roma. Hacemos pan, pasteles por encargo y café. El pan cuesta desde $35. Entregamos en la colonia Roma y la Condesa." }),
+  });
+  const draftBody = draftRes.json?.borrador;
+  ok("el texto del dueño vuelve ordenado en los campos", draftRes.res.ok && /masa madre/.test(`${draftBody?.oferta} ${draftBody?.zona}`) && /\$35/.test(draftBody?.precios ?? ""), JSON.stringify(draftRes.json));
+  const kbAfter = (await sql`select count(*)::int as n from kb_entry where organization_id = ${org.id}`)[0].n;
+  ok("y no guarda nada por su cuenta", kbAfter === kbBefore, `${kbBefore} → ${kbAfter}`);
+  const walled = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "instagram.com/panaderia" }) });
+  ok("un enlace de Instagram dice por qué no se puede leer", walled.res.status === 422 && walled.json?.error?.code === "walled_site", JSON.stringify(walled.json));
+  const internal = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "http://127.0.0.1:3000/api/health" }) });
+  ok("no lee direcciones internas", internal.res.status === 422 && internal.json?.error?.code === "page_unreadable", JSON.stringify(internal.json));
+  const anon = await client()(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "Panadería de masa madre en la Roma." }) });
+  ok("sin sesión: 401", anon.res.status === 401, String(anon.res.status));
+
   console.log("\n== 2. Cancela el popup a mitad: queda anotado y puede retomar ==");
   const cfg = await owner(APP_HOST, `/api/whatsapp/embedded-signup/config?org=${slug}&mode=coexistence`);
   ok("config 200 durante la prueba (sin pagar)", cfg.res.ok, JSON.stringify(cfg.json));
@@ -517,7 +534,7 @@ async function main() {
     await pay.waitForURL(/checkout\.stripe\.test/, { timeout: 60000 });
     ok("y al crear la cuenta va directo al checkout con ese plan", checkoutBody?.plan === "basic", JSON.stringify(checkoutBody));
 
-    // Sin Stripe configurado (este entorno), elegir pagar no deja al dueño varado: sigue a conectar WhatsApp.
+    // Sin Stripe configurado (este entorno), elegir pagar no deja al dueño varado: sigue a la puesta en marcha («Tu negocio»).
     const payOff = await browser.newPage();
     await payOff.route("**/api/auth/**", authRoute);
     await payOff.goto(`http://${APP_HOST}/register?pagar=1`, { waitUntil: "networkidle" });
@@ -531,7 +548,7 @@ async function main() {
     });
     await payOff.getByRole("button", { name: /Continuar al pago/ }).click();
     await payOff.waitForURL((url) => url.hostname !== APP_HOST.split(":")[0], { timeout: 60000 });
-    ok("sin checkout configurado, pagar desde el alta sigue a conectar WhatsApp", new URL(firstTenantUrl ?? payOff.url()).pathname === "/settings/whatsapp", firstTenantUrl ?? payOff.url());
+    ok("sin checkout configurado, pagar desde el alta sigue a la puesta en marcha", new URL(firstTenantUrl ?? payOff.url()).pathname === "/agent", firstTenantUrl ?? payOff.url());
   } catch (err) {
     ok("el registro en el navegador corre", false, String(err?.message ?? err));
   } finally {

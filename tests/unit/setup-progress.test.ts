@@ -41,19 +41,19 @@ describe("deriveSetupProgress", () => {
   it("son cuatro pasos, siempre en el mismo orden y con la cuenta fuera", () => {
     const progress = deriveSetupProgress(readiness());
     expect(progress.steps.map((step) => step.label)).toEqual([
-      "Conectar WhatsApp",
       "Tu negocio",
       "Probar",
+      "Conectar WhatsApp",
       "Activar",
     ]);
   });
 
-  it("cuenta nueva: nada hecho, el paso actual es conectar WhatsApp", () => {
+  it("cuenta nueva: nada hecho, el paso actual es «Tu negocio» (antes que Meta)", () => {
     const progress = deriveSetupProgress(
       readiness({ whatsappConnected: false, knowledgeCount: 0, businessHoursConfigured: false, latestRun: null }),
     );
     expect(doneKeys(progress)).toEqual([]);
-    expect(progress.current).toBe("whatsapp");
+    expect(progress.current).toBe("negocio");
     expect(progress.active).toBe(true);
   });
 
@@ -75,7 +75,7 @@ describe("deriveSetupProgress", () => {
 
   it("negocio listo y sin prueba: toca «Probar»", () => {
     const progress = deriveSetupProgress(readiness({ latestRun: null }));
-    expect(doneKeys(progress)).toEqual(["whatsapp", "negocio"]);
+    expect(doneKeys(progress)).toEqual(["negocio", "whatsapp"]);
     expect(progress.current).toBe("probar");
   });
 
@@ -91,7 +91,7 @@ describe("deriveSetupProgress", () => {
 
   it("todo listo menos encender: el paso actual es «Activar»", () => {
     const progress = deriveSetupProgress(readiness());
-    expect(doneKeys(progress)).toEqual(["whatsapp", "negocio", "probar"]);
+    expect(doneKeys(progress)).toEqual(["negocio", "probar", "whatsapp"]);
     expect(progress.current).toBe("activar");
     expect(progress.active).toBe(true);
   });
@@ -100,7 +100,7 @@ describe("deriveSetupProgress", () => {
     const progress = deriveSetupProgress(
       readiness({ profile: onProfile() }),
     );
-    expect(doneKeys(progress)).toEqual(["whatsapp", "negocio", "probar", "activar"]);
+    expect(doneKeys(progress)).toEqual(["negocio", "probar", "whatsapp", "activar"]);
     expect(progress.current).toBeNull();
     expect(progress.active).toBe(false);
   });
@@ -109,8 +109,8 @@ describe("deriveSetupProgress", () => {
     // Misma preparación con el agente encendido y apagado: lo único que cambia es «Activar».
     const on = deriveSetupProgress(readiness({ profile: { ...onProfile(), enabled: true } }));
     const off = deriveSetupProgress(readiness({ profile: { ...onProfile(), enabled: false } }));
-    expect(doneKeys(on)).toEqual(["whatsapp", "negocio", "probar", "activar"]);
-    expect(doneKeys(off)).toEqual(["whatsapp", "negocio", "probar"]);
+    expect(doneKeys(on)).toEqual(["negocio", "probar", "whatsapp", "activar"]);
+    expect(doneKeys(off)).toEqual(["negocio", "probar", "whatsapp"]);
   });
 
   it("un agente activo con la conexión vencida pide reconectar sin reabrir el asistente de alta", () => {

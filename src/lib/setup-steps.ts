@@ -7,7 +7,11 @@ import type { ReadinessResponse, ReadinessStep } from "@/server/readiness";
  * se escribe una sola vez. Crear la cuenta pasa antes y no es un paso.
  */
 
-export const SETUP_STEP_ORDER = ["whatsapp", "negocio", "probar", "activar"] as const;
+// Fork (agencia): primero lo que da valor sin depender de Meta. El dueño escribe
+// su negocio y ve a su agente contestar en Probar ANTES de pelear con la
+// ventana de Meta, que es donde más altas se caen (bloqueadores, navegador de
+// Instagram). Conectar WhatsApp queda justo antes de encenderlo.
+export const SETUP_STEP_ORDER = ["negocio", "probar", "whatsapp", "activar"] as const;
 export type SetupStepKey = (typeof SETUP_STEP_ORDER)[number];
 
 export const SETUP_STEP_META: Record<SetupStepKey, { label: string; href: string }> = {
