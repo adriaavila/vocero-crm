@@ -95,7 +95,9 @@ const row = (over: Partial<CandidateRow> = {}): CandidateRow => ({
 
 describe("por dónde arrancar", () => {
   it("cada tarjeta tiene una sola acción y abre su conversación", () => {
-    const data = summarize(buildCards([row()], false));
+    // `now` fijo: con el reloj real, un milisegundo entre `row()` y `buildCards` da «20 h 59 min».
+    const r = row();
+    const data = summarize(buildCards([r], false, r.lastInboundAt.getTime() + 3 * 3_600_000));
     const html = renderToStaticMarkup(createElement(PrioridadesSection, { data, productLabel: "allok", connected: true, hasDecisions: true }));
     expect(html).toContain('href="/inbox?contact=ct_1"');
     expect(html).toContain(">Responder<");
