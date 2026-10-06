@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { MessageCircle, ShieldCheck } from "lucide-react";
 import { brand } from "@/lib/brand";
 import { AdminTenantsTable } from "@/components/admin/tenants-table";
+import { AdminEmbudo } from "@/components/agencia/admin-embudo";
 import { listSaaSTenantStatus, requireSaaSAdmin, SaaSAdminUnauthorized } from "@/server/saas/admin";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,9 @@ export default async function AdminPage() {
             <ShieldCheck className="h-4 w-4" aria-hidden="true" /> Acceso auditado
           </div>
         </header>
+
+        {/* Fork (agencia): embudo por canal de entrada y por semana. */}
+        <AdminEmbudo tenants={tenants} />
 
         <section className="mt-6 overflow-hidden rounded-xl border bg-background shadow-sm">
           <AdminTenantsTable tenants={tenants} />

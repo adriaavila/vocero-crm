@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
+import { capturarOrigenAlta, enviarOrigenAlta } from "@/components/agencia/origen-alta";
 import { SETUP_STEP_META, SETUP_STEP_ORDER } from "@/lib/setup-steps";
 import { signUp } from "@/lib/auth/client";
 import { registerFailure, type RegisterFailure } from "@/lib/auth/register-error";
@@ -57,6 +58,11 @@ export default function RegisterForm({
     setPlan(requestedPlan && isSaaSPlan(requestedPlan) && soldPlans.includes(requestedPlan) ? requestedPlan : defaultPlan);
   }, [soldPlans, defaultPlan]);
 
+  // Fork (agencia): de dónde llegó el alta (UTM, referido, referente). Primer toque.
+  useEffect(() => {
+    if (!adminMode) capturarOrigenAlta();
+  }, [adminMode]);
+
   function setFailure(failure: RegisterFailure) {
     setError(failure.message);
     setExistingAccount(failure.existingAccount);
@@ -103,6 +109,8 @@ export default function RegisterForm({
       setFailure(registerFailure(err));
       return;
     }
+    // Fork (agencia): anota el origen con tope de 2,5 s; nunca frena el alta.
+    await enviarOrigenAlta();
     if (selfServe) {
       // Prueba de 7 días sin tarjeta: el siguiente paso es conectar WhatsApp
       // en el subdominio del negocio. El cobro llega después, desde Facturación.
