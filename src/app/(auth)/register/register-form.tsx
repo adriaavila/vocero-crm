@@ -52,11 +52,18 @@ export default function RegisterForm({
   const defaultPlan = soldPlans[0] ?? "basic";
   const [plan, setPlan] = useState<SaaSPlan>(defaultPlan);
   const [created, setCreated] = useState<{ email: string; url: string | null } | null>(null);
+  // Fork (agencia): en el autoservicio también se puede pagar desde el alta.
+  // Los 7 días gratis se respetan igual: Stripe empieza a cobrar al terminar.
+  const [payNow, setPayNow] = useState(false);
+  const payPlans: SaaSPlan[] = soldPlans.filter((p) => p === "basic" || p === "pro");
 
   useEffect(() => {
     const requestedPlan = new URLSearchParams(window.location.search).get("plan");
-    setPlan(requestedPlan && isSaaSPlan(requestedPlan) && soldPlans.includes(requestedPlan) ? requestedPlan : defaultPlan);
-  }, [soldPlans, defaultPlan]);
+    // En el autoservicio, sin plan en la URL se sugiere Completo: es el de la prueba.
+    const fallback = selfServe && soldPlans.includes("pro") ? "pro" : defaultPlan;
+    setPlan(requestedPlan && isSaaSPlan(requestedPlan) && soldPlans.includes(requestedPlan) ? requestedPlan : fallback);
+    if (new URLSearchParams(window.location.search).get("pagar") === "1") setPayNow(true);
+  }, [soldPlans, defaultPlan, selfServe]);
 
   // Fork (agencia): de dónde llegó el alta (UTM, referido, referente). Primer toque.
   useEffect(() => {
@@ -111,7 +118,7 @@ export default function RegisterForm({
     }
     // Fork (agencia): anota el origen con tope de 2,5 s; nunca frena el alta.
     await enviarOrigenAlta();
-    if (selfServe) {
+    if (selfServe && !payNow) {
       // Prueba de 7 días sin tarjeta: el siguiente paso es conectar WhatsApp
       // en el subdominio del negocio. El cobro llega después, desde Facturación.
       await goToTenant("/settings/whatsapp");
@@ -120,7 +127,7 @@ export default function RegisterForm({
     const checkout = await fetch("/api/saas/billing/checkout", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ plan }),
+      body: JSON.stringify({ plan: selfServe ? selfServePlan : plan }),
     }).catch(() => null);
     const payload = (await checkout?.json().catch(() => null)) as
       { url?: string; error?: { code?: string } } | null;
@@ -133,11 +140,15 @@ export default function RegisterForm({
     // el panel: cayendo en el panel, la cuenta se queda sin pagar y sin que
     // nadie se entere. `billing_unconfigured` es la excepción — eso lo arregla
     // quien administra la instancia, no el cliente.
+    // En el autoservicio la prueba ya corre: sin checkout configurado sigue
+    // como si hubiera elegido probar gratis.
     const destino = payload?.error?.code === "billing_unconfigured"
-      ? "/overview?billing=unavailable"
+      ? selfServe ? "/settings/whatsapp" : "/overview?billing=unavailable"
       : "/settings/billing?checkout=failed";
     await goToTenant(destino);
   }
+
+  const selfServePlan: SaaSPlan = payPlans.includes(plan) ? plan : payPlans.includes("pro") ? "pro" : payPlans[0] ?? plan;
 
   async function goToTenant(path: string) {
     const tenant = await fetch("/api/saas/tenant").then((response) =>
@@ -179,10 +190,42 @@ export default function RegisterForm({
       </CardHeader>
       <CardContent>
         {selfServe ? (
-          <div className="mb-4 rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm">
-            <span className="block font-semibold">7 días gratis, sin tarjeta</span>
-            <span className="block text-xs text-text-3">Conecta tu WhatsApp y prueba el agente. Eliges plan cuando termine la prueba.</span>
-          </div>
+          <fieldset className="mb-4 space-y-2">
+            <legend className="sr-only">Cómo quieres empezar</legend>
+            <label className={`flex min-h-11 cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-sm ${payNow ? "border-border" : "border-brand-soft bg-brand-tint"}`}>
+              <input type="radio" name="inicio" className="mt-1 accent-[var(--accent)]" checked={!payNow} onChange={() => setPayNow(false)} />
+              <span>
+                <span className="block font-semibold">Probar 7 días gratis</span>
+                <span className="block text-xs text-text-3">Sin tarjeta. Eliges plan cuando termine la prueba.</span>
+              </span>
+            </label>
+            {payPlans.length > 0 && (
+              <label className={`flex min-h-11 cursor-pointer gap-3 rounded-lg border px-3 py-2.5 text-sm ${payNow ? "border-brand-soft bg-brand-tint" : "border-border"}`}>
+                <input type="radio" name="inicio" className="mt-1 accent-[var(--accent)]" checked={payNow} onChange={() => setPayNow(true)} />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-semibold">Elegir mi plan ahora</span>
+                  <span className="block text-xs text-text-3">Igual tienes tus 7 días gratis: el primer cobro llega cuando terminan.</span>
+                  {payNow && (
+                    <span className="mt-2 grid grid-cols-2 gap-2" role="radiogroup" aria-label="Plan">
+                      {payPlans.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selfServePlan === id}
+                          onClick={() => setPlan(id)}
+                          className={`min-h-11 rounded-md border px-2 py-1.5 text-left ${selfServePlan === id ? "border-brand bg-background" : "border-border bg-background"}`}
+                        >
+                          <span className="block text-xs font-semibold">{PLAN_CATALOG[id].name}</span>
+                          <span className="block text-xs text-text-3">US${PLAN_CATALOG[id].priceUsd}/mes</span>
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </label>
+            )}
+          </fieldset>
         ) : (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">{brand.Name} {PLAN_CATALOG[plan].name}</span></span><Link href={brand.pricingHref} className="inline-flex min-h-11 items-center text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
         )}
@@ -243,10 +286,14 @@ export default function RegisterForm({
             </p>
           )}
           <Button type="submit" className="min-h-11 w-full" disabled={loading}>
-            {loading ? "Creando tu espacio…" : <>Continuar <ArrowRight className="ml-2 h-4 w-4" /></>}
+            {loading ? "Creando tu espacio…" : <>{selfServe && payNow ? "Continuar al pago" : "Continuar"} <ArrowRight className="ml-2 h-4 w-4" /></>}
           </Button>
           {selfServe && (
-            <p className="text-center text-xs text-text-3">7 días gratis del plan Completo. Después eliges tu plan.</p>
+            <p className="text-center text-xs text-text-3">
+              {payNow
+                ? "Pagas con tarjeta en Stripe. Puedes cancelar antes de que terminen los 7 días."
+                : "7 días gratis del plan Completo. Después eliges tu plan."}
+            </p>
           )}
           <div className="rounded-lg border bg-subtle p-3">
             <p className="kicker">Lo que sigue</p>
