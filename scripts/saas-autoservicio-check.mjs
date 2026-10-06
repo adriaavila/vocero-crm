@@ -198,6 +198,23 @@ async function main() {
   const anon = await client()(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "Panadería de masa madre en la Roma." }) });
   ok("sin sesión: 401", anon.res.status === 401, String(anon.res.status));
 
+  console.log("\n== 1d. «Escríbele como cliente»: chat con el agente en el sandbox ==");
+  const chat = await owner(tenantHost, "/api/lab/chat", { method: "POST", body: JSON.stringify({ text: "Hola, ¿qué precios tienen?" }) });
+  const chatLines = chat.json?.lines ?? [];
+  ok("el mensaje del dueño entra como cliente", chat.res.ok && chatLines[0]?.from === "cliente" && chatLines[0]?.text === "Hola, ¿qué precios tienen?", JSON.stringify(chat.json));
+  ok("el agente contesta (o lo pasa a una persona) aunque esté apagado", chatLines.some((l) => l.from === "agente") || Boolean(chat.json?.handoff), JSON.stringify(chat.json));
+  const [chatConv] = await sql`select cv.is_test, ct.archived_at from conversation cv join contact ct on ct.id = cv.contact_id where cv.organization_id = ${org.id} and ct.wa_identity = 'prueba:dueno' order by cv.created_at desc limit 1`;
+  ok("vive en el sandbox: conversación de prueba y contacto archivado", chatConv?.is_test === true && chatConv?.archived_at !== null, JSON.stringify(chatConv));
+  const chatAgain = await owner(tenantHost, "/api/lab/chat");
+  ok("al volver, el chat sigue ahí", chatAgain.json?.lines?.length === chatLines.length, JSON.stringify(chatAgain.json));
+  const reset = await owner(tenantHost, "/api/lab/chat/reset", { method: "POST" });
+  const afterReset = await owner(tenantHost, "/api/lab/chat");
+  ok("«De nuevo» empieza un chat limpio", reset.res.ok && afterReset.json?.lines?.length === 0, JSON.stringify(afterReset.json));
+  const emptyText = await owner(tenantHost, "/api/lab/chat", { method: "POST", body: JSON.stringify({ text: "   " }) });
+  ok("un mensaje vacío se rechaza (422)", emptyText.res.status === 422, String(emptyText.res.status));
+  const anonChat = await client()(tenantHost, "/api/lab/chat", { method: "POST", body: JSON.stringify({ text: "hola" }) });
+  ok("sin sesión: 401", anonChat.res.status === 401, String(anonChat.res.status));
+
   console.log("\n== 2. Cancela el popup a mitad: queda anotado y puede retomar ==");
   const cfg = await owner(APP_HOST, `/api/whatsapp/embedded-signup/config?org=${slug}&mode=coexistence`);
   ok("config 200 durante la prueba (sin pagar)", cfg.res.ok, JSON.stringify(cfg.json));
@@ -265,7 +282,8 @@ async function main() {
   ok("el mensaje está en su bandeja", msg?.text === `hola ${stamp}`, JSON.stringify(msg));
   const finalView = await owner(tenantHost, "/api/onboarding/whatsapp");
   ok("el panel muestra primer_mensaje", finalView.json?.status === "primer_mensaje", JSON.stringify(finalView.json));
-  const [ai] = await sql`select count(*)::int as n from message where organization_id = ${org.id} and direction = 'out' and origin = 'ai'`;
+  // Las respuestas del chat de prueba (1d) viven en conversaciones is_test: no cuentan.
+  const [ai] = await sql`select count(*)::int as n from message m join conversation cv on cv.id = m.conversation_id where m.organization_id = ${org.id} and m.direction = 'out' and m.origin = 'ai' and not cv.is_test`;
   ok("el agente apagado no le contestó al cliente", ai.n === 0);
 
   console.log("\n== 5b. Suma a su equipo desde el subdominio del negocio ==");
@@ -305,7 +323,7 @@ async function main() {
   await sql`update organization set metadata = jsonb_set(metadata::jsonb, '{allok,billing,currentPeriodEnd}', to_jsonb(${new Date(Date.now() + 5 * 86400000).toISOString()}::text))::text where id = ${org.id}`;
   ok("vigente: 'trial'", (await kindOf(owner, tenantHost))?.kind === "trial", JSON.stringify(await kindOf(owner, tenantHost)));
   const [conv] = await sql`select id from conversation where organization_id = ${org.id} and not is_test limit 1`;
-  const have = (await sql`select count(*)::int n from message where organization_id = ${org.id} and origin = 'ai' and direction = 'out'`)[0].n;
+  const have = (await sql`select count(*)::int n from message m join conversation cv on cv.id = m.conversation_id where m.organization_id = ${org.id} and m.origin = 'ai' and m.direction = 'out' and not cv.is_test`)[0].n;
   await sql`insert into message (id, organization_id, conversation_id, wa_message_id, direction, type, text, status, ai_generated, origin)
             select ${"msg_cap" + stamp} || g, ${org.id}, ${conv.id}, ${"wamid.cap" + stamp} || g, 'out', 'text', 'r', 'sent', true, 'ai' from generate_series(1, ${300 - have}) g`;
   const capped = await kindOf(owner, tenantHost);

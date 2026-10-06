@@ -43,6 +43,10 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   `/api/agent/borrador`): del texto o la web del dueño a un borrador de los
   campos, sin inventar y sin guardar solo. Lee webs públicas con guarda de IP
   privada; Instagram/Facebook/TikTok se rechazan con un aviso.
+- **«Escríbele como cliente»** en Probar (`server/agencia/chat-prueba.ts`,
+  `/api/lab/chat`): el dueño chatea con su agente con el turno real, en una
+  conversación `is_test` de un contacto archivado (`prueba:dueno`): nada sale
+  a WhatsApp ni cuenta para el tope de la prueba.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.
