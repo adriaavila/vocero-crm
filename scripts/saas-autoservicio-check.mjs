@@ -496,6 +496,42 @@ async function main() {
     await slow.click("button[type=submit]");
     await slow.waitForURL((url) => url.hostname !== APP_HOST.split(":")[0], { timeout: 12000 });
     ok("con el rastreo colgado el alta sigue igual, sin esperar de más", Date.now() - t0 < 10000, `${Date.now() - t0} ms`);
+
+    // Pagar desde el alta: elige plan y va directo al checkout (aquí uno falso).
+    const pay = await browser.newPage();
+    await pay.route("**/api/auth/**", authRoute);
+    let checkoutBody = null;
+    await pay.route("**/api/saas/billing/checkout", (route) => {
+      checkoutBody = route.request().postDataJSON();
+      return route.fulfill({ json: { url: "https://checkout.stripe.test/c/pay_e2e" } });
+    });
+    await pay.route("https://checkout.stripe.test/**", (route) => route.fulfill({ contentType: "text/html", body: "<h1>Stripe falso</h1>" }));
+    await pay.goto(`http://${APP_HOST}/register?plan=basic`, { waitUntil: "networkidle" });
+    await pay.getByText("Elegir mi plan ahora").click();
+    await pay.getByRole("radio", { name: /Esencial/ }).waitFor({ timeout: 10000 });
+    ok("el alta ofrece pagar desde el inicio con el plan que traía la URL", (await pay.getByRole("radio", { name: /Esencial/ }).getAttribute("aria-checked")) === "true");
+    await pay.fill("#name", `Florería Paga ${stamp}`);
+    await pay.fill("#email", `paga-${stamp}@vocero.test`);
+    await pay.fill("#password", "password-e2e-123");
+    await pay.getByRole("button", { name: /Continuar al pago/ }).click();
+    await pay.waitForURL(/checkout\.stripe\.test/, { timeout: 60000 });
+    ok("y al crear la cuenta va directo al checkout con ese plan", checkoutBody?.plan === "basic", JSON.stringify(checkoutBody));
+
+    // Sin Stripe configurado (este entorno), elegir pagar no deja al dueño varado: sigue a conectar WhatsApp.
+    const payOff = await browser.newPage();
+    await payOff.route("**/api/auth/**", authRoute);
+    await payOff.goto(`http://${APP_HOST}/register?pagar=1`, { waitUntil: "networkidle" });
+    await payOff.fill("#name", `Florería Sin Stripe ${stamp}`);
+    await payOff.fill("#email", `sinstripe-${stamp}@vocero.test`);
+    await payOff.fill("#password", "password-e2e-123");
+    // Sin la cookie compartida el subdominio puede pedir login: vale la primera URL que pidió.
+    let firstTenantUrl = null;
+    payOff.on("request", (req) => {
+      if (!firstTenantUrl && req.isNavigationRequest() && new URL(req.url()).hostname !== APP_HOST.split(":")[0]) firstTenantUrl = req.url();
+    });
+    await payOff.getByRole("button", { name: /Continuar al pago/ }).click();
+    await payOff.waitForURL((url) => url.hostname !== APP_HOST.split(":")[0], { timeout: 60000 });
+    ok("sin checkout configurado, pagar desde el alta sigue a conectar WhatsApp", new URL(firstTenantUrl ?? payOff.url()).pathname === "/settings/whatsapp", firstTenantUrl ?? payOff.url());
   } catch (err) {
     ok("el registro en el navegador corre", false, String(err?.message ?? err));
   } finally {
