@@ -93,6 +93,20 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
     void refetchConversations();
   }, [refetchConversations]);
 
+  // Los eventos llegan en ráfaga (mensaje nuevo → marcado leído → cambio de
+  // estado): una sola relectura de la lista por ráfaga, no una por evento.
+  const listTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleConversations = useCallback(() => {
+    if (listTimer.current) clearTimeout(listTimer.current);
+    listTimer.current = setTimeout(() => void refetchConversations(), 250);
+  }, [refetchConversations]);
+  useEffect(
+    () => () => {
+      if (listTimer.current) clearTimeout(listTimer.current);
+    },
+    []
+  );
+
   const select = useCallback(
     (id: string) => {
       setSelectedId(id);
@@ -129,7 +143,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
           body: JSON.stringify({ markRead: true }),
         });
       }
-      void refetchConversations();
+      scheduleConversations();
       // Un entrante nuevo puede crear/mover el lead: refresca el panel.
       setDetailRev((v) => v + 1);
     },
@@ -151,7 +165,7 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
       );
     },
     onConversationUpdated: () => {
-      void refetchConversations();
+      scheduleConversations();
       // El agente movió de etapa o cambió el handoff: refresca el panel en vivo.
       setDetailRev((v) => v + 1);
     },

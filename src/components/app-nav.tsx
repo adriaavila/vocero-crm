@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -217,22 +217,32 @@ export function AppNav({
   const router = useRouter();
   const [unread, setUnread] = useState(0);
 
+  const unreadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   async function refetchUnread() {
-    const res = await fetch("/api/conversations").catch(() => null);
+    const res = await fetch("/api/conversations/unread").catch(() => null);
     if (!res?.ok) return;
-    const data = (await res.json()) as {
-      conversations: { unreadCount: number }[];
-    };
-    setUnread(data.conversations.reduce((a, c) => a + c.unreadCount, 0));
+    const data = (await res.json()) as { unread: number };
+    setUnread(data.unread);
+  }
+
+  // Una ráfaga de eventos (mensaje nuevo + marcado leído + cambio de estado)
+  // es UNA consulta, no tres.
+  function scheduleUnread() {
+    if (unreadTimer.current) clearTimeout(unreadTimer.current);
+    unreadTimer.current = setTimeout(() => void refetchUnread(), 400);
   }
 
   useEffect(() => {
     void refetchUnread();
+    return () => {
+      if (unreadTimer.current) clearTimeout(unreadTimer.current);
+    };
   }, []);
 
   useEvents({
-    onMessageNew: () => void refetchUnread(),
-    onConversationUpdated: () => void refetchUnread(),
+    onMessageNew: scheduleUnread,
+    onConversationUpdated: scheduleUnread,
   });
 
   const sha = commit || BUILD_COMMIT;

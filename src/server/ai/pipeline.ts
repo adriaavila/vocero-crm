@@ -29,6 +29,7 @@ import {
 import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { toHandoffReason } from "@/server/bot/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
+import { avisarTraspaso } from "@/server/agencia/avisos";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
@@ -966,6 +967,8 @@ export async function applyHandoff(
       conversation: { id: conversationId, handoffReason: reason },
     },
   });
+  // Fork — el dueño se entera en su celular (mejor esfuerzo, no espera la red).
+  avisarTraspaso(organizationId, conversationId, reason);
 }
 
 async function moveLeadToStage(

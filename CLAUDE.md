@@ -59,6 +59,10 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   verificar y `/api/health` declara la instancia enferma sin él.
 - **Guard `ai_disabled` al enviar**: una respuesta cuya conversación se pausó
   mientras el modelo redactaba se descarta.
+- **Avisos al celular** (`server/agencia/avisos.ts`, `public/sw.js`, tarjeta
+  en Inicio): Web Push cuando el agente traspasa una conversación o agenda una
+  cita. Las llaves VAPID se derivan de `ENCRYPTION_KEY` (sin variable nueva);
+  solo se aceptan endpoints de servicios de push conocidos.
 - **La agenda ve el Google Calendar del dueño**
   (`server/agencia/agenda-externa.ts`): los eventos se espejan como bloqueos.
 - **La ficha mueve el embudo** (`server/agencia/ficha-pipeline.ts`).

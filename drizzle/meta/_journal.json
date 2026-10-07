@@ -197,6 +197,20 @@
       "when": 1791137127689,
       "tag": "9015_pausa_que_vence",
       "breakpoints": true
+    },
+    {
+      "idx": 9016,
+      "version": "7",
+      "when": 1791416513485,
+      "tag": "9016_lumpy_captain_cross",
+      "breakpoints": true
+    },
+    {
+      "idx": 9017,
+      "version": "7",
+      "when": 1791416827249,
+      "tag": "9017_brainy_spot",
+      "breakpoints": true
     }
   ]
 }

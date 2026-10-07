@@ -17,6 +17,7 @@ import type { Prioridades } from "@/server/agencia/prioridades";
 import type { ReadinessResponse } from "@/server/readiness";
 import { buttonVariants } from "@/components/ui/button";
 import { AskBox } from "@/components/agencia/centro/ask-box";
+import { AvisosCelular } from "@/components/agencia/avisos-celular";
 import { MetricasSection } from "@/components/agencia/centro/metricas";
 import { PrioridadesSection } from "@/components/agencia/centro/prioridades";
 import { cn } from "@/lib/utils";
@@ -184,6 +185,8 @@ export function ControlCenter({
         )}
 
         <PlanStrip plan={centro.plan} timezone={tz} owner={owner} />
+
+        {!quiet && <AvisosCelular />}
 
         {!quiet && (
           <>

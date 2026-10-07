@@ -580,6 +580,10 @@ export const message = pgTable(
       t.conversationId,
       t.createdAt
     ),
+    // El turno del agente, el despacho a Nea y el worker leen "los últimos
+    // mensajes de ESTA conversación" sin la organización por delante: sin
+    // este índice cada turno recorría la tabla entera de mensajes.
+    index("message_conv_created_idx").on(t.conversationId, t.createdAt),
     // Data spine: "¿qué mensajes salieron de este evento?" y el ON DELETE SET
     // NULL de raw_event no recorren toda la tabla. Parcial: casi todo mensaje
     // saliente y los de antes de la columna no la llevan.
@@ -1730,5 +1734,40 @@ export const conversationProperty = pgTable(
       t.organizationId,
       t.propertyId
     ),
+  ]
+);
+
+/**
+ * Fork — avisos al celular (Web Push). Un renglón por navegador/teléfono en el
+ * que una persona del negocio dijo «avísame»: cuando el agente pasa una
+ * conversación a una persona o agenda una cita, le llega una notificación
+ * aunque no tenga la app abierta. Sin renglones, no se manda nada (el camino
+ * sin aviso es el de siempre: la bandeja).
+ *
+ * `endpoint` es la URL que el navegador dio para esta suscripción: única,
+ * porque el mismo teléfono que vuelve a decir «avísame» la reutiliza. `p256dh`
+ * y `auth` son las llaves PÚBLICAS de cifrado del navegador (no secretos del
+ * negocio): sin la llave privada del servidor no sirven para nada.
+ */
+export const pushSubscription = pgTable(
+  "push_subscription",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    lastSentAt: timestamp("last_sent_at"),
+  },
+  (t) => [
+    uniqueIndex("push_subscription_endpoint_uq").on(t.endpoint),
+    index("push_subscription_org_idx").on(t.organizationId),
   ]
 );

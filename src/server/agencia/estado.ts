@@ -15,6 +15,7 @@ import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
 import { getPrioridades } from "@/server/agencia/prioridades";
+import { orgVersion } from "@/server/events/bus";
 
 /**
  * Capa de agencia (fork) — el estado de la operación con datos reales: el
@@ -35,6 +36,41 @@ export async function agentOn(organizationId: string): Promise<{ on: boolean; ti
     on: Boolean(rows[0]?.enabled) || (await cerebroExternoLegadoSiempreOn(organizationId)),
     timezone: rows[0]?.timezone ?? "UTC",
   };
+}
+
+/**
+ * La cola de «esperando» se pide en CADA pantalla (layout), en cada evento
+ * (punto del logotipo) y cada minuto por pestaña, y recorre las conversaciones
+ * de dos semanas: con un par de miles de chats eran ~300 ms por pedido. Se
+ * guarda una copia por negocio mientras no se publique ningún evento suyo (un
+ * mensaje o un cambio de conversación siempre publica) y por a lo más
+ * QUEUE_TTL_MS: lo que cambia sin evento, como una ventana de 24 h que se
+ * cierra, se nota con ese retraso. Lo barato (WhatsApp, agente, plan) se lee
+ * fresco siempre: encender el agente se ve al instante.
+ */
+const QUEUE_TTL_MS = 15_000;
+type Queue = Awaited<ReturnType<typeof getPrioridades>>;
+const globalForQueue = globalThis as unknown as {
+  __voceroQueueCache?: Map<string, { at: number; version: number; value: Promise<Queue> }>;
+};
+
+function colaDeEspera(organizationId: string, agentLive: boolean): Promise<Queue> {
+  if (!globalForQueue.__voceroQueueCache) globalForQueue.__voceroQueueCache = new Map();
+  const cache = globalForQueue.__voceroQueueCache;
+  const key = `${organizationId}:${agentLive ? 1 : 0}`;
+  const version = orgVersion(organizationId);
+  const now = Date.now();
+  const hit = cache.get(key);
+  if (hit && hit.version === version && now - hit.at < QUEUE_TTL_MS) return hit.value;
+  // `light`: aquí solo importan los conteos, no el texto de las tarjetas. Se
+  // guarda la PROMESA: dos pedidos simultáneos comparten una sola lectura.
+  const value = getPrioridades(organizationId, { agentOn: agentLive, light: true, limit: 0 });
+  cache.set(key, { at: now, version, value });
+  value.catch(() => cache.delete(key));
+  if (cache.size > 2_000) {
+    for (const [k, v] of cache) if (now - v.at >= QUEUE_TTL_MS) cache.delete(k);
+  }
+  return value;
 }
 
 export async function getSystemState(organizationId: string, owner: boolean): Promise<SystemSnapshot> {
@@ -67,7 +103,7 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   // LA regla de «esperando» es la de «Por dónde arrancar» (`prioridades.ts`):
   // el punto, la barra, el icono y el encabezado de Inicio cuentan lo mismo.
   // `light`: aquí solo importan los conteos, no el texto de las tarjetas.
-  const queue = await getPrioridades(organizationId, { agentOn: agentLive, light: true, limit: 0 });
+  const queue = await colaDeEspera(organizationId, agentLive);
   const waiting = queue.needsYou;
   // Un turno en cola es de una conversación que ya puede estar contada como
   // viva: se toma el mayor, no la suma, para no contar dos veces la misma.
