@@ -1,3 +1,4 @@
+import { getBusinessHours } from "@/server/business-hours";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -75,8 +76,14 @@ export async function getSettings(
     .limit(1);
 
   const row = rows[0];
-  // Sin fila: la instancia recién encendida ya es usable.
-  if (!row) return DEFAULT_CALENDAR_SETTINGS;
+  // Sin fila: la instancia recién encendida ya es usable. La zona es la que
+  // el dueño eligió en «Tu negocio» (la del horario del equipo): con la
+  // constante, un negocio en Caracas o Bogotá que nunca abrió Ajustes →
+  // Agenda veía horarios y un "ahora" corridos respecto de su reloj.
+  if (!row) {
+    const { timezone } = await getBusinessHours(organizationId);
+    return { ...DEFAULT_CALENDAR_SETTINGS, timezone };
+  }
 
   return {
     weeklyHours: normalizeWeeklyHours(row.weeklyHours as WeeklyHours),
