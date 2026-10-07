@@ -20,6 +20,9 @@ import { Label } from "@/components/ui/label";
 /** Adonde va el dueño recién registrado: el primer paso de la puesta en marcha. */
 const FIRST_SETUP_HREF = SETUP_STEP_META[SETUP_STEP_ORDER[0]].href;
 
+/** Fork (agencia): el slug de la demo de allok.fun que trae el alta, si es válido. */
+const DEMO_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
@@ -59,6 +62,9 @@ export default function RegisterForm({
   // Los 7 días gratis se respetan igual: Stripe empieza a cobrar al terminar.
   const [payNow, setPayNow] = useState(false);
   const payPlans: SaaSPlan[] = soldPlans.filter((p) => p === "basic" || p === "pro");
+  // Fork (agencia): quien llega desde su demo en allok.fun trae el negocio y
+  // la demo; «Tu negocio» se llena con lo que la demo ya aprendió de su web.
+  const [demo, setDemo] = useState<string | null>(null);
 
   useEffect(() => {
     const requestedPlan = new URLSearchParams(window.location.search).get("plan");
@@ -67,6 +73,17 @@ export default function RegisterForm({
     setPlan(requestedPlan && isSaaSPlan(requestedPlan) && soldPlans.includes(requestedPlan) ? requestedPlan : fallback);
     if (new URLSearchParams(window.location.search).get("pagar") === "1") setPayNow(true);
   }, [soldPlans, defaultPlan, selfServe]);
+
+  useEffect(() => {
+    if (adminMode) return;
+    const params = new URLSearchParams(window.location.search);
+    const negocio = params.get("negocio")?.trim().slice(0, 80);
+    if (negocio) setName((current) => current || negocio);
+    const slug = params.get("demo")?.trim().toLowerCase() ?? "";
+    if (slug.length <= 80 && DEMO_SLUG.test(slug)) setDemo(slug);
+  }, [adminMode]);
+
+  const firstSetupHref = demo ? `${FIRST_SETUP_HREF}?demo=${encodeURIComponent(demo)}` : FIRST_SETUP_HREF;
 
   // Fork (agencia): de dónde llegó el alta (UTM, referido, referente). Primer toque.
   useEffect(() => {
@@ -125,7 +142,7 @@ export default function RegisterForm({
       // Prueba de 7 días sin tarjeta: el siguiente paso es el primero de la
       // puesta en marcha («Tu negocio»), en el subdominio del negocio. El
       // cobro llega después, desde Facturación.
-      await goToTenant(FIRST_SETUP_HREF);
+      await goToTenant(firstSetupHref);
       return;
     }
     const checkout = await fetch("/api/saas/billing/checkout", {
@@ -147,7 +164,7 @@ export default function RegisterForm({
     // En el autoservicio la prueba ya corre: sin checkout configurado sigue
     // como si hubiera elegido probar gratis.
     const destino = payload?.error?.code === "billing_unconfigured"
-      ? selfServe ? FIRST_SETUP_HREF : "/overview?billing=unavailable"
+      ? selfServe ? firstSetupHref : "/overview?billing=unavailable"
       : "/settings/billing?checkout=failed";
     await goToTenant(destino);
   }
@@ -189,7 +206,9 @@ export default function RegisterForm({
       <CardHeader>
         <CardTitle>Empieza con tu negocio</CardTitle>
         <CardDescription>
-          En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar tu agente.
+          {demo
+            ? "Tu agente llega con lo que aprendió de tu web: lo revisas, lo pruebas y decides cuándo activarlo."
+            : "En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar tu agente."}
         </CardDescription>
       </CardHeader>
       <CardContent>

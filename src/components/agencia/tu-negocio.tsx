@@ -153,6 +153,41 @@ export function TuNegocio({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [savedDraft, savedHandoff]);
 
+  // Fork (agencia): quien se registró desde su demo de allok.fun llega con
+  // `?demo=<slug>`. Si «Tu negocio» está vacío, lo que la demo ya aprendió de
+  // su web llena el borrador (sin modelo y sin guardar solo). Una sola vez:
+  // el parámetro se quita para que una recarga no lo repita.
+  const [demoImport, setDemoImport] = useState<"loading" | "failed" | "done" | null>(null);
+  const demoTried = useRef(false);
+  useEffect(() => {
+    if (demoTried.current) return;
+    demoTried.current = true;
+    const url = new URL(window.location.href);
+    const slug = url.searchParams.get("demo");
+    if (!slug) return;
+    url.searchParams.delete("demo");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    const empty = NEGOCIO_FIELDS.every((field) => !savedDraft[field.key].trim()) && faqs.length === 0;
+    if (!empty) return;
+    void (async () => {
+      await Promise.resolve();
+      setDemoImport("loading");
+      const response = await fetch("/api/agent/borrador", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ demo: slug }),
+      }).catch(() => null);
+      const payload = (await response?.json().catch(() => null)) as Partial<BorradorResponse> | null;
+      if (response?.ok && payload?.borrador) {
+        applyBorrador(payload.borrador);
+        setDemoImport("done");
+      } else {
+        setDemoImport("failed");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function applyBorrador(borrador: BorradorResponse["borrador"]) {
     // Solo lo vacío: lo que el dueño ya escribió manda sobre el borrador.
     setDraft((prev) => {
@@ -268,13 +303,29 @@ export function TuNegocio({
       </CardHeader>
       <CardContent className="space-y-5">
         <LlenarPorMi
+          // Con el borrador puesto se cierra: lo que sigue es revisar los campos.
+          key={drafted ? "con-borrador" : "vacio"}
           startOpen={NEGOCIO_FIELDS.every((field) => !draft[field.key].trim()) && faqs.length === 0}
           disabled={busy}
-          onDraft={applyBorrador}
+          onDraft={(borrador) => {
+            setDemoImport(null);
+            applyBorrador(borrador);
+          }}
         />
+        {demoImport === "loading" && (
+          <p role="status" className="flex items-center gap-2 rounded-md border border-info-soft bg-info-tint px-3 py-2 text-sm text-info-text">
+            <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+            Trayendo lo que tu demo aprendió de tu web…
+          </p>
+        )}
+        {demoImport === "failed" && (
+          <p role="status" className="rounded-md border border-border bg-subtle px-3 py-2 text-sm leading-relaxed text-text-2">
+            No pudimos traer lo de tu demo. Pega el enlace de tu web en «Llénalo por mí» y lo ordenamos igual.
+          </p>
+        )}
         {drafted && dirty && (
           <p role="status" className="rounded-md border border-info-soft bg-info-tint px-3 py-2 text-sm leading-relaxed text-info-text">
-            Listo. Revisa lo que llenamos, corrige lo que haga falta y toca «Guardar mi negocio». Todavía no se guardó nada.
+            {demoImport === "done" ? "Esto es lo que tu demo aprendió de tu web." : "Listo."} Revisa lo que llenamos, corrige lo que haga falta y toca «Guardar mi negocio». Todavía no se guardó nada.
           </p>
         )}
         {NEGOCIO_FIELDS.map((field) => (

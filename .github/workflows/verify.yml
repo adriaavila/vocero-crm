@@ -65,6 +65,8 @@ jobs:
       ZOOM_OAUTH_BASE_URL: http://localhost:3000/api/dev/zoom-mock
       GOOGLE_CAL_BASE_URL: http://localhost:3000/api/dev/google-mock
       GOOGLE_OAUTH_BASE_URL: http://localhost:3000/api/dev/google-mock
+      # El sitio de allok.fun, para la cuenta que nace de una demo.
+      ALLOK_SITE_URL: http://localhost:3000/api/dev/site-mock
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

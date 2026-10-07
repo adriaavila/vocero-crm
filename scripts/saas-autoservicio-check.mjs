@@ -198,6 +198,22 @@ async function main() {
   const anon = await client()(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "Panadería de masa madre en la Roma." }) });
   ok("sin sesión: 401", anon.res.status === 401, String(anon.res.status));
 
+  console.log("\n== 1c'. La cuenta que nace de su demo trae lo que la demo aprendió ==");
+  const kbBeforeDemo = (await sql`select count(*)::int as n from kb_entry where organization_id = ${org.id}`)[0].n;
+  const fromDemo = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ demo: "clinica-de-prueba" }) });
+  const demoDraft = fromDemo.json?.borrador;
+  ok(
+    "el perfil de la demo vuelve en los campos de «Tu negocio»",
+    fromDemo.res.ok && /Del Valle/.test(demoDraft?.oferta ?? "") && /Limpieza dental: \$650 MXN/.test(demoDraft?.precios ?? "") && /Av\. Coyoacán/.test(demoDraft?.zona ?? "") && demoDraft?.preguntas?.length === 1,
+    `${fromDemo.res.status} ${JSON.stringify(fromDemo.json)}`,
+  );
+  const kbAfterDemo = (await sql`select count(*)::int as n from kb_entry where organization_id = ${org.id}`)[0].n;
+  ok("y tampoco guarda nada solo", kbAfterDemo === kbBeforeDemo, `${kbBeforeDemo} → ${kbAfterDemo}`);
+  const missingDemo = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ demo: "no-existe" }) });
+  ok("una demo que no existe: 404 con mensaje", missingDemo.res.status === 404 && Boolean(missingDemo.json?.error?.message), `${missingDemo.res.status} ${JSON.stringify(missingDemo.json)}`);
+  const badDemo = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ demo: "../../admin" }) });
+  ok("un slug raro ni sale a buscarlo: 400", badDemo.res.status === 400, `${badDemo.res.status} ${JSON.stringify(badDemo.json)}`);
+
   console.log("\n== 1d. «Escríbele como cliente»: chat con el agente en el sandbox ==");
   const chat = await owner(tenantHost, "/api/lab/chat", { method: "POST", body: JSON.stringify({ text: "Hola, ¿qué precios tienen?" }) });
   const chatLines = chat.json?.lines ?? [];

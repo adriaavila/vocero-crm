@@ -47,6 +47,11 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   `/api/lab/chat`): el dueño chatea con su agente con el turno real, en una
   conversación `is_test` de un contacto archivado (`prueba:dueno`): nada sale
   a WhatsApp ni cuenta para el tope de la prueba.
+- **La cuenta nace de su demo** (`server/agencia/demo-importar.ts`): quien
+  arma su demo en allok.fun llega a `/register?demo=<slug>&negocio=…`; el
+  nombre viene puesto y «Tu negocio» abre con lo que la demo aprendió de su
+  web (`/api/agent/borrador` con `{demo}`, sin modelo y sin guardar solo).
+  El sitio es fijo (`ALLOK_SITE_URL`) y el slug se valida.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.
