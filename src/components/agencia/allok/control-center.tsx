@@ -115,6 +115,12 @@ export function ControlCenter({
     planKind: centro.plan.kind,
   });
   const tz = centro.timezone;
+  // Fork (agencia): mientras la puesta en marcha sigue abierta, lo primero que
+  // ve el dueño es el paso que toca, no un tablero vacío. Sin WhatsApp no hay
+  // conversaciones, cifras ni día que mostrar: esas secciones esperan.
+  const setup = owner && readiness ? deriveSetupProgress(readiness) : null;
+  const setupOpen = Boolean(setup?.active && setup.current);
+  const quiet = setupOpen && snapshot.whatsapp.status !== "connected";
   const firstWord = (text: string) => text.trim().split(/\s+/)[0] ?? "";
   // Si el «nombre» es la primera palabra del negocio («Panadería»), saludar por él suena a error.
   const firstName = firstWord(userName).toLowerCase() === firstWord(businessName).toLowerCase() ? "" : firstWord(userName);
@@ -140,13 +146,19 @@ export function ControlCenter({
           <h1 suppressHydrationWarning className="mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] text-balance md:text-[38px]">
             {firstName ? `${greeting}, ${firstName}.` : `${greeting}.`}
           </h1>
-          <p data-state={status.headline.state} className="mt-3 flex items-start gap-3 text-[16px] leading-snug md:text-[17px]">
-            <StateDot state={status.headline.state} size={12} decorative motion className="mt-[5px] shrink-0" />
-            <span className="text-balance">{status.headline.text}</span>
+          <p data-state={quiet ? "pausado" : status.headline.state} className="mt-3 flex items-start gap-3 text-[16px] leading-snug md:text-[17px]">
+            <StateDot state={quiet ? "pausado" : status.headline.state} size={12} decorative motion className="mt-[5px] shrink-0" />
+            <span className="text-balance">
+              {quiet ? "Deja listo a tu agente y pruébalo antes de conectar tu WhatsApp." : status.headline.text}
+            </span>
           </p>
         </header>
 
-        {/* El estado del negocio, compacto. Tinta en los dos temas: es donde el punto se lee. */}
+        {setupOpen && readiness && <Readiness readiness={readiness} prominent />}
+
+        {/* El estado del negocio, compacto. Tinta en los dos temas: es donde el punto se lee.
+            Sin WhatsApp todavía no hay negocio que mirar: la tarjeta de la puesta en marcha lo dice. */}
+        {!quiet && (
         <section
           aria-label="Estado de tu negocio"
           className="ak-ink mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[16px] border border-border bg-background px-4 py-3 shadow-md md:px-5"
@@ -157,10 +169,10 @@ export function ControlCenter({
           </span>
           <span className="font-mono text-[11.5px] text-text-3">{snapshot.whatsapp.phone ?? "Sin número conectado"}</span>
           <span className="kicker ml-auto hidden sm:inline">{businessName}</span>
-          {(status.strip.reason || (status.strip.href && status.strip.actionLabel)) && (
+          {(status.strip.reason || (status.strip.href && status.strip.actionLabel && !setupOpen)) && (
             <div className="flex w-full flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t pt-3">
               {status.strip.reason && <p className="text-[14px] leading-snug text-text-2">{status.strip.reason}</p>}
-              {status.strip.href && status.strip.actionLabel && (
+              {status.strip.href && status.strip.actionLabel && !setupOpen && (
                 <Link href={status.strip.href} className={cn(buttonVariants({ size: "lg" }), "min-h-11 [@media(pointer:fine)]:min-h-10")}>
                   {status.strip.actionLabel}
                   <ArrowRight className="h-4 w-4" strokeWidth={2} aria-hidden />
@@ -169,21 +181,26 @@ export function ControlCenter({
             </div>
           )}
         </section>
+        )}
 
         <PlanStrip plan={centro.plan} timezone={tz} owner={owner} />
 
-        <PrioridadesSection data={prioridades} productLabel={productLabel} connected={snapshot.whatsapp.status === "connected"} hasDecisions={hasDecisions} />
+        {!quiet && (
+          <>
+            <PrioridadesSection data={prioridades} productLabel={productLabel} connected={snapshot.whatsapp.status === "connected"} hasDecisions={hasDecisions} />
 
-        <AskBox productLabel={productLabel} remainingToday={askRemaining} />
+            <AskBox productLabel={productLabel} remainingToday={askRemaining} />
 
-        {/* La firma de la pantalla: el día del negocio, hora por hora. */}
-        <section aria-label="Hoy, hora por hora" className="ak-ink mt-5 overflow-hidden rounded-[22px] border border-border bg-background shadow-md">
-          <DayLine day={centro.day} timezone={tz} owner={owner} productLabel={productLabel} />
-        </section>
+            {/* La firma de la pantalla: el día del negocio, hora por hora. */}
+            <section aria-label="Hoy, hora por hora" className="ak-ink mt-5 overflow-hidden rounded-[22px] border border-border bg-background shadow-md">
+              <DayLine day={centro.day} timezone={tz} owner={owner} productLabel={productLabel} />
+            </section>
 
-        <MetricasSection metricas={metricas} funnel={funnel} pro={pro} owner={owner} productLabel={productLabel} />
+            <MetricasSection metricas={metricas} funnel={funnel} pro={pro} owner={owner} productLabel={productLabel} />
+          </>
+        )}
 
-        {owner && readiness && <Readiness readiness={readiness} />}
+        {owner && readiness && !setupOpen && <Readiness readiness={readiness} />}
       </div>
     </div>
   );
@@ -249,7 +266,7 @@ function PlanStrip({ plan, timezone, owner }: { plan: PlanState; timezone: strin
  * dice «completa»: lo último que falta es encenderlo. Con el agente activo no
  * hay asistente de alta; si algo quedó viejo (la prueba, la conexión), una línea.
  */
-function Readiness({ readiness }: { readiness: ReadinessResponse }) {
+function Readiness({ readiness, prominent = false }: { readiness: ReadinessResponse; prominent?: boolean }) {
   const progress = deriveSetupProgress(readiness);
   const current = progress.steps.find((step) => step.key === progress.current);
   if (!current) return null;
@@ -265,13 +282,19 @@ function Readiness({ readiness }: { readiness: ReadinessResponse }) {
       </p>
     );
   }
+  const left = progress.steps.filter((step) => !step.done).length;
   return (
-    <section aria-labelledby="puesta-en-marcha" className="mt-5 rounded-lg border bg-background p-5">
-      <h2 id="puesta-en-marcha" className="text-[15px] font-semibold tracking-[-0.01em]">
-        Puesta en marcha
+    <section
+      aria-labelledby="puesta-en-marcha"
+      className={cn("mt-5 rounded-lg border bg-background p-5", prominent && "rounded-[16px] p-5 shadow-md md:p-6")}
+    >
+      <h2 id="puesta-en-marcha" className={cn("font-semibold tracking-[-0.01em]", prominent ? "text-[19px]" : "text-[15px]")}>
+        {prominent ? "Pon a trabajar a tu agente" : "Puesta en marcha"}
       </h2>
-      <p className="mt-0.5 text-[13px] text-text-3">
-        Siguiente: {current.label.toLowerCase()}. Probar nunca le escribe a tus clientes.
+      <p className={cn("mt-1 text-text-3", prominent ? "text-[14px] leading-relaxed" : "text-[13px]")}>
+        {prominent
+          ? `${left === 1 ? "Te falta un paso" : `Te faltan ${left} pasos`}. Ahora: ${current.label.toLowerCase()}. Probar nunca le escribe a tus clientes.`
+          : `Siguiente: ${current.label.toLowerCase()}. Probar nunca le escribe a tus clientes.`}
       </p>
       <SetupProgressNav progress={progress} className="mt-4 max-w-2xl" />
       <Link

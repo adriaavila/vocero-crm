@@ -17,6 +17,7 @@ import { useEvents } from "@/components/use-events";
 import { Badge } from "@/components/ui/badge";
 import { LiveWhatsappTest } from "@/components/agencia/live-whatsapp-test";
 import { ProbarPanel } from "@/components/agencia/probar";
+import { ChatPrueba } from "@/components/agencia/chat-prueba";
 import { passes } from "@/lib/probar";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
@@ -199,6 +200,11 @@ export function LabClient({ initialProgress = null }: { initialProgress?: SetupP
           onApplied={() => selectedRunId && void refetchDetail(selectedRunId)}
           initialProgress={initialProgress}
         />
+      </div>
+
+      {/* Capa de agencia: escribirle al agente como cliente, en el sandbox. */}
+      <div className="px-4 pt-4 sm:px-6 sm:pt-6">
+        <ChatPrueba />
       </div>
 
       {running && progress && (

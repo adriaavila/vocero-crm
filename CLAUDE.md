@@ -33,12 +33,20 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   default-profile.ts`), lo cree el alta pública o un admin; lo enciende el
   dueño en «Activar». En allok el agente se llama «Asistente» (Rei conserva
   «Rei»). Los negocios que ya existían no se tocan.
-- **La puesta en marcha son cuatro pasos** (Conectar WhatsApp, Tu negocio,
-  Probar, Activar), derivados de la preparación en `server/agencia/
+- **La puesta en marcha son cuatro pasos** (Tu negocio, Probar, Conectar
+  WhatsApp, Activar: primero el valor, después Meta), derivados de la preparación en `server/agencia/
   setup-progress.ts`; `server/agencia/activacion.ts` es la ÚNICA lista de
   bloqueos para activar (la usa la ruta que enciende y la pantalla «Activar»).
   `agent_profile.updated_at` es la versión del CONTENIDO del agente: pausar o
   encender no vuelve vieja la prueba.
+- **«Llénalo por mí»** en Tu negocio (`server/agencia/borrador-negocio*.ts`,
+  `/api/agent/borrador`): del texto o la web del dueño a un borrador de los
+  campos, sin inventar y sin guardar solo. Lee webs públicas con guarda de IP
+  privada; Instagram/Facebook/TikTok se rechazan con un aviso.
+- **«Escríbele como cliente»** en Probar (`server/agencia/chat-prueba.ts`,
+  `/api/lab/chat`): el dueño chatea con su agente con el turno real, en una
+  conversación `is_test` de un contacto archivado (`prueba:dueno`): nada sale
+  a WhatsApp ni cuenta para el tope de la prueba.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.

@@ -1,5 +1,6 @@
 import { JUDGE_MARKER } from "@/server/ai/prompts";
 import { ASK_MARKER } from "@/server/agencia/centro-ask-prompt";
+import { BORRADOR_MARKER } from "@/server/agencia/borrador-negocio-prompt";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -50,6 +51,11 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ answer: askMockAnswer(lastUser) });
   }
 
+  // «Llénalo por mí»: reparte las frases del TEXTO en los campos, sin inventar.
+  if (system.includes(BORRADOR_MARKER)) {
+    return JSON.stringify(borradorMock(lastUser));
+  }
+
   const text = lastUser.toLowerCase();
 
   // Persona pide_humano (el regex de respaldo captura la frase canónica; esta
@@ -92,4 +98,14 @@ function askMockAnswer(prompt: string): string {
   } catch {
     return "[mock] No pude leer el resumen.";
   }
+}
+
+function borradorMock(prompt: string) {
+  const source = prompt.split('"""')[1] ?? "";
+  const sentences = source.split(/(?<!\b[A-Z][a-z]{0,2}\.)(?<=[.!?])\s+|\n+/).map((t) => t.trim()).filter(Boolean);
+  const pick = (re: RegExp) => sentences.filter((t) => re.test(t)).join(" ");
+  const precios = pick(/\$|precio|cuesta|cobra/i);
+  const zona = pick(/calle|av\.|avenida|zona|direcci|colonia|envi/i);
+  const oferta = sentences.filter((t) => !precios.includes(t) && !zona.includes(t)).slice(0, 2).join(" ");
+  return { oferta, precios, zona, preguntas: [] };
 }

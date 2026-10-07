@@ -17,6 +17,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/** Adonde va el dueño recién registrado: el primer paso de la puesta en marcha. */
+const FIRST_SETUP_HREF = SETUP_STEP_META[SETUP_STEP_ORDER[0]].href;
+
 function browserTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone;
 }
@@ -119,9 +122,10 @@ export default function RegisterForm({
     // Fork (agencia): anota el origen con tope de 2,5 s; nunca frena el alta.
     await enviarOrigenAlta();
     if (selfServe && !payNow) {
-      // Prueba de 7 días sin tarjeta: el siguiente paso es conectar WhatsApp
-      // en el subdominio del negocio. El cobro llega después, desde Facturación.
-      await goToTenant("/settings/whatsapp");
+      // Prueba de 7 días sin tarjeta: el siguiente paso es el primero de la
+      // puesta en marcha («Tu negocio»), en el subdominio del negocio. El
+      // cobro llega después, desde Facturación.
+      await goToTenant(FIRST_SETUP_HREF);
       return;
     }
     const checkout = await fetch("/api/saas/billing/checkout", {
@@ -143,7 +147,7 @@ export default function RegisterForm({
     // En el autoservicio la prueba ya corre: sin checkout configurado sigue
     // como si hubiera elegido probar gratis.
     const destino = payload?.error?.code === "billing_unconfigured"
-      ? selfServe ? "/settings/whatsapp" : "/overview?billing=unavailable"
+      ? selfServe ? FIRST_SETUP_HREF : "/overview?billing=unavailable"
       : "/settings/billing?checkout=failed";
     await goToTenant(destino);
   }
