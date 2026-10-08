@@ -1,0 +1,61 @@
+// Corre todos los guiones E2E (`scripts/e2e-*.mjs`): primero el selftest, que
+// registra la organización y conecta WhatsApp (si falla, para ahí), y después
+// el resto en orden alfabético. Sale distinto de cero si alguno falla.
+//
+// `next dev` se reinicia solo cuando su memoria pasa del 80% del límite («Server
+// is approaching the used memory threshold, restarting...»), y tira lo que
+// estaba en vuelo: se lee como un fallo del producto en el guion que tocó. Por
+// eso, antes de cada guion se espera a que la app conteste, y un guion que
+// falló MIENTRAS el servidor se reiniciaba se corre una vez más. Para saberlo
+// hace falta el log del servidor (`E2E_NEXT_LOG`); sin él no se repite nada.
+import { spawnSync } from "node:child_process";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+
+const BASE = process.env.APP_BASE_URL ?? "http://localhost:3000";
+const LOG = process.env.E2E_NEXT_LOG;
+const REINICIO = "approaching the used memory threshold";
+
+function reinicios() {
+  if (!LOG || !existsSync(LOG)) return 0;
+  return readFileSync(LOG, "utf8").split(REINICIO).length - 1;
+}
+
+async function esperarApp() {
+  for (let i = 0; i < 120; i++) {
+    try {
+      const r = await fetch(`${BASE}/api/health`);
+      if (r.ok) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`la app no contesta en ${BASE}/api/health`);
+}
+
+function correr(f) {
+  const args = existsSync(".env") ? ["--env-file=.env", f] : [f];
+  return spawnSync(process.execPath, args, { stdio: "inherit" }).status === 0;
+}
+
+async function guion(f) {
+  console.log(`== ${f}`);
+  await esperarApp();
+  const antes = reinicios();
+  if (correr(f)) return true;
+  if (reinicios() === antes) return false;
+  console.log(`== ${f}: el servidor de desarrollo se reinició a mitad del guion; se repite una vez`);
+  await esperarApp();
+  return correr(f);
+}
+
+const resto = readdirSync("scripts")
+  .filter((f) => /^e2e-.*\.mjs$/.test(f) && f !== "e2e-selftest.mjs")
+  .sort()
+  .map((f) => `scripts/${f}`);
+
+if (!(await guion("scripts/e2e-selftest.mjs"))) process.exit(1);
+const fallaron = [];
+for (const f of resto) if (!(await guion(f))) fallaron.push(f);
+if (fallaron.length) {
+  console.log(`\nFallaron: ${fallaron.join(", ")}`);
+  process.exit(1);
+}

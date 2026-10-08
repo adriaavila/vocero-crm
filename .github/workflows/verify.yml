@@ -108,7 +108,11 @@ jobs:
           cat /tmp/vocero-next.log
           exit 1
 
+      # Con el log, el arnés repite una vez el guion que cayó durante un
+      # reinicio de `next dev` por memoria (ver scripts/correr-e2e.mjs).
       - run: pnpm test:e2e
+        env:
+          E2E_NEXT_LOG: /tmp/vocero-next.log
 
       # Pruebas contra Postgres de verdad (se saltan solas sin la variable, así
       # que ci.yml no las corre). Van DESPUÉS del e2e: limpian lo suyo, pero así
