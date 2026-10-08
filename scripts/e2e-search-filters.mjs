@@ -143,17 +143,26 @@ const cp = await ctx.newPage();
 await cp.goto(`${BASE}/contacts`, { waitUntil: "domcontentloaded" });
 const cbox = cp.getByLabel("Buscar contacto");
 await cbox.waitFor({ timeout: 15000 });
-await cp.getByText(`Zoraida${S}`).first().waitFor({ timeout: 20000 });
+// La primera visita compila /contacts: en un runner lento pasa de 20 s.
+await cp.getByText(`Zoraida${S}`).first().waitFor({ timeout: 60000 });
 const cRows = () => cp.locator("ul > li").allInnerTexts();
+// La búsqueda de Contactos va al servidor: en un runner lento 900 ms no
+// alcanzan y se lee la lista de la búsqueda anterior. Espera a que cumpla.
+const cRowsUntil = async (cond) => {
+  let l = await cRows();
+  for (let i = 0; i < 20 && !cond(l); i++) {
+    await cp.waitForTimeout(500);
+    l = await cRows();
+  }
+  return l;
+};
 
 await cbox.fill(`josue${S}`.toLowerCase());
-await cp.waitForTimeout(900);
-let cl = await cRows();
+let cl = await cRowsUntil((l) => has(l, `Josué${S}`));
 ok("'josue' encuentra a 'Josué' (búsqueda del servidor, sin acentos)",
    has(cl, `Josué${S}`), JSON.stringify(cl.length));
 await cbox.fill(FMT);
-await cp.waitForTimeout(900);
-cl = await cRows();
+cl = await cRowsUntil((l) => has(l, `Zoraida${S}`));
 ok("teléfono con formato desde el servidor", has(cl, `Zoraida${S}`), JSON.stringify(cl));
 await cbox.fill("");
 await cp.waitForTimeout(900);
