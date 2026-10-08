@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -236,24 +236,55 @@ export function MessageThread({
   messages,
   ensenables,
   onEnsenar,
+  hasMore = false,
+  loadingOlder = false,
+  onLoadOlder,
 }: {
   messages: MessageDto[];
+  /** Quedan mensajes más viejos que los cargados (el hilo baja por páginas). */
+  hasMore?: boolean;
+  loadingOlder?: boolean;
+  onLoadOlder?: () => void;
   /** Fork — respuestas del dueño que se pueden enseñar al agente (`lib/ensenar`). */
   ensenables?: ReadonlySet<string>;
   onEnsenar?: (messageId: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const prevRef = useRef<{ first?: string; last?: string; height: number }>({ height: 0 });
 
-  useEffect(() => {
+  // Un mensaje nuevo al final baja al fondo; una página vieja que entra arriba
+  // deja la vista donde estaba (si no, el dueño saltaría al fondo cada vez).
+  useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length]);
+    if (!el) return;
+    const prev = prevRef.current;
+    const first = messages[0]?.id;
+    const last = messages[messages.length - 1]?.id;
+    if (prev.last === last && prev.first !== first && prev.first !== undefined) {
+      el.scrollTop += el.scrollHeight - prev.height;
+    } else if (prev.last !== last) {
+      el.scrollTop = el.scrollHeight;
+    }
+    prevRef.current = { first, last, height: el.scrollHeight };
+  }, [messages]);
 
   return (
     <div
       ref={scrollRef}
       className="thread-bg flex flex-1 flex-col gap-[3px] overflow-y-auto px-3 py-5 sm:px-[6%]"
     >
+      {hasMore && onLoadOlder && (
+        <div className="mb-2 flex justify-center">
+          <button
+            type="button"
+            onClick={onLoadOlder}
+            disabled={loadingOlder}
+            className="kicker rounded-full border border-border-strong bg-background px-3 py-1 text-text-2 shadow-sm hover:text-foreground disabled:opacity-60"
+          >
+            {loadingOlder ? "Cargando…" : "Ver mensajes anteriores"}
+          </button>
+        </div>
+      )}
       {messages.map((m, i) => {
         const prev = messages[i - 1];
         const newDay =
