@@ -3,6 +3,7 @@ import { getDb, schema } from "@/lib/db";
 import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
+import { memoriaParaPrompt } from "@/server/agencia/memoria-cliente";
 import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import {
@@ -306,8 +307,17 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     // "mañana", y termina eligiendo un instante que no se le ofreció.
     timezone: settings.timezone,
   });
+  // Fork — lo que ya sabe de este cliente, en un sistema aparte para que la
+  // versión del prompt no cambie por cliente (`server/agencia/memoria-cliente`).
+  const memoria = await memoriaParaPrompt({
+    organizationId,
+    contactId: conversation.contactId,
+    conversationId,
+    timezone: settings.timezone,
+  });
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
+    ...(memoria ? [{ role: "system" as const, content: memoria }] : []),
     ...history
       .filter((m) => m.text)
       .map((m) => ({

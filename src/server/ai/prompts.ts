@@ -90,6 +90,9 @@ export function buildAgentSystemPrompt(input: {
       "- Si el cliente pide hablar con una persona/humano/asesor → handoff.",
       "- Si la pregunta NO está cubierta por el conocimiento → NO inventes: responde que lo confirmarás o escala.",
       "- Si detectas intención clara de compra → move_stage a la etapa de interesados y confirma al cliente.",
+      // Fork — memoria del cliente: lo que se anota aquí vuelve al prompt la
+      // próxima vez (`server/agencia/memoria-cliente`). Sin notas, no hay memoria.
+      "- Si el cliente te da un dato que servirá la próxima vez que escriba (para quién es, qué busca, cuándo le acomoda, su presupuesto), usa update_lead con una nota breve de ese dato Y contéstale en reply.",
       // El agente que "ayuda" mandando un calendly inventado es el que más
       // caro sale: el cliente hace clic, no llega a ningún lado, y culpa al
       // negocio. La agenda de verdad se ofrece con offer_slots.

@@ -296,13 +296,21 @@ const lastInboundCreatedAt = sql`coalesce((
   where mi."organization_id" = ${cv.org} and mi."conversation_id" = ${cv.id} and mi."direction" = 'in'
 ), '-infinity'::timestamp)`;
 
+const lastOutboundAtRaw = sql`(
+  select max(mo."created_at") from "message" mo
+  where mo."organization_id" = ${cv.org} and mo."conversation_id" = ${cv.id}
+    and mo."direction" = 'out' and mo."status" <> 'failed'
+)`;
+
+/*
+ * «Ningún saliente después del último entrante» dicho como «el último saliente
+ * no es posterior»: con NOT EXISTS, Postgres lo convertía en un anti-join que
+ * recorría TODOS los salientes del negocio y recalculaba el último entrante
+ * por cada uno (270 ms con 2.000 chats); así son dos lecturas por índice por
+ * conversación.
+ */
 const unanswered: SQL<boolean> = sql<boolean>`(
-  not exists (
-    select 1 from "message" mu
-    where mu."organization_id" = ${cv.org} and mu."conversation_id" = ${cv.id}
-      and mu."direction" = 'out' and mu."status" <> 'failed'
-      and mu."created_at" > ${lastInboundCreatedAt}
-  )
+  coalesce(${lastOutboundAtRaw}, '-infinity'::timestamp) <= ${lastInboundCreatedAt}
   and not coalesce((
     select dn."action" in ('none', 'silent') from "agent_decision" dn
     where dn."organization_id" = ${cv.org} and dn."conversation_id" = ${cv.id}
@@ -311,11 +319,7 @@ const unanswered: SQL<boolean> = sql<boolean>`(
   ), false)
 )`;
 
-const lastOutboundAt = sql<Date | null>`(
-  select max(mo."created_at") from "message" mo
-  where mo."organization_id" = ${cv.org} and mo."conversation_id" = ${cv.id}
-    and mo."direction" = 'out' and mo."status" <> 'failed'
-)`.mapWith(schema.message.createdAt);
+const lastOutboundAt = sql<Date | null>`${lastOutboundAtRaw}`.mapWith(schema.message.createdAt);
 
 /**
  * `agentOn`: el agente de este negocio está encendido (el que ya calcula

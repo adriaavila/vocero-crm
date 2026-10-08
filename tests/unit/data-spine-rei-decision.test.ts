@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   chatJson: vi.fn(),
   sendText: vi.fn(),
   failInsert: false,
+  memoria: null as string | null,
 }));
 
 vi.mock("@/lib/db", () => {
@@ -81,6 +82,7 @@ vi.mock("@/server/inbox/send", async (importOriginal) => {
   return { ...actual, sendText: state.sendText };
 });
 vi.mock("@/server/events/bus", () => ({ publish: vi.fn() }));
+vi.mock("@/server/agencia/memoria-cliente", () => ({ memoriaParaPrompt: async () => state.memoria }));
 
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { promptVersionOf } from "@/server/agencia/decisions";
@@ -120,6 +122,7 @@ beforeEach(() => {
   state.inserts.length = 0;
   state.updates.length = 0;
   state.failInsert = false;
+  state.memoria = null;
   state.chatJson.mockReset();
   state.sendText.mockReset().mockResolvedValue({ messageId: "msg_reply_1" });
   vi.stubEnv("NEA_DISPATCH_URL", "");
@@ -165,6 +168,23 @@ describe("Rei registra su decisión", () => {
     const systemPrompt = sentMessages[0]!.content;
     expect(row.promptVersion).toMatch(/^[0-9a-f]{12}$/);
     expect(row.promptVersion).toBe(promptVersionOf(systemPrompt));
+  });
+
+  it("la memoria del cliente va en un sistema aparte: la versión del prompt no cambia por cliente", async () => {
+    const turno = async () => {
+      queueTurn();
+      state.chatJson.mockResolvedValue({ ok: true, data: { action: "none" }, raw: "{}", model: "m" });
+      await runAgentTurn("cv_1");
+      return state.chatJson.mock.calls.at(-1)![1] as { role: string; content: string }[];
+    };
+    const sinMemoria = await turno();
+    state.memoria = "LO QUE YA SABES DE ESTE CLIENTE:\n- Se llama Marta.";
+    const conMemoria = await turno();
+
+    expect(sinMemoria.filter((m) => m.role === "system")).toHaveLength(1);
+    expect(conMemoria[1]).toEqual({ role: "system", content: state.memoria });
+    expect(conMemoria[0]!.content).toBe(sinMemoria[0]!.content);
+    expect(state.inserts.at(-1)!.values.promptVersion).toBe(state.inserts[0]!.values.promptVersion);
   });
 
   it("handoff por el modelo: acción handoff, motivo 'modelo', y la despedida enlazada", async () => {
