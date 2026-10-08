@@ -3,6 +3,8 @@ import { getDb, schema } from "@/lib/db";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipeline";
 import { barrerPausasVencidas } from "@/server/agencia/pausa-manual";
+import { barrerClientesEsperando } from "@/server/agencia/clientes-esperando";
+import { maybeRunAgentTurn } from "@/server/ai/trigger";
 
 const POLL_MS = 1_000;
 /** Fork — pausa que vence: cada cuánto se reanudan las pausas manuales vencidas. */
@@ -59,6 +61,11 @@ async function poll(state: WorkerState): Promise<void> {
       // Con su propio catch: un barrido roto no deja trabajos sin reclamar.
       await barrerPausasVencidas().catch((error) => {
         console.error("[agent-worker] barrido de pausas falló:", error);
+      });
+      // Fork — después de reanudar pausas: un cliente que nadie contestó en
+      // horario del equipo recibe su turno en cuanto el agente puede hablar.
+      await barrerClientesEsperando(maybeRunAgentTurn).catch((error) => {
+        console.error("[agent-worker] barrido de clientes esperando falló:", error);
       });
     }
     await claimUpToCapacity(state);
