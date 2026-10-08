@@ -1,6 +1,7 @@
 import { JUDGE_MARKER } from "@/server/ai/prompts";
 import { ASK_MARKER } from "@/server/agencia/centro-ask-prompt";
 import { BORRADOR_MARKER } from "@/server/agencia/borrador-negocio-prompt";
+import { SEGUIMIENTO_MARKER } from "@/server/agencia/seguimiento-prompt";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -54,6 +55,20 @@ export function aiMockCompletion(messages: InMessage[]): string {
   // «Llénalo por mí»: reparte las frases del TEXTO en los campos, sin inventar.
   if (system.includes(BORRADOR_MARKER)) {
     return JSON.stringify(borradorMock(lastUser));
+  }
+
+  // Seguimiento: retoma si la última línea del cliente dejó algo abierto;
+  // si se despidió o dio las gracias, no escribe.
+  if (system.includes(SEGUIMIENTO_MARKER)) {
+    const cliente = lastUser
+      .split("\n")
+      .filter((l) => l.startsWith("Cliente:"))
+      .at(-1)
+      ?.toLowerCase() ?? "";
+    if (/gracias|chao|adi[oó]s|no me interesa/.test(cliente)) {
+      return JSON.stringify({ send: false, text: "" });
+    }
+    return JSON.stringify({ send: true, text: "¿Pudiste revisarlo? Si quieres, te ayudo con el siguiente paso." });
   }
 
   const text = lastUser.toLowerCase();

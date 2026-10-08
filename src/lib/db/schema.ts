@@ -863,6 +863,12 @@ export const agentProfile = pgTable(
      * 0 = nunca, la reactiva él desde la conversación.
      */
     handoffResumeHours: integer("handoff_resume_hours"),
+    /**
+     * Fork — seguimiento: horas de silencio del cliente (tras la última
+     * respuesta del agente) antes de que el agente le escriba UNA vez para
+     * retomar. NULL o 0 = apagado. Ver `server/agencia/seguimiento.ts`.
+     */
+    followUpHours: integer("follow_up_hours"),
     activationEnabled: boolean("preset_only").notNull().default(false),
     activationMessages: jsonb("preset_replies")
       .$type<string[]>()

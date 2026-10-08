@@ -39,6 +39,8 @@ const ACTION_LABEL: Record<string, string> = {
   book_slot: "Agendó una cita",
   reschedule: "Reagendó la cita",
   cancel_booking: "Canceló la cita",
+  follow_up: "Le escribió para retomar",
+  follow_up_skip: "No retomó: la conversación había terminado",
 };
 
 function humanize(code: string): string {

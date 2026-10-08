@@ -5,6 +5,7 @@ import { applyHandoff, runAgentTurn, scheduleAgentTurn } from "@/server/ai/pipel
 import { barrerPausasVencidas } from "@/server/agencia/pausa-manual";
 import { barrerClientesEsperando } from "@/server/agencia/clientes-esperando";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
+import { barrerSeguimientos } from "@/server/agencia/seguimiento";
 
 const POLL_MS = 1_000;
 /** Fork — pausa que vence: cada cuánto se reanudan las pausas manuales vencidas. */
@@ -12,7 +13,14 @@ const SWEEP_MS = 60_000;
 const STALE_AFTER_MS = 10 * 60_000;
 const DEFAULT_CONCURRENCY = 4;
 
-type WorkerState = { started: boolean; id: string; inFlight: number; sweptAt?: number };
+type WorkerState = {
+  started: boolean;
+  id: string;
+  inFlight: number;
+  sweptAt?: number;
+  /** Fork — hay un barrido de seguimientos en curso. */
+  siguiendo?: boolean;
+};
 
 const globalForWorker = globalThis as unknown as {
   __voceroAgentWorker?: WorkerState;
@@ -67,6 +75,16 @@ async function poll(state: WorkerState): Promise<void> {
       await barrerClientesEsperando(maybeRunAgentTurn).catch((error) => {
         console.error("[agent-worker] barrido de clientes esperando falló:", error);
       });
+      // Fork — seguimiento: sin `await`, para que el modelo no frene el
+      // reclamo de turnos; `siguiendo` evita que dos barridos se pisen.
+      if (!state.siguiendo) {
+        state.siguiendo = true;
+        void barrerSeguimientos()
+          .catch((error) => console.error("[agent-worker] barrido de seguimientos falló:", error))
+          .finally(() => {
+            state.siguiendo = false;
+          });
+      }
     }
     await claimUpToCapacity(state);
   } catch (error) {
