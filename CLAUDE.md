@@ -62,7 +62,9 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 - **Avisos al celular** (`server/agencia/avisos.ts`, `public/sw.js`, tarjeta
   en Inicio): Web Push cuando el agente traspasa una conversación o agenda una
   cita. Las llaves VAPID se derivan de `ENCRYPTION_KEY` (sin variable nueva);
-  solo se aceptan endpoints de servicios de push conocidos.
+  solo se aceptan endpoints de servicios de push conocidos. A las 19:00
+  locales, un resumen del día (`server/agencia/resumen-diario.ts`, una vez por
+  día gracias a `resumen_diario`; un día sin clientes no se avisa).
 - **«Enséñaselo a tu agente»** en la bandeja (`lib/ensenar.ts`,
   `components/agencia/ensenar-dialog.tsx`): bajo la primera respuesta de una
   persona a un cliente, un toque la guarda como pregunta y respuesta del
@@ -281,7 +283,10 @@ Arranca el servidor con memoria de sobra —
 `NODE_OPTIONS="--max-old-space-size=8192" pnpm dev` — o `next dev` se
 reinicia solo a mitad de la suite ("approaching the used memory threshold") y
 tira las peticiones en vuelo: se lee como fallos del producto repartidos al
-azar. Y no corras `pnpm build` con el `dev` levantado: comparten `.next` y el
+azar. Aun con 8 GB pasa cuando la suite compila muchas rutas: con
+`E2E_NEXT_LOG` apuntando al log de `pnpm dev`, `scripts/correr-e2e.mjs` espera
+a que la app vuelva y repite UNA vez el guion que cayó durante ese reinicio
+(un fallo sin reinicio no se repite). Y no corras `pnpm build` con el `dev` levantado: comparten `.next` y el
 servidor se queda sin archivos.
 
 Para correrlo hace falta el `.env` de pruebas completo: mocks de WhatsApp y de

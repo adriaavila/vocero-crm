@@ -161,7 +161,7 @@ export function AvisosCelular() {
         </p>
         <p className="text-[14px] leading-relaxed text-text-2">
           {estado.kind === "apagado" &&
-            "Si un cliente pide hablar contigo o tu agente agenda una cita, te llega un aviso al teléfono aunque no tengas la app abierta."}
+            "Si un cliente pide hablar contigo o tu agente agenda una cita, te llega un aviso al teléfono aunque no tengas la app abierta. Y a las 7 de la noche, un resumen de lo que hizo tu agente."}
           {estado.kind === "bloqueado" &&
             "Los avisos están bloqueados en este navegador. Actívalos en los permisos del sitio (el candado junto a la dirección) y recarga."}
           {estado.kind === "sin_soporte" &&
