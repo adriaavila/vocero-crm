@@ -127,28 +127,62 @@ export async function getConversation(
   return row ? { ...row, anuncio: aAnuncioDeLista(row.anuncio) } : null;
 }
 
+/** Mensajes por página del hilo: un chat de meses no se baja entero. */
+export const MESSAGES_PAGE = 80;
+
+/**
+ * Mensajes de una conversación en orden cronológico.
+ * - `since`: todo lo posterior (catch-up incremental), sin tope.
+ * - `beforeId`: la página anterior a ese mensaje. El cursor es el mensaje y no
+ *   su hora: la base guarda microsegundos y el JSON milisegundos, y dos
+ *   mensajes del mismo instante (un historial importado) no deben perderse.
+ * - sin ninguno: la última página.
+ * `hasMore` dice si quedan mensajes más viejos que la página devuelta.
+ */
 export async function listMessages(
   organizationId: string,
   conversationId: string,
-  since?: Date
+  opts: { since?: Date; beforeId?: string; limit?: number } = {}
 ) {
   const db = getDb();
-  return db
+  const base = db
     .select({ message: schema.message, media: schema.mediaAsset })
     .from(schema.message)
     .leftJoin(
       schema.mediaAsset,
       eq(schema.message.mediaAssetId, schema.mediaAsset.id)
-    )
+    );
+  if (opts.since) {
+    const rows = await base
+      .where(
+        scoped(
+          schema.message.organizationId,
+          organizationId,
+          eq(schema.message.conversationId, conversationId),
+          gt(schema.message.createdAt, opts.since)
+        )
+      )
+      .orderBy(schema.message.createdAt);
+    return { rows, hasMore: false };
+  }
+  const limit = opts.limit ?? MESSAGES_PAGE;
+  const rows = await base
     .where(
       scoped(
         schema.message.organizationId,
         organizationId,
         eq(schema.message.conversationId, conversationId),
-        since ? gt(schema.message.createdAt, since) : undefined
+        opts.beforeId
+          ? sql`(${schema.message.createdAt}, ${schema.message.id}) < (
+              select m.created_at, m.id from message m
+              where m.id = ${opts.beforeId} and m.organization_id = ${organizationId})`
+          : undefined
       )
     )
-    .orderBy(schema.message.createdAt);
+    .orderBy(desc(schema.message.createdAt), desc(schema.message.id))
+    .limit(limit + 1);
+  const hasMore = rows.length > limit;
+  return { rows: rows.slice(0, limit).reverse(), hasMore };
 }
 
 export function serializeConversation(

@@ -14,15 +14,19 @@ export const GET = withAuth(async (session, req: Request, ctx: Params) => {
   if (!row) return apiError(404, "not_found", "Conversación no encontrada");
 
   const url = new URL(req.url);
-  const sinceParam = url.searchParams.get("since");
-  const since = sinceParam ? new Date(sinceParam) : undefined;
-  const messages = await listMessages(
-    session.organizationId,
-    id,
-    since && !Number.isNaN(since.getTime()) ? since : undefined
-  );
+  const fecha = (v: string | null) => {
+    const d = v ? new Date(v) : null;
+    return d && !Number.isNaN(d.getTime()) ? d : undefined;
+  };
+  const since = fecha(url.searchParams.get("since"));
+  const beforeId = url.searchParams.get("beforeId") ?? undefined;
+  const { rows, hasMore } = await listMessages(session.organizationId, id, {
+    since,
+    beforeId,
+  });
   return Response.json({
-    messages: messages.map((r) => serializeMessage(r.message, r.media)),
+    messages: rows.map((r) => serializeMessage(r.message, r.media)),
+    hasMore,
   });
 });
 

@@ -16,6 +16,7 @@ import { ContactPanel } from "./contact-panel";
 import { EnsenarDialog } from "@/components/agencia/ensenar-dialog";
 import { useToast } from "@/components/ui/toast-provider";
 import { momentosParaEnsenar, type Momento } from "@/lib/ensenar";
+import { fundirMensajes } from "@/lib/hilo";
 
 /**
  * Texto que ya salió del compositor pero cuyo POST todavía viaja. Existe solo
@@ -111,14 +112,43 @@ export function InboxClient({
     lastFetchRef.current = new Date().toISOString();
   }, []);
 
-  const refetchMessages = useCallback(async (conversationId: string) => {
+  // El hilo baja por páginas (la última primero): un chat de meses ya no se
+  // descarga entero en cada envío. Releer trae la última página y la funde
+  // con lo cargado, así no se pierden las páginas viejas que el dueño abrió.
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const refetchMessages = useCallback(
+    async (conversationId: string, opts: { replace?: boolean } = {}) => {
+      const res = await fetch(
+        `/api/conversations/${conversationId}/messages`
+      ).catch(() => null);
+      if (!res?.ok) return;
+      const data = (await res.json()) as { messages: MessageDto[]; hasMore?: boolean };
+      if (selectedIdRef.current !== conversationId) return;
+      if (opts.replace) {
+        setMessages(data.messages);
+        setHasMore(Boolean(data.hasMore));
+      } else {
+        setMessages((prev) => fundirMensajes(prev, data.messages));
+      }
+    },
+    []
+  );
+
+  const loadOlder = useCallback(async () => {
+    const conversationId = selectedIdRef.current;
+    const oldest = messages[0];
+    if (!conversationId || !oldest || loadingOlder) return;
+    setLoadingOlder(true);
     const res = await fetch(
-      `/api/conversations/${conversationId}/messages`
+      `/api/conversations/${conversationId}/messages?beforeId=${encodeURIComponent(oldest.id)}`
     ).catch(() => null);
-    if (!res?.ok) return;
-    const data = (await res.json()) as { messages: MessageDto[] };
-    if (selectedIdRef.current === conversationId) setMessages(data.messages);
-  }, []);
+    setLoadingOlder(false);
+    if (!res?.ok || selectedIdRef.current !== conversationId) return;
+    const data = (await res.json()) as { messages: MessageDto[]; hasMore?: boolean };
+    setMessages((prev) => fundirMensajes(prev, data.messages));
+    setHasMore(Boolean(data.hasMore));
+  }, [messages, loadingOlder]);
 
   useEffect(() => {
     void refetchConversations();
@@ -142,7 +172,8 @@ export function InboxClient({
     (id: string) => {
       setSelectedId(id);
       setMessages([]);
-      void refetchMessages(id);
+      setHasMore(false);
+      void refetchMessages(id, { replace: true });
       void fetch(`/api/conversations/${id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -424,6 +455,9 @@ export function InboxClient({
             )}
             <MessageThread
               messages={thread}
+              hasMore={hasMore}
+              loadingOlder={loadingOlder}
+              onLoadOlder={() => void loadOlder()}
               ensenables={owner ? ensenables : undefined}
               onEnsenar={owner ? (id) => setEnsenando(id) : undefined}
             />
