@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
+import { avisarCita } from "@/server/agencia/avisos";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -300,6 +301,19 @@ export async function createSessionBooking(input: {
     type: "booking.updated",
     data: { bookingId: delivered.id },
   });
+
+  // Fork — avisos al celular: la cita que agendó el agente le llega al dueño
+  // (la que agenda él mismo, no: ya la sabe).
+  if (input.source === "ai") {
+    avisarCita({
+      organizationId: input.organizationId,
+      contactId,
+      nombre: contactName,
+      cuando: labelInTz(slot.startUtc, settings.timezone),
+      isTest,
+      bookingId: delivered.id,
+    });
+  }
 
   return {
     booking: delivered,

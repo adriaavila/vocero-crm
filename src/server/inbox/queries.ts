@@ -48,7 +48,8 @@ export async function listConversations(
   const previewSql = sql<string | null>`(
     select coalesce(m.text, m.type)
     from message m
-    where m.conversation_id = ${schema.conversation.id}
+    where m.organization_id = ${schema.conversation.organizationId}
+      and m.conversation_id = ${schema.conversation.id}
     order by m.created_at desc
     limit 1
   )`;

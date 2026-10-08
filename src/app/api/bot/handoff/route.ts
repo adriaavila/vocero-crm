@@ -5,6 +5,7 @@ import { apiError, parseBody } from "@/lib/api";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
 import { toHandoffReason } from "@/server/bot/handoff";
+import { avisarTraspaso } from "@/server/agencia/avisos";
 
 export const dynamic = "force-dynamic";
 
@@ -55,12 +56,13 @@ export async function POST(req: Request) {
   if (!conv) return apiError(404, "not_found", "Conversación no encontrada");
 
   if (!conv.handoffAt) {
+    const reason = toHandoffReason(body.data.reason);
     await db
       .update(schema.conversation)
       .set({
         aiEnabled: false,
         handoffAt: new Date(),
-        handoffReason: toHandoffReason(body.data.reason),
+        handoffReason: reason,
         updatedAt: new Date(),
       })
       .where(eq(schema.conversation.id, conv.id));
@@ -68,6 +70,8 @@ export async function POST(req: Request) {
       type: "conversation.updated",
       data: { conversation: { id: conv.id } },
     });
+    // Fork — el dueño se entera en su celular (mejor esfuerzo, no espera la red).
+    avisarTraspaso(organizationId, conv.id, reason);
   }
   return Response.json({ ok: true });
 }

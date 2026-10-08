@@ -47,6 +47,7 @@ const prefixes = {
   // Data spine — evento crudo del webhook y decisión del agente.
   rawEvent: "rev",
   agentDecision: "dec",
+  pushSubscription: "psub",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

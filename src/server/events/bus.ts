@@ -49,7 +49,25 @@ function getBus(): EventEmitter {
   return globalForBus.__voceroBus;
 }
 
+const globalForVersions = globalThis as unknown as { __voceroOrgVersions?: Map<string, number> };
+
+function versions(): Map<string, number> {
+  if (!globalForVersions.__voceroOrgVersions) globalForVersions.__voceroOrgVersions = new Map();
+  return globalForVersions.__voceroOrgVersions;
+}
+
+/**
+ * Cuántos eventos lleva publicados la organización en este proceso: un
+ * contador que solo sube. Lo usan las lecturas caras que se repiten en cada
+ * pantalla (el estado del logotipo) para saber si su copia sigue vigente sin
+ * suscribirse al bus.
+ */
+export function orgVersion(organizationId: string): number {
+  return versions().get(organizationId) ?? 0;
+}
+
 export function publish(organizationId: string, event: SseEvent): void {
+  versions().set(organizationId, orgVersion(organizationId) + 1);
   getBus().emit(`org:${organizationId}`, event);
 }
 
