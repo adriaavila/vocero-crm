@@ -1,10 +1,12 @@
 import { InboxClient } from "@/components/inbox/inbox-client";
+import { requireSession } from "@/lib/auth/session";
 import { CHANNEL_ORDER } from "@/lib/channels";
 import { enabledChannels } from "@/server/channels/enabled";
 
 export const dynamic = "force-dynamic";
 
-export default function InboxPage() {
+export default async function InboxPage() {
+  const session = await requireSession();
   /**
    * 014 — Qué bandejas existen se decide en el servidor, no mirando los datos.
    * Si se dedujera de las conversaciones cargadas, la marca de canal aparecería
@@ -15,5 +17,5 @@ export default function InboxPage() {
   const enabled = enabledChannels();
   const channels = CHANNEL_ORDER.filter((c) => enabled.has(c));
 
-  return <InboxClient channels={channels} />;
+  return <InboxClient channels={channels} owner={session.role === "owner"} />;
 }

@@ -232,7 +232,16 @@ function bubbleTime(iso: string): string {
   });
 }
 
-export function MessageThread({ messages }: { messages: MessageDto[] }) {
+export function MessageThread({
+  messages,
+  ensenables,
+  onEnsenar,
+}: {
+  messages: MessageDto[];
+  /** Fork — respuestas del dueño que se pueden enseñar al agente (`lib/ensenar`). */
+  ensenables?: ReadonlySet<string>;
+  onEnsenar?: (messageId: string) => void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -342,6 +351,18 @@ export function MessageThread({ messages }: { messages: MessageDto[] }) {
                 )}
               </div>
             </div>
+            {onEnsenar && ensenables?.has(m.id) && (
+              <div className="mt-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => onEnsenar(m.id)}
+                  className="inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-[12px] font-medium text-brand-text hover:underline"
+                >
+                  <Sparkles className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden />
+                  Enséñaselo a tu agente
+                </button>
+              </div>
+            )}
           </div>
         );
       })}

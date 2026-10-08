@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN IF NOT EXISTS "follow_up_hours" integer;

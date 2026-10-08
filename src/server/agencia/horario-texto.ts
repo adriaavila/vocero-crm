@@ -104,3 +104,43 @@ export function describeAgentSchedule(
   }
   return { rule, now: "Ahora mismo responde tu agente.", timezone };
 }
+
+/**
+ * Fork — el próximo instante en que el EQUIPO atiende (no el agente), o null
+ * si nunca en la semana que viene. Mismos bordes que `nextAgentStart`.
+ */
+export function nextTeamOpen(settings: BusinessHoursSettings, now: Date): Date | null {
+  if (settings.responseMode === "all_day" && Object.keys(settings.weeklyHours).length === 0) return null;
+  const team = { ...settings, responseMode: "outside_hours" as const };
+  if (!hasConfiguredBusinessHours(team)) return null;
+  if (isBusinessHoursOpen(team, now)) return now;
+  const edges = new Set<string>(["00:00"]);
+  for (const intervals of Object.values(settings.weeklyHours)) {
+    for (const interval of intervals ?? []) edges.add(interval.start);
+  }
+  const today = dayIsoInTz(now, settings.timezone);
+  const candidates: Date[] = [];
+  for (let offset = 0; offset <= 7; offset += 1) {
+    const day = addDaysISO(today, offset);
+    for (const time of edges) {
+      const instant = zonedWallClockToUtc(day, time, settings.timezone);
+      if (instant && instant.getTime() > now.getTime()) candidates.push(instant);
+    }
+  }
+  candidates.sort((a, b) => a.getTime() - b.getTime());
+  return candidates.find((instant) => isBusinessHoursOpen(team, instant)) ?? null;
+}
+
+/**
+ * Fork — lo que el agente le dice al cliente que pidió hablar con una
+ * persona. Antes el traspaso por frase («quiero hablar con un asesor») era
+ * mudo: el cliente no sabía si alguien lo había leído. Si el equipo está
+ * fuera de horario, dice cuándo vuelve; nunca promete «en un momento».
+ */
+export function despedidaTraspaso(settings: BusinessHoursSettings, now: Date): string {
+  const abre = nextTeamOpen(settings, now);
+  if (!abre || abre.getTime() <= now.getTime()) {
+    return "Claro, ya le avisé a una persona del equipo para que te escriba por aquí.";
+  }
+  return `Claro, ya le avisé a una persona del equipo. Ahora estamos fuera de horario: te escribe por aquí ${whenText(abre, now, settings.timezone)}.`;
+}

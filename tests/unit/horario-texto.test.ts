@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   describeAgentSchedule,
   describeTeamHours,
+  despedidaTraspaso,
   nextAgentStart,
+  nextTeamOpen,
   timezoneLabel,
 } from "@/server/agencia/horario-texto";
 import type { BusinessHoursSettings } from "@/server/business-hours";
@@ -86,5 +88,27 @@ describe("timezoneLabel", () => {
   it("deja solo la ciudad", () => {
     expect(timezoneLabel("America/Argentina/Buenos_Aires")).toBe("Buenos Aires");
     expect(timezoneLabel("America/Caracas")).toBe("Caracas");
+  });
+});
+
+describe("despedidaTraspaso (el cliente pidió una persona)", () => {
+  it("con el equipo atendiendo, no promete una hora", () => {
+    expect(despedidaTraspaso(monSat, mondayNoon)).toBe(
+      "Claro, ya le avisé a una persona del equipo para que te escriba por aquí."
+    );
+  });
+
+  it("fuera de horario dice cuándo vuelve el equipo", () => {
+    expect(nextTeamOpen(monSat, mondayNight)?.toISOString()).toBe("2026-08-11T13:00:00.000Z");
+    expect(despedidaTraspaso(monSat, mondayNight)).toBe(
+      "Claro, ya le avisé a una persona del equipo. Ahora estamos fuera de horario: te escribe por aquí mañana a las 09:00."
+    );
+    expect(despedidaTraspaso(monSat, sundayNoon)).toContain("mañana a las 09:00");
+  });
+
+  it("sin horario del equipo, la frase sin hora", () => {
+    const sinEquipo: BusinessHoursSettings = { ...monSat, weeklyHours: {}, responseMode: "all_day" };
+    expect(nextTeamOpen(sinEquipo, mondayNight)).toBeNull();
+    expect(despedidaTraspaso(sinEquipo, mondayNight)).not.toContain("fuera de horario");
   });
 });

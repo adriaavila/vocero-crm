@@ -35,7 +35,8 @@ import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
-import { canAgentRespondNow } from "@/server/business-hours";
+import { canAgentRespondNow, getBusinessHours } from "@/server/business-hours";
+import { despedidaTraspaso } from "@/server/agencia/horario-texto";
 import {
   inboundSinceLastReply,
   promptVersionOf,
@@ -271,8 +272,12 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
 
   // Patrón de respaldo ANTES del LLM (FR-022).
   if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
+    // Fork — el cliente sabe que alguien lo leyó y cuándo le escriben
+    // (`despedidaTraspaso`); antes este traspaso era mudo.
+    const farewell = despedidaTraspaso(await getBusinessHours(organizationId), new Date());
+    const replyId = await deliverReply(conversation, farewell).catch(() => null);
     await applyHandoff(conversationId, organizationId, "cliente");
-    await decide({ action: "handoff", handoffReason: "cliente" });
+    await decide({ action: "handoff", handoffReason: "cliente", replyMessageIds: replyId ? [replyId] : [] });
     return;
   }
 
