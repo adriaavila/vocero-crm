@@ -2,6 +2,7 @@ import { and, eq, gt, isNull, ne, not } from "drizzle-orm";
 import { reanudarSiVencio } from "@/server/agencia/pausa-manual";
 import { getDb, schema } from "@/lib/db";
 import { serializeFicha } from "@/server/bot/ficha";
+import { notasRecientes } from "@/server/agencia/memoria-cliente";
 // Capa de agencia: allowlist del piloto y la cita que el lead ya tiene.
 import { accesoDeAgencia, proximaCita } from "@/server/agencia/bot-perfil";
 import { isWindowOpen, windowRemainingMs } from "@/server/inbox/window";
@@ -30,6 +31,12 @@ export type BotContext = {
     channel: string;
     phone: string | null;
     ficha: ReturnType<typeof serializeFicha>;
+    /**
+     * Fork — notas del equipo y del agente sobre el cliente, las más recientes
+     * (máx. ~1.200 caracteres): para que el cerebro lo atienda como alguien
+     * que ya lo conoce. Son datos, no instrucciones.
+     */
+    notes: string | null;
   };
   conversation: {
     id: string;
@@ -136,6 +143,7 @@ export async function buildBotContext(
       channel: contact.channel,
       phone: contact.phone,
       ficha: serializeFicha(contact),
+      notes: notasRecientes(contact.notes),
     },
     conversation: {
       id: conversation.id,

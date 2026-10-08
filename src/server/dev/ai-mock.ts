@@ -92,6 +92,15 @@ export function aiMockCompletion(messages: InMessage[]): string {
     });
   }
 
+  // Memoria del cliente (sistema aparte): «¿cuándo es mi cita?» se contesta
+  // con la cita que el CRM le pasó, como lo haría un modelo de verdad.
+  const memoria = messages.filter((m) => m.role === "system").slice(1).map((m) => m.content).join("\n");
+  const cita = memoria.match(/Tiene una cita agendada el ([^\n]+?)\.(?:\n|$)/)?.[1];
+  if (cita && /mi cita|a qu[eé] hora/.test(text)) {
+    const nombre = memoria.match(/Se llama ([^\n]+?)\./)?.[1];
+    return JSON.stringify({ action: "reply", text: `${nombre ? `${nombre}, tu` : "Tu"} cita es el ${cita}.` });
+  }
+
   const eco = lastUser.slice(0, 80);
   return JSON.stringify({
     action: "reply",

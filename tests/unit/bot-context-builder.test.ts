@@ -66,6 +66,7 @@ const CONTACT = {
   channel: "whatsapp",
   phone: "5215512345678",
   ficha: {},
+  notes: "[IA] Busca limpieza para su hija",
 };
 
 /** Empuja las filas en el ORDEN exacto de `buildBotContext`: conv+contacto,
@@ -121,6 +122,15 @@ describe("buildBotContext", () => {
     expect(proximaCita).not.toHaveBeenCalled();
     expect(result?.booking).toEqual({ next: null });
     expect(result?.lead).toBeNull();
+  });
+
+  it("contact.notes: el cerebro externo recibe lo que ya se sabe del cliente", async () => {
+    hasSaaSPlan.mockResolvedValue(false);
+    pushRows();
+
+    const result = await buildBotContext("org_1", "cv_1");
+
+    expect(result?.contact.notes).toBe("[IA] Busca limpieza para su hija");
   });
 
   it("agentHasSpoken: true si hay un saliente `ai` no fallido", async () => {

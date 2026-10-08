@@ -67,6 +67,10 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   `components/agencia/ensenar-dialog.tsx`): bajo la primera respuesta de una
   persona a un cliente, un toque la guarda como pregunta y respuesta del
   conocimiento (`/api/kb`); el agente deja de pasar esa pregunta.
+- **El agente recuerda al cliente** (`server/agencia/memoria-cliente.ts`):
+  nombre, notas (las suyas `[IA]` y las del equipo), ficha, su próxima cita y
+  sus visitas van en un mensaje de sistema APARTE (la versión del prompt no
+  cambia por cliente); Nea recibe las notas en `contact.notes` del contexto.
 - **La agenda ve el Google Calendar del dueño**
   (`server/agencia/agenda-externa.ts`): los eventos se espejan como bloqueos.
 - **La ficha mueve el embudo** (`server/agencia/ficha-pipeline.ts`).
