@@ -63,6 +63,10 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   en Inicio): Web Push cuando el agente traspasa una conversación o agenda una
   cita. Las llaves VAPID se derivan de `ENCRYPTION_KEY` (sin variable nueva);
   solo se aceptan endpoints de servicios de push conocidos.
+- **«Enséñaselo a tu agente»** en la bandeja (`lib/ensenar.ts`,
+  `components/agencia/ensenar-dialog.tsx`): bajo la primera respuesta de una
+  persona a un cliente, un toque la guarda como pregunta y respuesta del
+  conocimiento (`/api/kb`); el agente deja de pasar esa pregunta.
 - **La agenda ve el Google Calendar del dueño**
   (`server/agencia/agenda-externa.ts`): los eventos se espejan como bloqueos.
 - **La ficha mueve el embudo** (`server/agencia/ficha-pipeline.ts`).

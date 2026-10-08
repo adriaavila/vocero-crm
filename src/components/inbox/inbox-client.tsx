@@ -13,6 +13,9 @@ import { ConversationList } from "./conversation-list";
 import { MessageThread } from "./message-thread";
 import { Composer } from "./composer";
 import { ContactPanel } from "./contact-panel";
+import { EnsenarDialog } from "@/components/agencia/ensenar-dialog";
+import { useToast } from "@/components/ui/toast-provider";
+import { momentosParaEnsenar, type Momento } from "@/lib/ensenar";
 
 /**
  * Texto que ya salió del compositor pero cuyo POST todavía viaja. Existe solo
@@ -35,7 +38,35 @@ const PANEL_MEDIA_QUERY = "(min-width: 1280px)";
 const isWideEnoughForPanel = () =>
   typeof window !== "undefined" && window.matchMedia(PANEL_MEDIA_QUERY).matches;
 
-export function InboxClient({ channels }: { channels: readonly Channel[] }) {
+/** Las respuestas ya enseñadas (o descartadas) no vuelven a ofrecerse en este navegador. */
+const ENSENADOS_KEY = "allok.ensenados";
+
+function leerEnsenados(): ReadonlySet<string> {
+  try {
+    if (typeof window === "undefined") return new Set();
+    const raw = JSON.parse(localStorage.getItem(ENSENADOS_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(raw) ? raw.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function guardarEnsenados(ids: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(ENSENADOS_KEY, JSON.stringify([...ids].slice(-500)));
+  } catch {
+    // Sin almacenamiento (modo privado): solo se vuelve a ofrecer.
+  }
+}
+
+export function InboxClient({
+  channels,
+  owner = false,
+}: {
+  channels: readonly Channel[];
+  /** Solo el dueño edita el conocimiento: solo él ve «Enséñaselo a tu agente». */
+  owner?: boolean;
+}) {
   const multiChannel = channels.length > 1;
   const [conversations, setConversations] = useState<ConversationDto[] | null>(
     null
@@ -178,6 +209,22 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
   });
 
   const selected = conversations?.find((c) => c.id === selectedId) ?? null;
+
+  // Fork — «Enséñaselo a tu agente»: lo que el dueño contestó por el agente.
+  const notify = useToast();
+  const [ensenando, setEnsenando] = useState<string | null>(null);
+  const [ensenados, setEnsenados] = useState<ReadonlySet<string>>(() => leerEnsenados());
+  const momentos = useMemo(() => (owner ? momentosParaEnsenar(messages) : new Map<string, Momento>()), [owner, messages]);
+  const ensenables = useMemo(
+    () => new Set([...momentos.keys()].filter((id) => !ensenados.has(id))),
+    [momentos, ensenados]
+  );
+  const momentoActivo = ensenando ? momentos.get(ensenando) ?? null : null;
+  function marcarEnsenado(id: string) {
+    const next = new Set(ensenados).add(id);
+    setEnsenados(next);
+    guardarEnsenados(next);
+  }
 
   /**
    * Hilo visible = lo confirmado + lo que aún viaja. El mensaje real puede
@@ -364,7 +411,22 @@ export function InboxClient({ channels }: { channels: readonly Channel[] }) {
                 </button>
               )}
             </header>
-            <MessageThread messages={thread} />
+            {momentoActivo && ensenando && (
+              <EnsenarDialog
+                momento={momentoActivo}
+                onCancel={() => setEnsenando(null)}
+                onSaved={() => {
+                  marcarEnsenado(ensenando);
+                  setEnsenando(null);
+                  notify("Listo: tu agente ya lo sabe.");
+                }}
+              />
+            )}
+            <MessageThread
+              messages={thread}
+              ensenables={owner ? ensenables : undefined}
+              onEnsenar={owner ? (id) => setEnsenando(id) : undefined}
+            />
             <Composer
               conversation={selected}
               onSend={sendText}
