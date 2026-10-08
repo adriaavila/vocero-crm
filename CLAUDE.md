@@ -62,7 +62,9 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 - **Avisos al celular** (`server/agencia/avisos.ts`, `public/sw.js`, tarjeta
   en Inicio): Web Push cuando el agente traspasa una conversación o agenda una
   cita. Las llaves VAPID se derivan de `ENCRYPTION_KEY` (sin variable nueva);
-  solo se aceptan endpoints de servicios de push conocidos.
+  solo se aceptan endpoints de servicios de push conocidos. A las 19:00
+  locales, un resumen del día (`server/agencia/resumen-diario.ts`, una vez por
+  día gracias a `resumen_diario`; un día sin clientes no se avisa).
 - **«Enséñaselo a tu agente»** en la bandeja (`lib/ensenar.ts`,
   `components/agencia/ensenar-dialog.tsx`): bajo la primera respuesta de una
   persona a un cliente, un toque la guarda como pregunta y respuesta del

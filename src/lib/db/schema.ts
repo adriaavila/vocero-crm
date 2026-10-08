@@ -1780,3 +1780,21 @@ export const pushSubscription = pgTable(
     index("push_subscription_org_idx").on(t.organizationId),
   ]
 );
+
+/**
+ * Fork — resumen diario al celular: un renglón por negocio y día local en que
+ * ya se mandó. Reclamarlo con `on conflict do nothing` es lo que impide que un
+ * reinicio o dos instancias lo manden dos veces.
+ */
+export const resumenDiario = pgTable(
+  "resumen_diario",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    /** Día en la zona del negocio, `YYYY-MM-DD`. */
+    dia: text("dia").notNull(),
+    sentAt: timestamp("sent_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("resumen_diario_org_dia_uq").on(t.organizationId, t.dia)]
+);

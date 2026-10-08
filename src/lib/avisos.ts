@@ -74,3 +74,32 @@ export function endpointPermitido(endpoint: string, opts: { local?: boolean } = 
   if (opts.local && url.hostname === "localhost") return true;
   return PUSH_HOSTS.some((re) => re.test(url.hostname));
 }
+
+/** Fork — lo que hizo el agente hoy, para el resumen de la tarde. */
+export type ResumenDia = {
+  /** Clientes que escribieron hoy. */
+  clientes: number;
+  /** Mensajes que contestó el agente. */
+  respuestas: number;
+  /** Citas que agendó el agente hoy. */
+  citas: number;
+  /** Conversaciones que esperan a una persona ahora mismo. */
+  teEsperan: number;
+};
+
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
+/** `null` si hoy no escribió nadie: un resumen en cero solo molesta. */
+export function textoResumenDia(r: ResumenDia): { title: string; body: string } | null {
+  if (r.clientes <= 0) return null;
+  const title = `Hoy te ${r.clientes === 1 ? "escribió" : "escribieron"} ${plural(r.clientes, "cliente", "clientes")}`;
+  const hizo: string[] = [];
+  if (r.respuestas > 0) hizo.push(`tu agente contestó ${plural(r.respuestas, "mensaje", "mensajes")}`);
+  if (r.citas > 0) hizo.push(`agendó ${plural(r.citas, "cita", "citas")}`);
+  const primera = hizo.length ? `${hizo.join(" y ")}.` : "Tu agente no contestó ninguno.";
+  const espera =
+    r.teEsperan > 0
+      ? ` ${r.teEsperan === 1 ? "1 conversación te espera" : `${r.teEsperan} conversaciones te esperan`}.`
+      : " Nadie te espera.";
+  return { title, body: `${primera.charAt(0).toUpperCase()}${primera.slice(1)}${espera}` };
+}

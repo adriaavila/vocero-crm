@@ -20,6 +20,8 @@ type WorkerState = {
   sweptAt?: number;
   /** Fork — hay un barrido de seguimientos en curso. */
   siguiendo?: boolean;
+  /** Fork — hay un barrido de resúmenes diarios en curso. */
+  resumiendo?: boolean;
 };
 
 const globalForWorker = globalThis as unknown as {
@@ -83,6 +85,18 @@ async function poll(state: WorkerState): Promise<void> {
           .catch((error) => console.error("[agent-worker] barrido de seguimientos falló:", error))
           .finally(() => {
             state.siguiendo = false;
+          });
+      }
+      // Fork — resumen diario al celular (19:00 local, una vez por día).
+      if (!state.resumiendo) {
+        state.resumiendo = true;
+        // Import diferido: el resumen arrastra Inicio entero (métricas y
+        // prioridades) y el worker no lo necesita para reclamar turnos.
+        void import("@/server/agencia/resumen-diario")
+          .then((m) => m.barrerResumenesDiarios())
+          .catch((error) => console.error("[agent-worker] barrido de resúmenes falló:", error))
+          .finally(() => {
+            state.resumiendo = false;
           });
       }
     }
