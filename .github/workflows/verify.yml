@@ -118,7 +118,7 @@ jobs:
       # que ci.yml no las corre). Van DESPUÉS del e2e: limpian lo suyo, pero así
       # nada de lo que dejen puede alterar a los guiones.
       - name: data spine e Inicio contra Postgres real
-        run: pnpm exec vitest run tests/unit/data-spine-realdb.test.ts tests/unit/centro-realdb.test.ts tests/unit/hilo-paginas-realdb.test.ts
+        run: pnpm exec vitest run tests/unit/data-spine-realdb.test.ts tests/unit/centro-realdb.test.ts tests/unit/hilo-paginas-realdb.test.ts tests/unit/oir-y-ver-realdb.test.ts
         env:
           REALDB_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vocero
 

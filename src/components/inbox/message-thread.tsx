@@ -34,7 +34,7 @@ function StatusTicks({ status }: { status: MessageDto["status"] }) {
  * verdad (`scrollHeight` contra `clientHeight`) en vez de adivinar por
  * cantidad de caracteres — el ancho real de la burbuja varía con la pantalla.
  */
-function TranscriptText({ text }: { text: string }) {
+function TranscriptText({ text, label = "Transcripción" }: { text: string; label?: string }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const ref = useRef<HTMLSpanElement>(null);
@@ -51,7 +51,7 @@ function TranscriptText({ text }: { text: string }) {
         ref={ref}
         className={cn("whitespace-pre-wrap break-words", !expanded && "line-clamp-4")}
       >
-        Transcripción: {text}
+        {label}: {text}
       </span>
       {overflowing && !expanded && (
         <button
@@ -165,15 +165,19 @@ function MediaBlock({
 
   if (media.kind === "image" || media.kind === "sticker") {
     return (
-      <a href={src} target="_blank" rel="noreferrer noopener" title="Ver completa">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={media.caption ?? mediaLabel(media.kind)}
-          className="max-h-72 max-w-full rounded-md object-contain"
-          loading="lazy"
-        />
-      </a>
+      <span className="block">
+        <a href={src} target="_blank" rel="noreferrer noopener" title="Ver completa">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={media.caption ?? mediaLabel(media.kind)}
+            className="max-h-72 max-w-full rounded-md object-contain"
+            loading="lazy"
+          />
+        </a>
+        {/* Fork — lo que el agente vio en la foto (oír y ver). */}
+        {transcript && <TranscriptText text={transcript} label="El agente vio" />}
+      </span>
     );
   }
   if (media.kind === "video") {

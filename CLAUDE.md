@@ -73,6 +73,13 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   nombre, notas (las suyas `[IA]` y las del equipo), ficha, su próxima cita y
   sus visitas van en un mensaje de sistema APARTE (la versión del prompt no
   cambia por cliente); Nea recibe las notas en `contact.notes` del contexto.
+- **El agente oye y ve** (`server/agencia/oir-y-ver.ts`, `lib/medios-agente.ts`):
+  Rei transcribe las notas de voz y describe las fotos nuevas del cliente
+  antes de contestar (Gemini Flash-Lite por OpenRouter; con solo OpenAI,
+  whisper y gpt-4o-mini), y lo guarda en `message.transcript` (primera
+  escritura gana, como Nea). Pie de foto, documento, ubicación y contacto
+  llegan como una línea entre corchetes; lo que no se pudo oír le pide al
+  agente que se lo escriban. Antes, todo mensaje sin texto se descartaba.
 - **La agenda ve el Google Calendar del dueño**
   (`server/agencia/agenda-externa.ts`): los eventos se espejan como bloqueos.
 - **La ficha mueve el embudo** (`server/agencia/ficha-pipeline.ts`).
