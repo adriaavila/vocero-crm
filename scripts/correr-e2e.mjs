@@ -4,10 +4,12 @@
 //
 // `next dev` se reinicia solo cuando su memoria pasa del 80% del límite («Server
 // is approaching the used memory threshold, restarting...»), y tira lo que
-// estaba en vuelo: se lee como un fallo del producto en el guion que tocó. Por
-// eso, antes de cada guion se espera a que la app conteste, y un guion que
-// falló MIENTRAS el servidor se reiniciaba se corre una vez más. Para saberlo
-// hace falta el log del servidor (`E2E_NEXT_LOG`); sin él no se repite nada.
+// estaba en vuelo; y al volver, cada pantalla se compila de nuevo y tarda más
+// que la espera de los guiones. Las dos cosas se leen como un fallo del
+// producto. Por eso, antes de cada guion se espera a que la app conteste, y un
+// guion que falló con un reinicio reciente (durante él o durante el anterior)
+// se corre una vez más, ya con las rutas compiladas. Para saberlo hace falta el
+// log del servidor (`E2E_NEXT_LOG`); sin él no se repite nada.
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 
@@ -36,13 +38,17 @@ function correr(f) {
   return spawnSync(process.execPath, args, { stdio: "inherit" }).status === 0;
 }
 
+// Reinicios contados al empezar el guion anterior.
+let desde = 0;
+
 async function guion(f) {
   console.log(`== ${f}`);
   await esperarApp();
-  const antes = reinicios();
+  const antes = desde;
+  desde = reinicios();
   if (correr(f)) return true;
   if (reinicios() === antes) return false;
-  console.log(`== ${f}: el servidor de desarrollo se reinició a mitad del guion; se repite una vez`);
+  console.log(`== ${f}: el servidor de desarrollo se reinició hace poco; se repite una vez`);
   await esperarApp();
   return correr(f);
 }
@@ -55,6 +61,7 @@ const resto = readdirSync("scripts")
 if (!(await guion("scripts/e2e-selftest.mjs"))) process.exit(1);
 const fallaron = [];
 for (const f of resto) if (!(await guion(f))) fallaron.push(f);
+if (LOG) console.log(`\nReinicios de next dev por memoria: ${reinicios()}`);
 if (fallaron.length) {
   console.log(`\nFallaron: ${fallaron.join(", ")}`);
   process.exit(1);
