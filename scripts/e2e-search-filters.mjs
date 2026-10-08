@@ -165,8 +165,7 @@ await cbox.fill(FMT);
 cl = await cRowsUntil((l) => has(l, `Zoraida${S}`));
 ok("teléfono con formato desde el servidor", has(cl, `Zoraida${S}`), JSON.stringify(cl));
 await cbox.fill("");
-await cp.waitForTimeout(900);
-cl = await cRows();
+cl = await cRowsUntil((l) => l.some((t) => t.includes(stage)));
 ok("la etapa se pinta en la ficha del contacto", cl.some((t) => t.includes(stage)),
    JSON.stringify(cl.slice(0, 2)));
 
@@ -176,8 +175,7 @@ const cOptions = await cSel.locator("option").allInnerTexts();
 ok("las etapas vienen del pipeline completo",
    cOptions[0] === "Toda etapa" && cOptions.length > 1, JSON.stringify(cOptions));
 await cSel.selectOption(stage);
-await cp.waitForTimeout(900);
-cl = await cRows();
+cl = await cRowsUntil((l) => l.length > 0 && l.every((t) => t.includes(stage)));
 ok(`Contactos filtrado por '${stage}'`,
    cl.length > 0 && cl.every((t) => t.includes(stage)), JSON.stringify(cl.length));
 
