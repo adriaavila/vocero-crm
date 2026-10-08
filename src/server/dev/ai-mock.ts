@@ -12,6 +12,23 @@ import { SEGUIMIENTO_MARKER } from "@/server/agencia/seguimiento-prompt";
 
 type InMessage = { role: string; content: string };
 
+/** Lo que «oye» el mock en una nota de voz (también lo devuelve su whisper). */
+export const MOCK_NOTA_DE_VOZ = "Hola, quería saber si atienden el sábado en la mañana";
+/** Lo que «ve» el mock en una imagen. */
+export const MOCK_IMAGEN = "Comprobante de transferencia por $450 a nombre de la clínica";
+
+/** Fork — partes de audio/imagen (oír y ver); null si no hay ninguna. */
+export function aiMockMedia(messages: { content: unknown }[]): string | null {
+  for (const m of messages) {
+    if (!Array.isArray(m.content)) continue;
+    for (const part of m.content as { type?: string }[]) {
+      if (part?.type === "input_audio") return MOCK_NOTA_DE_VOZ;
+      if (part?.type === "image_url") return MOCK_IMAGEN;
+    }
+  }
+  return null;
+}
+
 export function aiMockCompletion(messages: InMessage[]): string {
   const system = messages.find((m) => m.role === "system")?.content ?? "";
   const lastUser =

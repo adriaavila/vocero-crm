@@ -4,6 +4,7 @@ import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { memoriaParaPrompt } from "@/server/agencia/memoria-cliente";
+import { historialParaAgente } from "@/server/agencia/oir-y-ver";
 import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
 import {
@@ -271,8 +272,20 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
+  // Fork — notas de voz, fotos, ubicaciones… como líneas que el modelo
+  // entiende (`server/agencia/oir-y-ver`); antes se descartaba todo lo que no
+  // era texto y el agente contestaba otra vez el mensaje anterior.
+  const lineas = await historialParaAgente({
+    organizationId,
+    conversationId,
+    history,
+    proveedores: aiConfig.providers,
+  });
+  const ultimaDelCliente = [...lineas].reverse().find((l) => l.direction === "in");
+  if (!ultimaDelCliente) return;
+
   // Patrón de respaldo ANTES del LLM (FR-022).
-  if (lastInbound.text && matchesHandoffIntent(lastInbound.text)) {
+  if (matchesHandoffIntent(ultimaDelCliente.content)) {
     // Fork — el cliente sabe que alguien lo leyó y cuándo le escriben
     // (`despedidaTraspaso`); antes este traspaso era mudo.
     const farewell = despedidaTraspaso(await getBusinessHours(organizationId), new Date());
@@ -318,12 +331,10 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...(memoria ? [{ role: "system" as const, content: memoria }] : []),
-    ...history
-      .filter((m) => m.text)
-      .map((m) => ({
-        role: m.direction === "in" ? ("user" as const) : ("assistant" as const),
-        content: m.text!,
-      })),
+    ...lineas.map((m) => ({
+      role: m.direction === "in" ? ("user" as const) : ("assistant" as const),
+      content: m.content,
+    })),
   ];
 
   const llmStartedAt = Date.now();
