@@ -584,6 +584,9 @@ export const message = pgTable(
     // mensajes de ESTA conversación" sin la organización por delante: sin
     // este índice cada turno recorría la tabla entera de mensajes.
     index("message_conv_created_idx").on(t.conversationId, t.createdAt),
+    // Fork — Inicio y Resultados cuentan los mensajes de un periodo del
+    // negocio («hoy», «7 días»): sin esto leían toda su historia.
+    index("message_org_created_idx").on(t.organizationId, t.createdAt),
     // Data spine: "¿qué mensajes salieron de este evento?" y el ON DELETE SET
     // NULL de raw_event no recorren toda la tabla. Parcial: casi todo mensaje
     // saliente y los de antes de la columna no la llevan.
