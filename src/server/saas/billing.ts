@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Stripe from "stripe";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
@@ -193,7 +194,14 @@ type Db = ReturnType<typeof getDb>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbOrTx = Db | Tx;
 
-export async function getOrganizationBilling(organizationId: string, db: DbOrTx = getDb()): Promise<SaaSBillingState> {
+export async function getOrganizationBilling(organizationId: string, db?: DbOrTx): Promise<SaaSBillingState> {
+  // Fuera de una transacción, una lectura por render (el layout y la página la piden igual).
+  return db ? readOrganizationBilling(organizationId, db) : readOrganizationBillingOnce(organizationId);
+}
+
+const readOrganizationBillingOnce = cache((organizationId: string) => readOrganizationBilling(organizationId, getDb()));
+
+async function readOrganizationBilling(organizationId: string, db: DbOrTx): Promise<SaaSBillingState> {
   const rows = await db
     .select({ metadata: schema.organization.metadata })
     .from(schema.organization)

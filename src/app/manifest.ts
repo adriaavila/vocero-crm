@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { DEFAULT_BRANDING } from "@/lib/branding";
 import { brand } from "@/lib/brand";
 import { ALLOK_ICON_VERSION, faviconHref } from "@/lib/favicon";
-import { getBranding } from "@/server/branding";
+import { fallbackBranding, getBranding } from "@/server/branding";
 import { headers } from "next/headers";
 import { isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
@@ -22,7 +22,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     // comentario en opengraph-image.tsx) para no tocar el resultado de allok
     // en este respaldo de borde (host de alta sin organización resuelta).
     ? Promise.resolve({ ...DEFAULT_BRANDING, name: brand().name })
-    : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
+    : getBranding(organizationId)).catch(() => fallbackBranding());
   // allok mantiene sus PNG estáticos (icon.svg y los dos de public/), ya
   // pinneados por tests/unit/favicon.test.ts. Rei no tiene esos archivos
   // (son geometría de ALLOK_MARK) — su icono sale de la misma ruta dinámica

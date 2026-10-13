@@ -11,7 +11,7 @@ self.addEventListener("push", (event) => {
   try {
     data = event.data ? event.data.json() : {};
   } catch {
-    data = { title: "allok", body: event.data ? event.data.text() : "" };
+    data = { body: event.data ? event.data.text() : "" };
   }
   const title = data.title || "Tienes un aviso";
   event.waitUntil(
@@ -20,8 +20,9 @@ self.addEventListener("push", (event) => {
       tag: data.tag || undefined,
       // El mismo tag reemplaza al aviso anterior; `renotify` hace que suene igual.
       renotify: Boolean(data.tag),
-      icon: "/icon-512.png",
-      badge: "/icon-512.png",
+      // El icono lo manda el servidor según la marca (Rei); sin él, el de allok.
+      icon: data.icon || "/icon-512.png",
+      badge: data.icon ? undefined : "/icon-512.png",
       data: { url: data.url || "/inbox" },
     })
   );

@@ -5,6 +5,7 @@ import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { getEnv } from "@/lib/env";
 import { textoAviso, type Aviso } from "@/lib/avisos";
+import { brand } from "@/lib/brand";
 
 /**
  * Fork — avisos al celular (Web Push).
@@ -146,7 +147,8 @@ export async function enviarAviso(
   if (subs.length === 0) return 0;
 
   const vapid = vapidKeys();
-  const payload = JSON.stringify(aviso);
+  // Los PNG de public/ son el sello de allok: Rei manda el suyo, el de la pestaña.
+  const payload = JSON.stringify(brand().id === "rei" ? { ...aviso, icon: "/api/branding/favicon" } : aviso);
   const muertas: string[] = [];
   const entregadas: string[] = [];
   await Promise.all(

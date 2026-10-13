@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { parseBody, withOwner } from "@/lib/api";
 import { getSessionOrNull } from "@/lib/auth/session";
-import { DEFAULT_BRANDING, isValidHex, resolveAccentSet } from "@/lib/branding";
+import { isValidHex, resolveAccentSet } from "@/lib/branding";
 import { CURRENCIES } from "@/lib/money";
-import { getBranding, saveBranding } from "@/server/branding";
+import { fallbackBranding, getBranding, saveBranding } from "@/server/branding";
 import { isAllokSaaSMode, isKnownAllokHost, isLegacyAppHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
 
@@ -22,7 +22,8 @@ export async function GET(req: Request) {
       : null;
   if (saasMode && tenantSlug && !hostOrganizationId) return Response.json({ error: "not_found" }, { status: 404 });
   if (saasMode && !tenantSlug && !isLegacyAppHost(host)) {
-    return Response.json({ branding: DEFAULT_BRANDING, accentSet: resolveAccentSet(DEFAULT_BRANDING.accent) });
+    const branding = fallbackBranding();
+    return Response.json({ branding, accentSet: resolveAccentSet(branding.accent) });
   }
   const session = await getSessionOrNull();
   const branding = await getBranding(hostOrganizationId ?? session?.organizationId);

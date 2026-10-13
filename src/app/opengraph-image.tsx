@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { DEFAULT_BRANDING, resolveAccentSet } from "@/lib/branding";
 import { brand } from "@/lib/brand";
 import { ALLOK_MARK, faviconInitial, REI_MARK_ACCENT } from "@/lib/favicon";
-import { getBranding } from "@/server/branding";
+import { fallbackBranding, getBranding } from "@/server/branding";
 import { headers } from "next/headers";
 import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
@@ -19,7 +19,7 @@ export default async function Image() {
     : undefined;
   const branding = await (isAllokSaaSMode() && !organizationId
     ? Promise.resolve({ ...DEFAULT_BRANDING, name: brand().name })
-    : getBranding(organizationId)).catch(() => DEFAULT_BRANDING);
+    : getBranding(organizationId)).catch(() => fallbackBranding());
   const { accent, fg } = resolveAccentSet(branding.accent);
   // Con marca (allok o Rei) firma su símbolo, como el favicon; en Vocero, la inicial.
   const saas = isAllokBrand();

@@ -37,6 +37,12 @@ export function helpUrl(): string {
   return contactHref(brand().helpMessage);
 }
 
+/** La marca y su soporte para el texto de los errores del alta de WhatsApp (`lib/onboarding-errors`). */
+export function onboardingBrand(): { brandName: string; supportHref: string | null } {
+  const href = helpUrl();
+  return { brandName: brand().name, supportHref: href === "#" ? null : href };
+}
+
 /** "por WhatsApp" / "por correo", para que el botón diga por dónde escribe de verdad. */
 export function contactChannelSuffix(): string {
   const { contact } = brand();

@@ -3,7 +3,7 @@ import { WhatsappWizard } from "@/components/settings/whatsapp-wizard";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { isEmbeddedSignupConfigured } from "@/lib/env";
 import { requireSession } from "@/lib/auth/session";
-import { brand } from "@/lib/brand";
+import { onboardingBrand } from "@/components/agencia/allok/setup-contact";
 import { getDb, schema } from "@/lib/db";
 import { getSetupProgress } from "@/server/agencia/setup-progress";
 import { appOrigin } from "@/server/saas/billing";
@@ -43,7 +43,8 @@ export default async function WhatsappSettingsPage() {
       guidedAvailable={guidedAvailable}
       bridgeUrl={bridgeUrl}
       initialProgress={progress}
-      brandName={brand().name}
+      brandName={onboardingBrand().brandName}
+      supportHref={onboardingBrand().supportHref}
     />
   );
 }

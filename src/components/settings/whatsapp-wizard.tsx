@@ -62,6 +62,7 @@ export function WhatsappWizard({
   bridgeUrl = null,
   initialProgress = null,
   brandName = "allok",
+  supportHref = null,
 }: {
   saasMode?: boolean;
   guidedAvailable?: boolean;
@@ -73,6 +74,8 @@ export function WhatsappWizard({
   initialProgress?: SetupProgress | null;
   /** Marca del despliegue, en la forma que se escribe dentro de una oración. */
   brandName?: string;
+  /** Adonde escribe el dueño si su número ya está en otra cuenta (`helpUrl()`). */
+  supportHref?: string | null;
 }) {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [evidence, setEvidence] = useState<ConnectionEvidence | null>(null);
@@ -187,6 +190,7 @@ export function WhatsappWizard({
           onShowConnectChange={setShowConnect}
           onViewChange={setView}
           onChanged={() => void refetch()}
+          brand={{ brandName, supportHref }}
         />
       )}
 

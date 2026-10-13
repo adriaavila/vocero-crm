@@ -9,6 +9,7 @@ import { tenantOrigin } from "@/server/saas/billing";
 import { resolveOwnerForOrgSlug } from "@/server/agencia/whatsapp-signup/auth";
 import { isEmbeddedSignupConfigured } from "@/lib/env";
 import { EmbeddedSignupBridge } from "@/components/agencia/whatsapp-signup/embedded-signup-bridge";
+import { onboardingBrand } from "@/components/agencia/allok/setup-contact";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ export default async function ConectarWhatsappPage({
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-subtle p-4">
-      <EmbeddedSignupBridge orgSlug={context.organizationSlug} organizationName={context.organizationName} />
+      <EmbeddedSignupBridge orgSlug={context.organizationSlug} organizationName={context.organizationName} brand={onboardingBrand()} />
     </main>
   );
 }

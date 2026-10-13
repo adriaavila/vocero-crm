@@ -1,4 +1,4 @@
-import { brand } from "@/lib/brand";
+import { brand, emailColors } from "@/lib/brand";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { sendEmail, type EmailMessage } from "./email";
 
@@ -56,11 +56,12 @@ export function buildPasswordResetEmail(input: {
     name,
   ].join("\n");
   const href = escapeHtml(input.url);
+  const colors = emailColors();
   const html = [
-    '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;color:#0b0d0e;max-width:480px;margin:0 auto;padding:24px;line-height:1.5">',
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${colors.text};max-width:480px;margin:0 auto;padding:24px;line-height:1.5">`,
     "<p>Hola,</p>",
     `<p>Pediste restablecer tu contraseña de ${escapeHtml(name)}. Elige una nueva con este botón:</p>`,
-    `<p style="margin:24px 0"><a href="${href}" style="background:#0b0d0e;color:#f7f8f8;text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block;font-weight:600">Elegir contraseña nueva</a></p>`,
+    `<p style="margin:24px 0"><a href="${href}" style="background:${colors.button};color:${colors.buttonText};text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block;font-weight:600">Elegir contraseña nueva</a></p>`,
     `<p style="font-size:13px;color:#5b6167">¿No abre el botón? Copia este enlace en tu navegador:<br><a href="${href}" style="color:#5b6167;word-break:break-all">${href}</a></p>`,
     `<p style="font-size:13px;color:#5b6167">El enlace vale ${ttl} y se usa una sola vez. Si no fuiste tú, ignora este correo: tu contraseña sigue igual.</p>`,
     "</div>",

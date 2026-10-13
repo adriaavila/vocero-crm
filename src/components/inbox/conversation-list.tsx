@@ -13,10 +13,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatTime, previewText } from "./helpers";
 
-/* Puntos de etapa con la paleta de la landing: azul, ámbar, verde WhatsApp. */
+/* Puntos de etapa con la paleta de la landing: azul (el de la marca), ámbar, verde WhatsApp. */
 const STAGE_DOT: Record<string, string> = {
   Nuevo: "#8391aa",
-  "En conversación": "#0d5bff",
+  "En conversación": "var(--info)",
   Interesado: "#f2a71b",
   Cliente: "#1fb35b",
   Perdido: "#d94a4a",

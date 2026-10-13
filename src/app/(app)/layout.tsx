@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
-import { requireSession, SaaSMemberPlanRequiredError, UnauthorizedError } from "@/lib/auth/session";
+import { getAuthSession, requireSession, SaaSMemberPlanRequiredError, UnauthorizedError } from "@/lib/auth/session";
 import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
 import { AppShell } from "@/components/app-shell";
@@ -35,21 +34,20 @@ export default async function AppLayout({
     session = null;
   }
   if (!session) redirect("/login");
+  const allokBrand = isAllokBrand() && brand().id === "allok";
   const branding = await getBranding(session.organizationId);
   const [billing, systemState, realty] = await Promise.all([
     saasMode ? getOrganizationBilling(session.organizationId) : null,
-    // El punto de all ● k: va donde va la marca allok, también en la dedicada.
-    // Es la identidad "all ok" en sí misma, no un widget genérico: Rei
-    // (y una instancia sin marca) usan el nav llano de siempre.
-    isAllokBrand() && brand().id === "allok"
+    // El estado de la operación: lo leen Inicio y el embudo del SaaS (también
+    // en Rei) y el punto de all ● k donde va la marca allok. Rei usa el estado
+    // sin el cromo de allok (`allokBrand` abajo).
+    saasMode || allokBrand
       ? getSystemState(session.organizationId, session.role === "owner")
       : null,
     // Vertical inmobiliario (parte 1): por ORGANIZACIÓN, no de instancia.
     isRealtyOrg(session.organizationId),
   ]);
-  const authSession = await getAuth().api.getSession({
-    headers: requestHeaders,
-  });
+  const authSession = await getAuthSession();
   const theme = normalizeThemePreference(
     (await cookies()).get(THEME_COOKIE)?.value
   );
@@ -70,6 +68,7 @@ export default async function AppLayout({
       saasMode={saasMode}
       saasPlan={billing?.status === "active" || billing?.status === "trialing" ? billing.plan : null}
       systemState={systemState}
+      allokBrand={allokBrand}
       productLabel={brand().name}
     >
       <ToastProvider>{children}</ToastProvider>
