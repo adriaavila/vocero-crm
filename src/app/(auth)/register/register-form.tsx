@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, Copy, ShieldCheck } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
 import { capturarOrigenAlta, enviarOrigenAlta } from "@/components/agencia/origen-alta";
 import { SETUP_STEP_META, SETUP_STEP_ORDER } from "@/lib/setup-steps";
 import { signUp } from "@/lib/auth/client";
 import { registerFailure, type RegisterFailure } from "@/lib/auth/register-error";
 import { isSaaSPlan, PLAN_CATALOG } from "@/lib/saas-plans";
+import { slugifyTenantName } from "@/lib/tenant-host";
 import type { SaaSPlan } from "@/server/saas/billing";
 import type { Brand } from "@/lib/brand";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export default function RegisterForm({
   selfServe = false,
   brand,
   exampleHost,
+  rootDomain,
 }: {
   adminMode?: boolean;
   soldPlans: SaaSPlan[];
@@ -46,6 +48,8 @@ export default function RegisterForm({
   brand: Pick<Brand, "id" | "Name" | "pricingHref">;
   /** `clinica-perez.<dominio-raíz>`, también resuelto en el servidor. */
   exampleHost: string;
+  /** `reiprop.tech` / `allok.fun`: la dirección se muestra mientras se escribe. */
+  rootDomain: string;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -57,7 +61,22 @@ export default function RegisterForm({
   const [loading, setLoading] = useState(false);
   const defaultPlan = soldPlans[0] ?? "basic";
   const [plan, setPlan] = useState<SaaSPlan>(defaultPlan);
-  const [created, setCreated] = useState<{ email: string; url: string | null } | null>(null);
+  const [created, setCreated] = useState<{
+    email: string;
+    url: string | null;
+    plan: SaaSPlan | null;
+    mensaje: string | null;
+  } | null>(null);
+  // Alta admin: la dirección la elige el admin. Sale del nombre mientras no
+  // la toque; cuando la edita, ya no se pisa.
+  const [slug, setSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
+  const [activarPlan, setActivarPlan] = useState(true);
+  const [errorField, setErrorField] = useState<"slug" | "email" | null>(null);
+  const [copied, setCopied] = useState(false);
+  const suggestedSlug = name.trim() ? slugifyTenantName(name) : "";
+  const shownSlug = adminMode ? (slugEdited ? slug : suggestedSlug) : suggestedSlug;
+  const adminPlan: SaaSPlan | null = soldPlans[0] ?? null;
   // Fork (agencia): en el autoservicio también se puede pagar desde el alta.
   // Los 7 días gratis se respetan igual: Stripe empieza a cobrar al terminar.
   const [payNow, setPayNow] = useState(false);
@@ -98,6 +117,7 @@ export default function RegisterForm({
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setErrorField(null);
     setExistingAccount(false);
     setLoading(true);
     if (adminMode) {
@@ -108,16 +128,22 @@ export default function RegisterForm({
         // La ruta reenvía los headers a Better Auth: con la zona del navegador
         // el horario del negocio nace en ella y no en Ciudad de México.
         headers: { "content-type": "application/json", "x-timezone": browserTimeZone() },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, slug: shownSlug, activarPlan: Boolean(adminPlan && activarPlan) }),
       }).catch(() => null);
       const payload = (await response?.json().catch(() => null)) as
-        { url?: string | null; message?: string } | null;
+        { url?: string | null; message?: string; field?: string; plan?: string | null; mensaje?: string | null } | null;
       setLoading(false);
       if (!response?.ok) {
-        setError(payload?.message ?? "No se pudo crear el negocio.");
+        setError(payload?.message ?? "No se pudo crear el negocio. Revisa tu conexión y vuelve a intentar.");
+        setErrorField(payload?.field === "slug" || payload?.field === "email" ? payload.field : null);
         return;
       }
-      setCreated({ email, url: payload?.url ?? null });
+      setCreated({
+        email,
+        url: payload?.url ?? null,
+        plan: payload?.plan && isSaaSPlan(payload.plan) ? payload.plan : null,
+        mensaje: payload?.mensaje ?? null,
+      });
       return;
     }
     let err: Awaited<ReturnType<typeof signUp.email>>["error"] | { status: number } | null;
@@ -184,16 +210,48 @@ export default function RegisterForm({
   }
 
   if (created) {
+    const host = created.url?.replace(/^https?:\/\//, "") ?? null;
     return (
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle>Negocio creado</CardTitle>
           <CardDescription>
-            {created.email} ya puede entrar{created.url ? <> en <a href={`${created.url}/login`} className="font-medium text-foreground hover:underline">{created.url.replace(/^https?:\/\//, "")}</a></> : null} con la contraseña que pusiste. Pídele que la cambie en Cuenta.
+            {created.email} ya puede entrar{host ? <> en <a href={`${created.url}/login`} className="font-medium text-foreground hover:underline">{host}</a></> : null} con la contraseña que pusiste.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button type="button" variant="outline" className="w-full" onClick={() => { setCreated(null); setName(""); setEmail(""); setPassword(""); }}>
+        <CardContent className="space-y-4">
+          <ul className="space-y-1.5 text-sm">
+            <li className="flex items-center gap-2"><Check className="h-4 w-4 text-success" aria-hidden="true" />Cuenta del dueño creada</li>
+            {created.plan ? (
+              <li className="flex items-center gap-2"><Check className="h-4 w-4 text-success" aria-hidden="true" />Plan {brand.Name} {PLAN_CATALOG[created.plan].name} activo</li>
+            ) : (
+              <li className="flex items-center gap-2 text-text-3"><StateDot state="pausado" size={8} decorative />Sin plan: lo activas desde el panel admin cuando pague</li>
+            )}
+            <li className="flex items-center gap-2 text-text-3"><StateDot state="pausado" size={8} decorative />El agente está en pausa hasta que el dueño lo active</li>
+          </ul>
+          {created.mensaje && (
+            <div className="space-y-2">
+              <p className="kicker">Mensaje para el dueño</p>
+              <p className="whitespace-pre-line rounded-lg border bg-subtle p-3 text-sm text-text-2">{created.mensaje}</p>
+              <Button
+                type="button"
+                className="min-h-11 w-full"
+                onClick={async () => {
+                  await navigator.clipboard?.writeText(created.mensaje ?? "").catch(() => null);
+                  setCopied(true);
+                }}
+              >
+                {copied ? <><Check className="mr-2 h-4 w-4" />Copiado</> : <><Copy className="mr-2 h-4 w-4" />Copiar mensaje</>}
+              </Button>
+              <p className="text-xs text-text-3">La contraseña no va en el mensaje: pásasela por otro lado.</p>
+            </div>
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full"
+            onClick={() => { setCreated(null); setName(""); setEmail(""); setPassword(""); setSlug(""); setSlugEdited(false); setCopied(false); }}
+          >
             Crear otro
           </Button>
         </CardContent>
@@ -204,9 +262,11 @@ export default function RegisterForm({
   return (
     <Card className="shadow-md">
       <CardHeader>
-        <CardTitle>Empieza con tu negocio</CardTitle>
+        <CardTitle>{adminMode ? "Crear un negocio" : "Empieza con tu negocio"}</CardTitle>
         <CardDescription>
-          {demo
+          {adminMode
+            ? "Creas la cuenta del dueño y eliges su dirección. Al final te queda un mensaje listo para mandarle."
+            : demo
             ? "Tu agente llega con lo que aprendió de tu web: lo revisas, lo pruebas y decides cuándo activarlo."
             : "En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar tu agente."}
         </CardDescription>
@@ -249,7 +309,7 @@ export default function RegisterForm({
               </label>
             )}
           </fieldset>
-        ) : (
+        ) : adminMode ? null : (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm"><span><span className="block text-xs text-text-3">Plan seleccionado</span><span className="font-semibold">{brand.Name} {PLAN_CATALOG[plan].name}</span></span><Link href={brand.pricingHref} className="inline-flex min-h-11 items-center text-xs font-semibold text-brand-text hover:underline">Cambiar</Link></div>
         )}
         <form onSubmit={onSubmit} className="space-y-4">
@@ -264,26 +324,52 @@ export default function RegisterForm({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Se usará para sugerir tu subdominio, por ejemplo {exampleHost}.
-            </p>
+            {!adminMode && (
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                {shownSlug
+                  ? <>Tu dirección será <span className="font-medium text-foreground">{shownSlug}.{rootDomain}</span></>
+                  : <>Con él armamos tu dirección, por ejemplo {exampleHost}.</>}
+              </p>
+            )}
           </div>
+          {adminMode && (
+            <div className="space-y-1.5">
+              <Label htmlFor="slug">Dirección</Label>
+              <div className={`flex min-h-11 items-center rounded-md border bg-background pr-3 text-sm focus-within:ring-2 focus-within:ring-ring ${errorField === "slug" ? "border-destructive" : "border-input"}`}>
+                <input
+                  id="slug"
+                  className="min-h-11 min-w-0 flex-1 bg-transparent px-3 outline-none"
+                  required
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder={exampleHost.split(".")[0]}
+                  aria-invalid={errorField === "slug" || undefined}
+                  aria-describedby={errorField === "slug" ? "register-error" : undefined}
+                  value={shownSlug}
+                  onChange={(e) => { setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-")); setSlugEdited(true); }}
+                />
+                <span className="shrink-0 text-text-3">.{rootDomain}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Sale del nombre; cámbiala si quieres una más corta.</p>
+            </div>
+          )}
           <div className="space-y-1.5">
-            <Label htmlFor="email">Correo</Label>
+            <Label htmlFor="email">{adminMode ? "Correo del dueño" : "Correo"}</Label>
             <Input
               className="min-h-11"
               id="email"
               type="email"
               autoComplete="email"
               required
-              aria-invalid={existingAccount || undefined}
+              aria-invalid={existingAccount || errorField === "email" || undefined}
               aria-describedby={existingAccount ? "register-error" : undefined}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="password">Contraseña</Label>
+            <Label htmlFor="password">{adminMode ? "Contraseña temporal" : "Contraseña"}</Label>
             <Input
               className="min-h-11"
               id="password"
@@ -294,7 +380,17 @@ export default function RegisterForm({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            {adminMode && <p className="text-xs text-muted-foreground">Mínimo 8 caracteres. El dueño la cambia en Cuenta.</p>}
           </div>
+          {adminMode && adminPlan && (
+            <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm">
+              <input type="checkbox" className="mt-1 accent-[var(--accent)]" checked={activarPlan} onChange={(e) => setActivarPlan(e.target.checked)} />
+              <span>
+                <span className="block font-semibold">Activar el plan {brand.Name} {PLAN_CATALOG[adminPlan].name} ahora</span>
+                <span className="block text-xs text-text-3">Para quien paga por transferencia o link. Sin esto, lo activas después desde el panel admin.</span>
+              </span>
+            </label>
+          )}
           {error && (
             <p id="register-error" role="alert" className="text-sm text-destructive">
               {error}
@@ -309,7 +405,9 @@ export default function RegisterForm({
             </p>
           )}
           <Button type="submit" className="min-h-11 w-full" disabled={loading}>
-            {loading ? "Creando tu espacio…" : <>{selfServe && payNow ? "Continuar al pago" : "Continuar"} <ArrowRight className="ml-2 h-4 w-4" /></>}
+            {loading
+              ? adminMode ? "Creando el negocio…" : "Creando tu espacio…"
+              : <>{adminMode ? "Crear negocio" : selfServe && payNow ? "Continuar al pago" : "Continuar"} <ArrowRight className="ml-2 h-4 w-4" /></>}
           </Button>
           {selfServe && (
             <p className="text-center text-xs text-text-3">
@@ -318,7 +416,7 @@ export default function RegisterForm({
                 : "7 días gratis del plan Completo. Después eliges tu plan."}
             </p>
           )}
-          <div className="rounded-lg border bg-subtle p-3">
+          {!adminMode && <div className="rounded-lg border bg-subtle p-3">
             <p className="kicker">Lo que sigue</p>
             <ol className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-text-2">
               {SETUP_STEP_ORDER.map((key) => (
@@ -328,17 +426,19 @@ export default function RegisterForm({
                 </li>
               ))}
             </ol>
-          </div>
+          </div>}
           <p className="flex items-start justify-center gap-1.5 text-center text-xs leading-relaxed text-text-3">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" aria-hidden="true" />
-            Tu agente empieza en pausa: no le escribe a nadie hasta que tú lo actives.
+            {adminMode
+              ? "El agente empieza en pausa: no le escribe a nadie hasta que el dueño lo active."
+              : "Tu agente empieza en pausa: no le escribe a nadie hasta que tú lo actives."}
           </p>
-          <p className="text-center text-sm text-muted-foreground">
+          {!adminMode && <p className="text-center text-sm text-muted-foreground">
             ¿Ya tienes cuenta?{" "}
             <Link href="/login" className="inline-flex min-h-11 items-center text-primary hover:underline">
               Inicia sesión
             </Link>
-          </p>
+          </p>}
         </form>
       </CardContent>
     </Card>
