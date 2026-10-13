@@ -394,6 +394,15 @@ async function main() {
   console.log("\n== 11. Correos de la prueba: una vez por negocio ==");
   const run = async () => (await owner(APP_HOST, "/api/dev/trial-lifecycle", { method: "POST" })).json;
   const [fresh] = await sql`select o.id from organization o where o.slug = ${intruderSlug}`;
+  // Dos días después del alta, con el agente apagado: «te falta un paso» con el enlace al paso que toca.
+  await sql`update organization set metadata = jsonb_set(metadata::jsonb, '{allok,billing,currentPeriodEnd}', to_jsonb(${new Date(Date.now() + 5 * 86400000).toISOString()}::text))::text where id = ${fresh.id}`;
+  const [freshOwner] = await sql`select u.email from member m join "user" u on u.id = m.user_id where m.organization_id = ${fresh.id} and m.role = 'owner' limit 1`;
+  const s1 = await run();
+  ok("al día siguiente del alta, sin el agente encendido, sale 'te falta un paso' (1)", s1?.setup >= 1, JSON.stringify(s1));
+  ok("y no se repite", (await run())?.setup === 0);
+  const nudge = await fetch(`${process.env.EMAIL_API_URL}?to=${encodeURIComponent(freshOwner?.email ?? "")}`).then((r) => r.json()).catch(() => null);
+  const nudgeMail = (nudge?.emails ?? []).find((e) => /de contestar en tu WhatsApp/.test(e.subject ?? ""));
+  ok("el correo lleva al paso que toca en su subdominio", Boolean(nudgeMail) && (nudgeMail.text ?? "").includes(`${intruderSlug}.localhost`), JSON.stringify(nudge?.emails?.map((e) => e.subject)));
   await sql`update organization set metadata = jsonb_set(metadata::jsonb, '{allok,billing,currentPeriodEnd}', to_jsonb(${new Date(Date.now() + 40 * 3600000).toISOString()}::text))::text where id = ${fresh.id}`;
   const m1 = await run();
   ok("a 2 días del final sale 'termina pronto' (1)", m1?.ending >= 1, JSON.stringify(m1));
