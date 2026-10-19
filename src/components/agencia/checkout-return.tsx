@@ -112,7 +112,7 @@ export function CheckoutReturn({ settled }: { settled: boolean }) {
         <button
           type="button"
           onClick={retry}
-          className="inline-flex min-h-11 items-center rounded-[10px] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
+          className="inline-flex min-h-11 items-center rounded-[var(--btn-radius,10px)] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
         >
           Revisar de nuevo
         </button>

@@ -144,7 +144,7 @@ export function ControlCenter({
 
         <header>
           <p className="kicker" suppressHydrationWarning>{today}</p>
-          <h1 suppressHydrationWarning className="mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] text-balance md:text-[38px]">
+          <h1 suppressHydrationWarning className="display-title mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] text-balance md:text-[38px]">
             {firstName ? `${greeting}, ${firstName}.` : `${greeting}.`}
           </h1>
           <p data-state={quiet ? "pausado" : status.headline.state} className="mt-3 flex items-start gap-3 text-[16px] leading-snug md:text-[17px]">
@@ -252,7 +252,7 @@ function PlanStrip({ plan, timezone, owner }: { plan: PlanState; timezone: strin
       {owner && (
         <Link
           href="/settings/billing"
-          className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
+          className="inline-flex min-h-11 items-center gap-2 rounded-[var(--btn-radius,10px)] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
         >
           {plan.kind === "cancelling" ? "Gestionar plan" : "Elegir plan"}
           <ArrowRight className="h-4 w-4" strokeWidth={2} aria-hidden />
@@ -302,7 +302,7 @@ function Readiness({ readiness, prominent = false }: { readiness: ReadinessRespo
       <SetupProgressNav progress={progress} className="mt-4 max-w-2xl" />
       <Link
         href={current.href}
-        className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[transform] active:scale-[0.97]"
+        className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[var(--btn-radius,10px)] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[transform] active:scale-[0.97]"
       >
         {SETUP_STEP_CTA[current.key]} <ArrowRight className="h-4 w-4" aria-hidden />
       </Link>

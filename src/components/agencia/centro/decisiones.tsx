@@ -32,7 +32,7 @@ const EMPTY: Record<DecisionFilter, { title: string; body: string }> = {
 };
 
 const btn =
-  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[10px] border px-3.5 text-[13.5px] font-semibold transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [@media(pointer:fine)]:min-h-9";
+  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[var(--btn-radius,10px)] border px-3.5 text-[13.5px] font-semibold transition-[border-color,background-color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 [@media(pointer:fine)]:min-h-9";
 
 /**
  * «Cómo decidió el agente»: la revisión diaria de sus turnos, hecha para ser
@@ -200,7 +200,7 @@ export function DecisionesClient({
         </Link>
         <header className="mt-3">
           <p className="kicker">El agente</p>
-          <h1 className="mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] md:text-[38px]">Cómo decidió</h1>
+          <h1 className="display-title mt-2 text-[30px] font-semibold leading-[1.05] tracking-[-0.035em] md:text-[38px]">Cómo decidió</h1>
           <p className="mt-2 max-w-[60ch] text-[15px] leading-relaxed text-text-2">
             Cada turno de {productLabel} en conversaciones reales. {judge ? "Califícalo con Bien o Falló: lo que falla es lo que se corrige." : "Solo el propietario califica."}
           </p>

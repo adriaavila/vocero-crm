@@ -141,10 +141,10 @@ export function AvisosCelular() {
           Te avisamos en este teléfono cuando un cliente te necesite.
         </p>
         <span className="ml-auto flex gap-1">
-          <button type="button" disabled={ocupado} onClick={probar} className="min-h-11 rounded-[10px] px-3 text-sm font-semibold hover:underline disabled:opacity-60">
+          <button type="button" disabled={ocupado} onClick={probar} className="min-h-11 rounded-[var(--btn-radius,10px)] px-3 text-sm font-semibold hover:underline disabled:opacity-60">
             Probar
           </button>
-          <button type="button" disabled={ocupado} onClick={apagar} className="min-h-11 rounded-[10px] px-3 text-sm text-text-3 hover:underline disabled:opacity-60">
+          <button type="button" disabled={ocupado} onClick={apagar} className="min-h-11 rounded-[var(--btn-radius,10px)] px-3 text-sm text-text-3 hover:underline disabled:opacity-60">
             Dejar de avisarme
           </button>
         </span>
@@ -175,7 +175,7 @@ export function AvisosCelular() {
           type="button"
           disabled={ocupado}
           onClick={activar}
-          className="inline-flex min-h-11 items-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[transform] active:scale-[0.97] disabled:opacity-60"
+          className="inline-flex min-h-11 items-center gap-2 rounded-[var(--btn-radius,10px)] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-[transform] active:scale-[0.97] disabled:opacity-60"
         >
           Avísame en este teléfono
         </button>

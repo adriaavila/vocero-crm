@@ -121,7 +121,7 @@ export function PropertiesClient() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-4 sm:px-6">
           <div>
-            <h2 className="font-semibold">Propiedades</h2>
+            <h2 className="page-title font-semibold">Propiedades</h2>
             <p className="text-xs text-text-3">
               {loading
                 ? "Cargando inventario…"

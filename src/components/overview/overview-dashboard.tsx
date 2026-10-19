@@ -55,7 +55,7 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
     <div className="h-full overflow-y-auto bg-subtle">
       <header className="border-b bg-background px-4 py-4 md:px-6">
         <div className="mx-auto flex max-w-[1500px] items-center justify-between">
-          <div className="min-w-0"><p className="kicker">Centro de atención</p><h1 className="mt-1 truncate text-xl font-[680] tracking-tight">Inicio</h1></div>
+          <div className="min-w-0"><p className="kicker">Centro de atención</p><h1 className="page-title mt-1 truncate text-xl font-[680] tracking-tight">Inicio</h1></div>
           <Badge variant={automationActive ? "success" : billing && !billingActive ? "warning" : "secondary"}>{automationActive ? "Agente activo" : billing && !billingActive ? "Facturación pendiente" : "Agente en pausa"}</Badge>
         </div>
       </header>

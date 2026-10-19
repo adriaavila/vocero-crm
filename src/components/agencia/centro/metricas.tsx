@@ -248,7 +248,7 @@ function FunnelTile({ funnel, pro, owner }: { funnel: StageCount[]; pro: boolean
           {owner && (
             <Link
               href="/settings/billing"
-              className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
+              className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-[var(--btn-radius,10px)] border border-border-strong px-4 text-sm font-semibold transition-[border-color,transform] hover:border-foreground active:scale-[0.97]"
             >
               Ver planes <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>

@@ -249,7 +249,7 @@ export function AgentClient({
   return (
     <div className="h-full overflow-y-auto">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
-        <h2 className="text-[17px] font-bold tracking-tight">Tu agente</h2>
+        <h2 className="page-title text-[17px] font-bold tracking-tight">Tu agente</h2>
         <div className="flex items-center gap-3">
           {saved && <span role="status" className="text-xs text-primary">Guardado ✓</span>}
           <span className="text-sm text-muted-foreground">

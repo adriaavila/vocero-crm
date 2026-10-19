@@ -117,7 +117,7 @@ export function AskBox({ productLabel, remainingToday }: { productLabel: string;
               setValue("");
               void send({ chip }, label, false);
             }}
-            className="inline-flex min-h-11 shrink-0 items-center rounded-[10px] border border-border-strong px-3.5 text-[13.5px] font-medium transition-[border-color,transform] hover:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex min-h-11 shrink-0 items-center rounded-[var(--btn-radius,10px)] border border-border-strong px-3.5 text-[13.5px] font-medium transition-[border-color,transform] hover:border-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50"
           >
             {label}
           </button>
