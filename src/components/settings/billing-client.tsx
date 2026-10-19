@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ArrowRight, Check, CreditCard, ExternalLink } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
+import { CuponCard } from "@/components/agencia/cupon-card";
 import { useBillingSync } from "@/components/agencia/checkout-return";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,8 @@ export function BillingClient({
   brandName,
   trial = true,
   portalReturn = false,
+  cupones = false,
+  cuponError = null,
 }: {
   billing: SaaSBillingState;
   /** En qué punto del plan está el negocio: una sola lectura para todo lo de abajo. */
@@ -54,6 +57,10 @@ export function BillingClient({
   trial?: boolean;
   /** Vuelve del portal de Stripe: espera a que el cambio llegue y recarga. */
   portalReturn?: boolean;
+  /** Hay códigos de plan gratis (`SAAS_CUPONES`). */
+  cupones?: boolean;
+  /** Por qué no sirvió el código del registro (`?cupon=`), ya en palabras. */
+  cuponError?: string | null;
 }) {
   const [loading, setLoading] = useState<SaaSPlan | "portal" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -195,6 +202,8 @@ export function BillingClient({
           )}
         </section>
       )}
+
+      {cupones && kind !== "paid" && kind !== "cancelling" && <CuponCard initialError={cuponError} />}
 
       {showGrid && (
         <Card>

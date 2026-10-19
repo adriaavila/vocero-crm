@@ -4,13 +4,14 @@ import { brand } from "@/lib/brand";
 import { getOrganizationBilling } from "@/server/saas/billing";
 import { getPlanState } from "@/server/agencia/plan-estado";
 import { BillingClient } from "@/components/settings/billing-client";
+import { hayCupones, MENSAJE_CANJE } from "@/server/agencia/cupones";
 
 export const dynamic = "force-dynamic";
 
 export default async function BillingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ checkout?: string; billing?: string }>;
+  searchParams: Promise<{ checkout?: string; billing?: string; cupon?: string }>;
 }) {
   const [session, params] = await Promise.all([requireOwnerSession(), searchParams]);
   const [billing, plan] = await Promise.all([
@@ -22,6 +23,13 @@ export default async function BillingPage({
       billing={billing}
       plan={plan}
       portalReturn={params.billing === "portal"}
+      cupones={hayCupones()}
+      // El registro manda aquí con `?cupon=<motivo>` cuando el código no sirvió.
+      cuponError={params.cupon
+        ? params.cupon in MENSAJE_CANJE
+          ? MENSAJE_CANJE[params.cupon as keyof typeof MENSAJE_CANJE]
+          : "Tu espacio quedó creado, pero no pudimos revisar el código. Escríbelo de nuevo."
+        : null}
       soldPlans={soldSaaSPlans(process.env.SAAS_PLANS)}
       brandName={brand().Name}
       trial={brand().id !== "rei"}

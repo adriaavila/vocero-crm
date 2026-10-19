@@ -35,6 +35,7 @@ export default function RegisterForm({
   brand,
   exampleHost,
   rootDomain,
+  cupones = false,
 }: {
   adminMode?: boolean;
   soldPlans: SaaSPlan[];
@@ -50,6 +51,8 @@ export default function RegisterForm({
   exampleHost: string;
   /** `reiprop.tech` / `allok.fun`: la dirección se muestra mientras se escribe. */
   rootDomain: string;
+  /** Hay códigos de plan gratis (`SAAS_CUPONES`): el alta pública muestra la casilla. */
+  cupones?: boolean;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -84,6 +87,9 @@ export default function RegisterForm({
   // Fork (agencia): quien llega desde su demo en allok.fun trae el negocio y
   // la demo; «Tu negocio» se llena con lo que la demo ya aprendió de su web.
   const [demo, setDemo] = useState<string | null>(null);
+  // Código de plan gratis: se escribe o llega en el enlace (`?cupon=SAMER`).
+  const [cupon, setCupon] = useState("");
+  const showCupon = cupones && !adminMode;
 
   useEffect(() => {
     const requestedPlan = new URLSearchParams(window.location.search).get("plan");
@@ -98,6 +104,8 @@ export default function RegisterForm({
     const params = new URLSearchParams(window.location.search);
     const negocio = params.get("negocio")?.trim().slice(0, 80);
     if (negocio) setName((current) => current || negocio);
+    const codigo = params.get("cupon")?.trim().slice(0, 60);
+    if (codigo) setCupon((current) => current || codigo.toUpperCase());
     const slug = params.get("demo")?.trim().toLowerCase() ?? "";
     if (slug.length <= 80 && DEMO_SLUG.test(slug)) setDemo(slug);
   }, [adminMode]);
@@ -164,6 +172,21 @@ export default function RegisterForm({
     }
     // Fork (agencia): anota el origen con tope de 2,5 s; nunca frena el alta.
     await enviarOrigenAlta();
+    if (showCupon && cupon.trim()) {
+      // Con un cupón válido el plan queda activo y no hay cobro: directo a la
+      // puesta en marcha. Si no sirvió, la cuenta ya existe: Facturación dice
+      // por qué y deja probar otro código.
+      const canje = await fetch("/api/saas/billing/cupon", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ codigo: cupon }),
+      }).catch(() => null);
+      const motivo = canje?.ok
+        ? null
+        : ((await canje?.json().catch(() => null)) as { error?: { code?: string } } | null)?.error?.code ?? "error";
+      await goToTenant(motivo ? `/settings/billing?cupon=${encodeURIComponent(motivo)}` : firstSetupHref);
+      return;
+    }
     if (selfServe && !payNow) {
       // Prueba de 7 días sin tarjeta: el siguiente paso es el primero de la
       // puesta en marcha («Tu negocio»), en el subdominio del negocio. El
@@ -382,6 +405,22 @@ export default function RegisterForm({
             />
             {adminMode && <p className="text-xs text-muted-foreground">Mínimo 8 caracteres. El dueño la cambia en Cuenta.</p>}
           </div>
+          {showCupon && (
+            <div className="space-y-1.5">
+              <Label htmlFor="cupon">Código de cupón <span className="font-normal text-text-3">(opcional)</span></Label>
+              <Input
+                className="min-h-11 uppercase"
+                id="cupon"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={60}
+                value={cupon}
+                onChange={(e) => setCupon(e.target.value.toUpperCase())}
+              />
+              {cupon.trim() && <p className="text-xs text-muted-foreground">Con un código válido tu plan queda activo y no pagas nada.</p>}
+            </div>
+          )}
           {adminMode && adminPlan && (
             <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-brand-soft bg-brand-tint px-3 py-2.5 text-sm">
               <input type="checkbox" className="mt-1 accent-[var(--accent)]" checked={activarPlan} onChange={(e) => setActivarPlan(e.target.checked)} />

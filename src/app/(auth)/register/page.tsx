@@ -9,6 +9,7 @@ import { contactChannelSuffix, startUrl } from "@/components/agencia/allok/setup
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { hayCupones } from "@/server/agencia/cupones";
 import RegisterForm from "./register-form";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export default async function RegisterPage() {
     if (!isSaaSAdminEmail(session?.user.email)) return <SetupWithUs />;
     return <RegisterForm adminMode soldPlans={soldPlans} brand={brand()} exampleHost={`${brand().id === "rei" ? "inmobiliaria-perez" : "clinica-perez"}.${resolvedRootDomain()}`} rootDomain={resolvedRootDomain()} />;
   }
-  return <RegisterForm soldPlans={soldPlans} selfServe={isAllokSaaSMode() && brand().id !== "rei"} brand={brand()} exampleHost={`${brand().id === "rei" ? "inmobiliaria-perez" : "clinica-perez"}.${resolvedRootDomain()}`} rootDomain={resolvedRootDomain()} />;
+  return <RegisterForm soldPlans={soldPlans} selfServe={isAllokSaaSMode() && brand().id !== "rei"} brand={brand()} exampleHost={`${brand().id === "rei" ? "inmobiliaria-perez" : "clinica-perez"}.${resolvedRootDomain()}`} rootDomain={resolvedRootDomain()} cupones={isAllokSaaSMode() && hayCupones()} />;
 }
 
 function SetupWithUs() {
