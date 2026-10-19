@@ -1798,3 +1798,76 @@ export const resumenDiario = pgTable(
   },
   (t) => [uniqueIndex("resumen_diario_org_dia_uq").on(t.organizationId, t.dia)]
 );
+
+/* ============================================================
+ * Fork — sala de venta personal (vertical inmobiliario)
+ * ============================================================ */
+
+/**
+ * Plan de pago que APROBÓ la constructora (reserva, cuotas, saldo). La
+ * calculadora de la sala solo usa planes con `aprobadoPor`: el agente de IA
+ * nunca estima una cuota, la cifra sale de aquí y de `lib/sala-cuotas.ts`.
+ * Cambiar montos es crear un plan nuevo, no editar uno que ya vio un cliente.
+ */
+export const planPago = pgTable(
+  "plan_pago",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    nombre: text("nombre").notNull(),
+    reserva: numeric("reserva", { precision: 14, scale: 2 }).notNull(),
+    /** `PasoPlan[]` de `lib/sala-cuotas.ts`; validado con Zod al guardar. */
+    pasos: jsonb("pasos").notNull(),
+    mesEntrega: integer("mes_entrega").notNull(),
+    /** Quién lo aprobó en la constructora, en palabras ("Sergio, SAMER"). */
+    aprobadoPor: text("aprobado_por").notNull(),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("plan_pago_org_idx").on(t.organizationId)]
+);
+
+/**
+ * Una sala por contacto: el link que es suyo, con las casas que le caben y su
+ * cálculo. El token es la única llave de la página pública, así que es largo
+ * y aleatorio; cambiarlo invalida el link viejo.
+ *
+ * Las columnas de señal (`aperturas`, `calculadora_at`, `visita_pedida_at`)
+ * las escribe la página pública desde el navegador, no el servidor al
+ * renderizar: la vista previa que arma WhatsApp al recibir el link no cuenta
+ * como que el comprador lo abrió.
+ */
+export const salaVenta = pgTable(
+  "sala_venta",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    contactId: text("contact_id")
+      .notNull()
+      .references(() => contact.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    propertyIds: jsonb("property_ids").$type<string[]>().notNull().default([]),
+    planPagoId: text("plan_pago_id").references(() => planPago.id, {
+      onDelete: "set null",
+    }),
+    /** Lo que el comprador dijo que paga hoy de alquiler, por mes. */
+    alquilerActual: numeric("alquiler_actual", { precision: 14, scale: 2 }),
+    saludo: text("saludo"),
+    aperturas: integer("aperturas").notNull().default(0),
+    primeraAperturaAt: timestamp("primera_apertura_at"),
+    ultimaAperturaAt: timestamp("ultima_apertura_at"),
+    calculadoraAt: timestamp("calculadora_at"),
+    visitaPedidaAt: timestamp("visita_pedida_at"),
+    createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("sala_venta_token_uq").on(t.token),
+    uniqueIndex("sala_venta_contact_uq").on(t.organizationId, t.contactId),
+  ]
+);
