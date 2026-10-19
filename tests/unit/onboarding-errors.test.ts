@@ -17,12 +17,21 @@ describe("errores del alta en lenguaje humano", () => {
     expect(errorKeyForCancel("999")).toBe("meta_unavailable");
   });
 
-  it("un número de otro negocio manda a soporte y no ofrece reintentar", () => {
+  it("un número de otro negocio manda al soporte de la marca y no ofrece reintentar", () => {
+    const rei = { brandName: "Rei", supportHref: "https://wa.me/59170000000?text=hola" };
     for (const step of ["phone_in_use", "waba_in_use"]) {
-      const copy = onboardingErrorCopy(errorKeyForStep(step));
+      const copy = onboardingErrorCopy(errorKeyForStep(step), rei);
       expect(copy.retry).toBe(false);
-      expect(copy.action?.href).toMatch(/^https:\/\/wa\.me\//);
+      expect(copy.title).toBe("Ese número ya está conectado a otra cuenta de Rei");
+      expect(copy.action?.href).toBe(rei.supportHref);
     }
+  });
+
+  it("sin marca no nombra a nadie ni ofrece un soporte que no conoce", () => {
+    const copy = onboardingErrorCopy("number_in_use");
+    expect(copy.title).toBe("Ese número ya está conectado a otra cuenta");
+    expect(copy.action).toBeUndefined();
+    expect(onboardingErrorCopy("coexistence_region").body).not.toMatch(/allok/i);
   });
 
   it("los pasos del servidor y las claves guardadas vuelven a su copia", () => {

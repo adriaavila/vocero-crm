@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, ArrowRight, Check, CheckCircle2, Copy, Loader2, MessageCircle, RotateCw, Smartphone } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { errorKeyForCancel, onboardingErrorCopy } from "@/lib/onboarding-errors";
+import { errorKeyForCancel, onboardingErrorCopy, type OnboardingBrand } from "@/lib/onboarding-errors";
 import { META_SDK_TIMEOUT_MS, inAppBrowserName } from "@/lib/navegador-meta";
 
 /**
@@ -116,9 +116,12 @@ function parseSignupEvent(data: unknown): SignupEvent | null {
 export function EmbeddedSignupBridge({
   orgSlug,
   organizationName,
+  brand,
 }: {
   orgSlug: string;
   organizationName: string;
+  /** La marca del despliegue y su soporte, resueltos en el servidor. */
+  brand?: OnboardingBrand;
 }) {
   const [mode, setMode] = useState<Mode>("coexistence");
   const [config, setConfig] = useState<Config | null>(null);
@@ -393,7 +396,7 @@ export function EmbeddedSignupBridge({
 
   const existing = config?.connection ?? null;
   const isReconnect = Boolean(existing);
-  const statusAnnouncement = statusAnnouncementFor(status, errorKind, success);
+  const statusAnnouncement = statusAnnouncementFor(status, errorKind, success, brand);
 
   return (
     <div className="mx-auto w-full max-w-md">
@@ -524,20 +527,20 @@ export function EmbeddedSignupBridge({
             <span className="flex h-11 w-11 items-center justify-center rounded-full bg-danger-tint text-destructive">
               <AlertTriangle className="h-6 w-6" aria-hidden="true" />
             </span>
-            <p className="font-medium text-danger-text">{errorTitle(errorKind)}</p>
-            <p className="text-sm text-text-3">{errorMessage ?? errorBody(errorKind)}</p>
-            {errorAction(errorKind) && (
+            <p className="font-medium text-danger-text">{errorTitle(errorKind, brand)}</p>
+            <p className="text-sm text-text-3">{errorMessage ?? errorBody(errorKind, brand)}</p>
+            {errorAction(errorKind, brand) && (
               <a
-                href={errorAction(errorKind)!.href}
+                href={errorAction(errorKind, brand)!.href}
                 target="_blank"
                 rel="noreferrer"
                 className={buttonVariants({ className: "mt-2 min-h-11 w-full" })}
               >
-                {errorAction(errorKind)!.label}
+                {errorAction(errorKind, brand)!.label}
               </a>
             )}
             {errorKind === "meta_blocked" && <CopyLinkButton />}
-            {errorKind !== "plan_inactive" && onboardingErrorCopy(errorKind).retry && (
+            {errorKind !== "plan_inactive" && onboardingErrorCopy(errorKind, brand).retry && (
               <Button type="button" variant="outline" className="mt-2 min-h-11 w-full" onClick={() => void loadConfig(mode)}>
                 <RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />
                 Reintentar
@@ -550,7 +553,7 @@ export function EmbeddedSignupBridge({
   );
 }
 
-function statusAnnouncementFor(status: Status, errorKind: ErrorKind, success: SuccessDetails | null): string {
+function statusAnnouncementFor(status: Status, errorKind: ErrorKind, success: SuccessDetails | null, brand?: OnboardingBrand): string {
   switch (status) {
     case "loading":
       return "Cargando la conexión segura de Meta.";
@@ -563,24 +566,24 @@ function statusAnnouncementFor(status: Status, errorKind: ErrorKind, success: Su
     case "success":
       return success ? `WhatsApp conectado: ${success.displayPhoneNumber ?? ""}` : "WhatsApp conectado.";
     case "error":
-      return errorTitle(errorKind);
+      return errorTitle(errorKind, brand);
     default:
       return "";
   }
 }
 
-function errorTitle(kind: ErrorKind): string {
-  return kind === "plan_inactive" ? "Activa tu plan" : onboardingErrorCopy(kind).title;
+function errorTitle(kind: ErrorKind, brand?: OnboardingBrand): string {
+  return kind === "plan_inactive" ? "Activa tu plan" : onboardingErrorCopy(kind, brand).title;
 }
 
-function errorBody(kind: ErrorKind): string {
+function errorBody(kind: ErrorKind, brand?: OnboardingBrand): string {
   return kind === "plan_inactive"
     ? "Tu prueba terminó. Elige un plan para seguir conectando WhatsApp."
-    : onboardingErrorCopy(kind).body;
+    : onboardingErrorCopy(kind, brand).body;
 }
 
-function errorAction(kind: ErrorKind): { label: string; href: string } | undefined {
-  return kind === "plan_inactive" ? undefined : onboardingErrorCopy(kind).action;
+function errorAction(kind: ErrorKind, brand?: OnboardingBrand): { label: string; href: string } | undefined {
+  return kind === "plan_inactive" ? undefined : onboardingErrorCopy(kind, brand).action;
 }
 
 function ModeOption({

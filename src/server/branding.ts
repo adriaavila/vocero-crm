@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import {
@@ -16,6 +17,11 @@ import { isAllokBrand } from "@/lib/tenant-host";
  */
 function deploymentBrandedFallback(): Branding {
   return { ...DEFAULT_BRANDING, name: brand().name, accent: brand().defaultAccent };
+}
+
+/** El respaldo cuando no hay organización o la lectura falla: la marca del despliegue, o Vocero sin marca. */
+export function fallbackBranding(): Branding {
+  return isAllokBrand() ? deploymentBrandedFallback() : DEFAULT_BRANDING;
 }
 
 /** Marca guardada en organization.metadata (JSON de Better Auth). */
@@ -42,6 +48,16 @@ function parseMetadata(metadata: string | null): Record<string, unknown> {
 export async function getBrandingContext(
   organizationId?: string | null
 ): Promise<{ organizationId: string | null; branding: Branding }> {
+  // `undefined` y `null` significan cosas distintas (ver abajo): la clave lo conserva.
+  return readBrandingContext(organizationId === undefined ? "__instancia__" : organizationId);
+}
+
+// Una lectura por render: el layout raíz (dos veces: metadatos y cuerpo), el
+// de la app y la página piden la misma marca.
+const readBrandingContext = cache(async (
+  key: string | null
+): Promise<{ organizationId: string | null; branding: Branding }> => {
+  const organizationId = key === "__instancia__" ? undefined : key;
   const db = getDb();
   const rows = organizationId
     ? await db
@@ -57,7 +73,7 @@ export async function getBrandingContext(
         .from(schema.organization)
         .limit(1);
   if (!rows[0]) {
-    return { organizationId: null, branding: isAllokBrand() ? deploymentBrandedFallback() : DEFAULT_BRANDING };
+    return { organizationId: null, branding: fallbackBranding() };
   }
   const meta = parseMetadata(rows[0].metadata);
   const customBranding = meta.branding as Partial<Branding> | undefined;
@@ -71,7 +87,7 @@ export async function getBrandingContext(
       ? branding
       : { ...branding, name: rows[0].name, accent: brand().defaultAccent },
   };
-}
+});
 
 export async function getBranding(
   organizationId?: string | null

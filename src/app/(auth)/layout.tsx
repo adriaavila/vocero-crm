@@ -1,6 +1,5 @@
-import { DEFAULT_BRANDING } from "@/lib/branding";
 import { brand } from "@/lib/brand";
-import { getBranding } from "@/server/branding";
+import { fallbackBranding, getBranding } from "@/server/branding";
 import { BrandLogo } from "@/components/brand-mark";
 import { AllokAuthFrame } from "@/components/agencia/allok/auth-frame";
 import { headers } from "next/headers";
@@ -33,7 +32,7 @@ export default async function AuthLayout({
   // palabras): no se generaliza a otra marca. Rei (y una instancia sin marca)
   // usan la entrada llana de abajo, ya blanca de marca por su cuenta.
   if (isAllokBrand() && brand().id === "allok") return <AllokAuthFrame>{children}</AllokAuthFrame>;
-  const branding = await getBranding(organizationId).catch(() => DEFAULT_BRANDING);
+  const branding = await getBranding(organizationId).catch(() => fallbackBranding());
   // El resplandor degradado es voz de allok/Vocero; el sistema rei no usa
   // degradados (design/rei.md).
   const showGlow = brand().id !== "rei";

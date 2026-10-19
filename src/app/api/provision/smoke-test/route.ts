@@ -3,12 +3,13 @@ import { isAuthorized, resolveTargetOrg } from "@/server/provision/payload";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { getEnv } from "@/lib/env";
-import { isAllokSaaSMode } from "@/lib/tenant-host";
+import { isAllokBrand, isAllokSaaSMode } from "@/lib/tenant-host";
 import { resolveInstanceOrg } from "@/server/bot/auth";
 import { normalizeRecipient } from "@/lib/meta/client";
 import { callGraphSend } from "@/server/inbox/send";
 import { getOrCreateContact, getOrCreateConversation } from "@/server/inbox/ingest";
 import { getCredentialsByOrg } from "@/server/whatsapp/credentials";
+import { brand } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const { contact } = await getOrCreateContact(organizationId, normalizedTo, "Smoke test WhatsApp");
     const conversation = await getOrCreateConversation(organizationId, contact.id);
-    const text = "Prueba automática de conexión de WhatsApp para Vocero.";
+    const text = `Prueba automática de conexión de WhatsApp para ${isAllokBrand() ? brand().Name : "Vocero"}.`;
     const messageId = await callGraphSend(credentials, {
       messaging_product: "whatsapp",
       to: normalizedTo,

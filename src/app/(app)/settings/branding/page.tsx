@@ -17,7 +17,14 @@ export default async function BrandingSettingsPage() {
 
   return (
     <div className="max-w-2xl space-y-6">
-      <BrandingClient />
+      <BrandingClient
+        initial={branding}
+        brandDefault={
+          brand().id === "rei"
+            ? { name: brand().name, accent: brand().defaultAccent, accentLabel: "Esmeralda" }
+            : null
+        }
+      />
       <FaviconCard
         branding={branding}
         generatedHref={faviconHref({ ...branding, favicon: null })}

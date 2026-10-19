@@ -432,6 +432,36 @@
     --info-soft: #cfe0f5;
     --info-text: #0d3f80;
 
+    /* Los tokens con nombre de allok (superficies, tinta y estados) los
+       heredaba Rei del bloque del SaaS: pistas, puntos y tarjetas de Inicio
+       salían en la tinta y el verde neón de allok. Aquí van en los de Rei. */
+    --cloud: var(--rei-silver-50);
+    --ground: var(--rei-silver-50);
+    --ground-2: var(--rei-paper);
+    --ground-3: var(--rei-silver-100);
+    --ground-4: #e6edef;
+    --ink: var(--rei-ink);
+    --ink-60: var(--rei-ink-3);
+    --ink-40: var(--rei-ink-5);
+    --hairline: var(--rei-line);
+    --rule: var(--rei-line-strong);
+    --rule-hard: rgba(15, 32, 40, 0.85);
+    --ok: var(--rei-brand-500);
+    --ok-ink: var(--rei-brand-700);
+    --st-activo: #12a070;
+    --st-activo-ink: var(--rei-brand-700);
+    --st-activo-soft: var(--rei-brand-50);
+    --st-atendiendo: #3f7fd0;
+    --st-atendiendo-ink: #0d3f80;
+    --st-atendiendo-soft: #edf3fc;
+    --st-atencion: #d79b1a;
+    --st-atencion-ink: #855a09;
+    --st-atencion-soft: #fdf6e7;
+    --st-pausado: #8b979f;
+    --st-pausado-ink: var(--rei-ink-3);
+    --st-pausado-soft: var(--rei-silver-100);
+    --switch-off: #8b979f;
+
     --overlay: rgba(15, 32, 40, 0.55);
     --knob: #ffffff;
 
@@ -504,6 +534,27 @@
     --info-tint: rgba(18, 86, 168, 0.16);
     --info-soft: rgba(18, 86, 168, 0.34);
     --info-text: #9dc3ec;
+
+    --ground: var(--rei-noir);
+    --ground-2: #10201a;
+    --ground-3: #142822;
+    --ground-4: #1a332b;
+    --ink: var(--rei-on-noir);
+    --ink-60: #b3c0ba;
+    --ink-40: #7d8a85;
+    --hairline: rgba(242, 246, 244, 0.1);
+    --rule: rgba(242, 246, 244, 0.18);
+    --rule-hard: rgba(242, 246, 244, 0.85);
+    --st-activo: #2e9c74;
+    --st-activo-ink: #6dbe9e;
+    --st-activo-soft: rgba(46, 156, 116, 0.16);
+    --st-atendiendo-ink: #9dc3ec;
+    --st-atendiendo-soft: rgba(18, 86, 168, 0.18);
+    --st-atencion-ink: #e6c169;
+    --st-atencion-soft: rgba(215, 155, 26, 0.14);
+    --st-pausado-ink: #b3c0ba;
+    --st-pausado-soft: rgba(242, 246, 244, 0.08);
+    --switch-off: #5c6864;
 
     --overlay: rgba(2, 8, 6, 0.74);
     --knob: #e8efec;
@@ -600,6 +651,38 @@
 }
 :root[data-saas="true"] [role="switch"][aria-checked="true"] [data-switch-knob] {
   background-color: #0b0d0e;
+}
+
+/* Rei: el trozo oscuro de Inicio es el verde-negro de Rei, no la tinta de
+   allok, y la perilla del interruptor va en blanco sobre su esmeralda. Misma
+   especificidad que las reglas de allok de arriba: ganan por ir después. */
+:root[data-brand="rei"] :is([data-allok-nav], .ak-ink) {
+  --ground: var(--rei-noir);
+  --ground-2: #10201a;
+  --ground-3: #142822;
+  --ground-4: #1a332b;
+  --ink: var(--rei-on-noir);
+  --ink-60: #b3c0ba;
+  --ink-40: #7d8a85;
+  --hairline: rgba(242, 246, 244, 0.1);
+  --rule: rgba(242, 246, 244, 0.18);
+  --text-3: #8f9c96;
+  --text-4: #5c6864;
+  --st-activo: #2e9c74;
+  --st-activo-ink: #6dbe9e;
+  --st-activo-soft: rgba(46, 156, 116, 0.16);
+  --accent: var(--rei-on-noir);
+  --accent-hover: #ffffff;
+  --accent-soft: rgba(242, 246, 244, 0.14);
+  --accent-tint: rgba(242, 246, 244, 0.08);
+  --accent-text: var(--rei-on-noir);
+  --accent-fg: var(--rei-noir);
+}
+:root[data-brand="rei"] [role="switch"][aria-checked="true"] [data-switch-track] {
+  background-color: var(--rei-brand-500);
+}
+:root[data-brand="rei"] [role="switch"][aria-checked="true"] [data-switch-knob] {
+  background-color: var(--knob);
 }
 
 /* Foco de teclado visible en enlaces y resúmenes, con el color de la acción:

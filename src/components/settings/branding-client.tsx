@@ -19,18 +19,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export function BrandingClient() {
+export function BrandingClient({
+  initial = null,
+  brandDefault = null,
+}: {
+  /** La marca ya leída en el servidor: sin ella, la pantalla la pide y muestra un esqueleto. */
+  initial?: Branding | null;
+  /** El acento y el nombre de la marca del despliegue (Rei), resueltos en el servidor. */
+  brandDefault?: { name: string; accent: string; accentLabel: string } | null;
+} = {}) {
   const router = useRouter();
   const mode = useResolvedTheme();
-  const [name, setName] = useState("");
-  const [accent, setAccent] = useState<string>(DEFAULT_BRANDING.accent);
-  const [currency, setCurrency] = useState<Currency>(DEFAULT_CURRENCY);
-  const [loaded, setLoaded] = useState(false);
+  const fallback = brandDefault ?? { name: DEFAULT_BRANDING.name, accent: DEFAULT_BRANDING.accent, accentLabel: "" };
+  const [name, setName] = useState(initial?.name ?? "");
+  const [accent, setAccent] = useState<string>(initial?.accent ?? fallback.accent);
+  const [currency, setCurrency] = useState<Currency>(initial?.currency ?? DEFAULT_CURRENCY);
+  const [loaded, setLoaded] = useState(initial !== null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    if (initial) return;
     fetch("/api/settings/branding")
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { branding: Branding } | null) => {
@@ -42,9 +52,17 @@ export function BrandingClient() {
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
-  }, []);
+  }, [initial]);
 
-  const isPreset = accent.toLowerCase() in ACCENT_PRESETS;
+  // El acento de la marca del despliegue va primero entre los presets cuando
+  // no es ya uno de ellos (la esmeralda de Rei).
+  const presets: [string, string][] = [
+    ...(brandDefault && !(brandDefault.accent.toLowerCase() in ACCENT_PRESETS)
+      ? [[brandDefault.accent.toLowerCase(), brandDefault.accentLabel] as [string, string]]
+      : []),
+    ...Object.entries(ACCENT_PRESETS).map(([hex, preset]) => [hex, preset.label] as [string, string]),
+  ];
+  const isPreset = presets.some(([hex]) => hex === accent.toLowerCase());
   // La vista previa muestra el acento tal como se verá en el tema activo: los
   // presets están pensados para fondo claro y en oscuro se aclaran.
   const previewSet = resolveAccentSet(accent, mode);
@@ -140,12 +158,12 @@ export function BrandingClient() {
           <div className="space-y-2">
             <Label>Color de acento</Label>
             <div className="flex flex-wrap items-center gap-2">
-              {Object.entries(ACCENT_PRESETS).map(([hex, preset]) => (
+              {presets.map(([hex, label]) => (
                 <button
                   key={hex}
                   onClick={() => setAccent(hex)}
-                  title={preset.label}
-                  aria-label={preset.label}
+                  title={label}
+                  aria-label={label}
                   className={cn(
                     "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors",
                     accent.toLowerCase() === hex
@@ -157,7 +175,7 @@ export function BrandingClient() {
                     className="h-4 w-4 rounded-full"
                     style={{ background: resolveAccentSet(hex, mode).accent }}
                   />
-                  {preset.label}
+                  {label}
                 </button>
               ))}
               <label
@@ -168,7 +186,7 @@ export function BrandingClient() {
               >
                 <input
                   type="color"
-                  value={isValidHex(accent) ? accent : DEFAULT_BRANDING.accent}
+                  value={isValidHex(accent) ? accent : fallback.accent}
                   onChange={(e) => setAccent(e.target.value)}
                   className="h-4 w-4 cursor-pointer appearance-none border-0 bg-transparent p-0"
                 />
@@ -200,7 +218,7 @@ export function BrandingClient() {
           >
             <div className="flex items-center gap-2.5">
               <div className="min-w-0">
-                <BrandLogo branding={{ name: name.trim() || DEFAULT_BRANDING.name }} />
+                <BrandLogo branding={{ name: name.trim() || fallback.name }} />
                 <span className="kicker mt-1.5 block">CRM · WhatsApp</span>
               </div>
               <span className="flex-1" />

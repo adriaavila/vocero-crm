@@ -1,6 +1,4 @@
-import { headers } from "next/headers";
-import { getAuth } from "@/lib/auth";
-import { requireSession } from "@/lib/auth/session";
+import { getAuthSession, requireSession } from "@/lib/auth/session";
 import { OverviewDashboard } from "@/components/overview/overview-dashboard";
 import { getOverview } from "@/server/overview";
 import { getReadiness } from "@/server/readiness";
@@ -28,7 +26,7 @@ export default async function OverviewPage({
     // En el SaaS, Inicio ya no usa este resumen: sus cifras son de agencia/centro-metricas.
     isAllokSaaSMode() ? Promise.resolve(null) : getOverview(session.organizationId),
     session.role === "owner" ? getReadiness(session.organizationId) : null,
-    getAuth().api.getSession({ headers: await headers() }),
+    getAuthSession(),
     isAllokSaaSMode() ? getOrganizationBilling(session.organizationId) : null,
   ]);
   const billingNotice = params.billing === "success"

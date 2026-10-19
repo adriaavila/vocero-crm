@@ -4,6 +4,8 @@
  * complete.ts); lo que ve el dueño es esto.
  */
 
+import { brand } from "@/lib/brand";
+
 export type SignupStep =
   | "config"
   | "body"
@@ -35,8 +37,9 @@ const COPY: Record<SignupStep, string> = {
   debug_token: "Meta no pudo validar la conexión. Vuelve a intentar.",
   permissions: "Falta autorizar permisos de WhatsApp en Meta.",
   resolve: "No pudimos identificar un único número de WhatsApp para conectar.",
-  phone_in_use: "Ese número ya está conectado a otra cuenta de allok. Escríbenos y lo movemos a tu cuenta.",
-  waba_in_use: "Ese número ya está conectado a otra cuenta de allok. Escríbenos y lo movemos a tu cuenta.",
+  // La marca se pone al responder (`copyForStep`): esta imagen sirve a allok y a Rei.
+  phone_in_use: "Ese número ya está conectado a otra cuenta de {marca}. Escríbenos y lo movemos a tu cuenta.",
+  waba_in_use: "Ese número ya está conectado a otra cuenta de {marca}. Escríbenos y lo movemos a tu cuenta.",
   webhook: "Meta rechazó el enlace de mensajes. Vuelve a intentar.",
   webhook_verify: "Meta no confirmó el enlace de mensajes. Vuelve a intentar.",
   register: "Meta rechazó el alta del número. Vuelve a intentar.",
@@ -49,5 +52,5 @@ const COPY: Record<SignupStep, string> = {
 const FALLBACK = "No pudimos completar la conexión con Meta. Vuelve a intentar.";
 
 export function copyForStep(step: string): string {
-  return (COPY as Record<string, string>)[step] ?? FALLBACK;
+  return ((COPY as Record<string, string>)[step] ?? FALLBACK).replace("{marca}", brand().name);
 }

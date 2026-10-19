@@ -123,3 +123,13 @@ export function missingReiConfigVars(saasMode: boolean): string[] {
   if (!nonEmpty(process.env.LEGAL_ADDRESS)) missing.push("LEGAL_ADDRESS");
   return missing;
 }
+
+/**
+ * Los colores de un correo de la marca (estilos en línea: un correo no lee
+ * los tokens de la app). allok: tinta; Rei: su esmeralda.
+ */
+export function emailColors(): { text: string; button: string; buttonText: string } {
+  return activeBrandId() === "rei"
+    ? { text: "#0f1417", button: "#0a7350", buttonText: "#ffffff" }
+    : { text: "#0b0d0e", button: "#0b0d0e", buttonText: "#f7f8f8" };
+}

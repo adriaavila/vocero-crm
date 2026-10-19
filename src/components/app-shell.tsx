@@ -36,6 +36,7 @@ export function AppShell({
   saasMode = false,
   saasPlan = null,
   systemState = null,
+  allokBrand = false,
   productLabel = "allok",
   children,
 }: {
@@ -52,8 +53,10 @@ export function AppShell({
   /** La navegación Allok reduce el CRM a las cuatro acciones principales. */
   saasMode?: boolean;
   saasPlan?: SaaSPlan | null;
-  /** Capa de agencia: el estado resuelto en el servidor; null sin la marca allok. */
+  /** Capa de agencia: el estado resuelto en el servidor; null fuera del SaaS y sin la marca allok. */
   systemState?: SystemSnapshot | null;
+  /** El cromo de allok (punto de estado, logo all ● k, favicon vivo). Rei usa el estado sin ese cromo. */
+  allokBrand?: boolean;
   /** Nombre del producto ("allok" / "Rei"), resuelto en el servidor. */
   productLabel?: string;
   children: React.ReactNode;
@@ -123,7 +126,7 @@ export function AppShell({
         agenda={agenda}
         realty={realty}
         saasMode={saasMode}
-        allokBrand={Boolean(systemState)}
+        allokBrand={allokBrand}
         productLabel={productLabel}
         saasPlan={saasPlan}
         open={navOpen}
@@ -140,7 +143,7 @@ export function AppShell({
           >
             <Menu className="h-5 w-5" strokeWidth={1.8} />
           </button>
-          {systemState ? <AllokShellBrand /> : <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />}
+          {allokBrand ? <AllokShellBrand /> : <BrandLogo branding={branding} className="min-w-0 max-w-[9rem]" />}
           <span className="ml-auto border-l pl-3 text-sm font-semibold text-text-2">{pageLabel}</span>
         </header>
 
@@ -150,7 +153,7 @@ export function AppShell({
   );
 
   return systemState ? (
-    <SystemStateProvider initial={systemState} customFavicon={Boolean(branding.favicon)}>
+    <SystemStateProvider initial={systemState} customFavicon={!allokBrand || Boolean(branding.favicon)}>
       {shell}
     </SystemStateProvider>
   ) : (

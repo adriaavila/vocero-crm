@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, Loader2, RotateCw } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { onboardingErrorCopy } from "@/lib/onboarding-errors";
+import { onboardingErrorCopy, type OnboardingBrand } from "@/lib/onboarding-errors";
 
 export type OnboardingPanelView = {
   status: "pendiente" | "conectado" | "webhook_ok" | "primer_mensaje" | "error";
@@ -43,8 +43,11 @@ export function WhatsappOnboardingPanel({
   onShowConnectChange,
   onViewChange,
   onChanged,
+  brand,
 }: {
   bridgeUrl: string;
+  /** La marca del despliegue y su soporte, resueltos en el servidor. */
+  brand?: OnboardingBrand;
   /** El botón «Conectar WhatsApp» del wizard solo compite cuando no hay un error que retomar. */
   onShowConnectChange?: (show: boolean) => void;
   /** El estado del alta, para quien dibuja el resto de la pantalla. */
@@ -81,7 +84,7 @@ export function WhatsappOnboardingPanel({
   // ahí el wizard muestra su "Conectar WhatsApp". En los demás estados la acción
   // vive en este panel o en la tarjeta del número.
   const showConnect =
-    view !== null && (view.status === "pendiente" || (view.status === "error" && !onboardingErrorCopy(view.errorKey).retry));
+    view !== null && (view.status === "pendiente" || (view.status === "error" && !onboardingErrorCopy(view.errorKey, brand).retry));
   useEffect(() => {
     if (view) onShowConnectChange?.(showConnect);
   }, [view, showConnect, onShowConnectChange]);
@@ -97,7 +100,7 @@ export function WhatsappOnboardingPanel({
     const data = (await res?.json().catch(() => null)) as { ok?: boolean; errorKey?: string } | null;
     setRetrying(false);
     if (!res?.ok || !data?.ok) {
-      setRetryError(onboardingErrorCopy(data?.errorKey).body);
+      setRetryError(onboardingErrorCopy(data?.errorKey, brand).body);
     }
     await load();
     onChanged?.();
@@ -105,7 +108,7 @@ export function WhatsappOnboardingPanel({
 
   if (!view || view.status !== "error") return null;
 
-  const copy = onboardingErrorCopy(view.errorKey);
+  const copy = onboardingErrorCopy(view.errorKey, brand);
   const where = view.cancelledAtStep ? META_STEP[view.cancelledAtStep] : null;
   return (
     <Card className="border-warning-soft">

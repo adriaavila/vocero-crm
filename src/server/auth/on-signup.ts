@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { and, count, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -209,9 +210,10 @@ export async function resolveLegacyOrganizationId(): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
-export async function resolveOrganizationIdForHost(
+/** Una consulta por render: el layout raíz, el de la app, la sesión y la página la piden igual. */
+export const resolveOrganizationIdForHost = cache(async (
   host: string | null | undefined,
-): Promise<string | null> {
+): Promise<string | null> => {
   const slug = tenantSlugFromHost(host);
   if (!slug) return null;
   const db = getDb();
@@ -221,4 +223,4 @@ export async function resolveOrganizationIdForHost(
     .where(eq(schema.organization.slug, slug))
     .limit(1);
   return rows[0]?.id ?? null;
-}
+});

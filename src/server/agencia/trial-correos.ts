@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { brand } from "@/lib/brand";
+import { brand, emailColors } from "@/lib/brand";
 import { getDb } from "@/lib/db";
 import { derivePlanState, planDate, TRIAL_ENDING_MS } from "@/lib/plan-estado";
 import { PLAN_CATALOG } from "@/lib/saas-plans";
@@ -48,11 +48,12 @@ type MailInput = { to: string; billingUrl: string; endsAt: string; timeZone?: st
 
 function layout(paragraphs: string[], billingUrl: string, button: string, footnote: string): string {
   const href = escapeHtml(billingUrl);
+  const colors = emailColors();
   return [
-    '<div style="font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Helvetica,Arial,sans-serif;color:#0b0d0e;max-width:480px;margin:0 auto;padding:24px;line-height:1.5">',
+    `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:${colors.text};max-width:480px;margin:0 auto;padding:24px;line-height:1.5">`,
     "<p>Hola,</p>",
     ...paragraphs.map((p) => `<p>${p}</p>`),
-    `<p style="margin:24px 0"><a href="${href}" style="background:#0b0d0e;color:#f7f8f8;text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block;font-weight:600">${button}</a></p>`,
+    `<p style="margin:24px 0"><a href="${href}" style="background:${colors.button};color:${colors.buttonText};text-decoration:none;padding:12px 20px;border-radius:10px;display:inline-block;font-weight:600">${button}</a></p>`,
     `<p style="font-size:13px;color:#5b6167">¿No abre el botón? Copia este enlace en tu navegador:<br><a href="${href}" style="color:#5b6167;word-break:break-all">${href}</a></p>`,
     `<p style="font-size:13px;color:#5b6167">${footnote}</p>`,
     "</div>",

@@ -42,7 +42,7 @@ export function SystemStateProvider({
   children,
 }: {
   initial: SystemSnapshot;
-  /** El negocio subió su icono: la pestaña es suya, no se toca. */
+  /** El negocio subió su icono, o la marca no es allok (Rei): la pestaña no lleva el punto de allok. */
   customFavicon: boolean;
   children: React.ReactNode;
 }) {

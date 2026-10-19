@@ -199,6 +199,8 @@ export async function grantSaaSPlan(params: {
   adminEmail: string;
   adminUserId: string;
   confirmOverrideStripe: boolean;
+  /** De dónde sale el plan (`cupon:SAMER`). Sin él, `manual_<fecha>` como siempre. */
+  source?: string;
 }): Promise<PlanGrantOutcome> {
   const outcome = await getDb().transaction(async (tx) => {
     const organization = await getOrganizationForBillingLocked(params.organizationId, tx);
@@ -218,7 +220,7 @@ export async function grantSaaSPlan(params: {
     const patch: Partial<SaaSBillingState> = {
       plan: params.plan,
       status: "active",
-      source: `manual_${todayIsoDate()}`,
+      source: params.source ?? `manual_${todayIsoDate()}`,
       grantedBy: params.adminEmail,
       grantedAt: new Date().toISOString(),
       history: pushHistory(current.history, entry),
@@ -236,6 +238,7 @@ export async function grantSaaSPlan(params: {
       detail: {
         plan: params.plan,
         confirmOverrideStripe: params.confirmOverrideStripe,
+        ...(params.source ? { source: params.source } : {}),
         result: outcome.ok ? "ok" : outcome.reason,
       },
     });
