@@ -107,3 +107,24 @@ export async function setOrgVertical(
     .set({ metadata: JSON.stringify(meta) })
     .where(eq(schema.organization.id, organizationId));
 }
+
+/**
+ * Apaga el vertical de una organización (el interruptor del panel admin),
+ * sin pisar el resto de su metadata. Las propiedades cargadas se quedan:
+ * volver a encenderlo las devuelve tal cual. Idempotente.
+ */
+export async function clearOrgVertical(organizationId: string): Promise<void> {
+  const db = getDb();
+  const rows = await db
+    .select({ metadata: schema.organization.metadata })
+    .from(schema.organization)
+    .where(eq(schema.organization.id, organizationId))
+    .limit(1);
+  const meta = parseMetadata(rows[0]?.metadata);
+  if (!("vertical" in meta)) return;
+  delete meta.vertical;
+  await db
+    .update(schema.organization)
+    .set({ metadata: JSON.stringify(meta) })
+    .where(eq(schema.organization.id, organizationId));
+}

@@ -57,6 +57,24 @@ export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTe
   const confirmButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const router = useRouter();
   const [support, setSupport] = useState<Record<string, "retry" | "reset" | null>>({});
+  const [verticalPending, setVerticalPending] = useState<Record<string, boolean>>({});
+
+  async function toggleRealty(tenant: SaaSTenantStatus) {
+    const vertical = tenant.vertical === "inmobiliario" ? null : "inmobiliario";
+    setVerticalPending((state) => ({ ...state, [tenant.id]: true }));
+    setError((state) => ({ ...state, [tenant.id]: "" }));
+    const response = await fetch(`/api/saas/businesses/${tenant.id}/vertical`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ vertical }),
+    }).catch(() => null);
+    setVerticalPending((state) => ({ ...state, [tenant.id]: false }));
+    if (!response?.ok) {
+      setError((state) => ({ ...state, [tenant.id]: "No se pudo cambiar el catálogo de propiedades." }));
+      return;
+    }
+    setTenants((list) => list.map((t) => (t.id === tenant.id ? { ...t, vertical } : t)));
+  }
 
   async function onboardingAction(tenantId: string, action: "retry" | "reset") {
     setSupport((state) => ({ ...state, [tenantId]: action }));
@@ -179,6 +197,7 @@ export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTe
               Agente {tenant.agentEnabled ? "activo" : "en pausa"}
             </span>
             <span>{tenant.members} usuario{tenant.members === 1 ? "" : "s"}</span>
+            {tenant.vertical === "inmobiliario" && <span>Inmobiliaria</span>}
             {tenant.onboarding && (
               <span className={tenant.onboarding.status === "error" ? "text-warning-text" : undefined}>
                 Alta: {ONBOARDING_LABEL[tenant.onboarding.status]}
@@ -250,6 +269,15 @@ export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTe
               onClick={() => void revoke(tenant.id)}
             >
               {pending[tenant.id] === "revoke" ? "Quitando…" : "Quitar plan"}
+            </Button>
+            <Button
+              className="h-11"
+              variant="ghost"
+              aria-pressed={tenant.vertical === "inmobiliario"}
+              disabled={verticalPending[tenant.id]}
+              onClick={() => void toggleRealty(tenant)}
+            >
+              {tenant.vertical === "inmobiliario" ? "Apagar catálogo de propiedades" : "Encender catálogo de propiedades"}
             </Button>
           </div>
 
