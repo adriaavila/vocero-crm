@@ -872,6 +872,12 @@ export const agentProfile = pgTable(
      * retomar. NULL o 0 = apagado. Ver `server/agencia/seguimiento.ts`.
      */
     followUpHours: integer("follow_up_hours"),
+    /**
+     * Fork — cuánto le deja una cita al negocio, en centavos de su moneda
+     * (Ajustes → Marca). NULL = no lo dijo: Inicio y el resumen cuentan las
+     * citas sin inventarles precio. Ver `server/agencia/lo-que-trajo.ts`.
+     */
+    valorCitaCents: integer("valor_cita_cents"),
     activationEnabled: boolean("preset_only").notNull().default(false),
     activationMessages: jsonb("preset_replies")
       .$type<string[]>()

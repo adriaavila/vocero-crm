@@ -8,7 +8,8 @@ import { getOrganizationBilling } from "@/server/saas/billing";
 import { getBranding } from "@/server/branding";
 import { brand } from "@/lib/brand";
 import { agentOn, getCentro } from "@/server/agencia/estado";
-import { getCentroMetricas, hasAnyDecision, parsePeriod, pipelineNow } from "@/server/agencia/centro-metricas";
+import { centroPeriod, getCentroMetricas, hasAnyDecision, parsePeriod, pipelineNow } from "@/server/agencia/centro-metricas";
+import { getLoQueTrajo } from "@/server/agencia/lo-que-trajo";
 import { getPrioridades } from "@/server/agencia/prioridades";
 import { askRemaining } from "@/server/agencia/centro-ask";
 import { ControlCenter } from "@/components/agencia/allok/control-center";
@@ -52,13 +53,18 @@ export default async function OverviewPage({
       askRemaining(orgId),
     ]);
     // La línea del día usa el estado de cada conversación de hoy según LA regla de «esperando».
-    const centro = await getCentro(orgId, prioridades.stateById);
+    const [centro, trajo] = await Promise.all([
+      getCentro(orgId, prioridades.stateById),
+      // La plata del mismo periodo que las cifras: citas del agente por lo que vale una, más ventas.
+      getLoQueTrajo(orgId, centroPeriod(metricas.period, metricas.timezone), branding.currency),
+    ]);
     const pro = planMeetsTier(billing?.plan, "pro") && (billing?.status === "active" || billing?.status === "trialing");
     return (
       <ControlCenter
         centro={centro}
         prioridades={prioridades}
         metricas={metricas}
+        trajo={trajo}
         funnel={funnel}
         askRemaining={askLeft}
         hasDecisions={decisions}

@@ -117,7 +117,23 @@ describeReal("resumen diario — Postgres real", { timeout: 30_000 }, () => {
   });
 
   it("cuenta lo de hoy en la zona del negocio", async () => {
-    expect(await m.res.resumenDelDia(ORG, SIETE)).toEqual({ clientes: 2, respuestas: 2, citas: 1, teEsperan: 0 });
+    expect(await m.res.resumenDelDia(ORG, SIETE)).toMatchObject({
+      clientes: 2,
+      respuestas: 2,
+      citas: 1,
+      teEsperan: 0,
+      valorCitasCents: null,
+      ventas: { count: 0, cents: 0 },
+    });
+  });
+
+  it("con lo que vale una cita, la cuenta en plata", async () => {
+    await m.db.update(m.schema.agentProfile).set({ valorCitaCents: 45_000 }).where(m.eq(m.schema.agentProfile.organizationId, ORG));
+    try {
+      expect(await m.res.resumenDelDia(ORG, SIETE)).toMatchObject({ citas: 1, valorCitasCents: 45_000 });
+    } finally {
+      await m.db.update(m.schema.agentProfile).set({ valorCitaCents: null }).where(m.eq(m.schema.agentProfile.organizationId, ORG));
+    }
   });
 
   it("a las 19:00 manda una vez; a otra hora o repetido, no", async () => {

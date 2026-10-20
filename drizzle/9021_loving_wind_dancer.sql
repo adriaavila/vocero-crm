@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN "valor_cita_cents" integer;
