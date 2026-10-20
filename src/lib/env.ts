@@ -56,6 +56,10 @@ const envSchema = z.object({
   // conversacion, no se le reporta nada a Meta y la superficie da 404.
   // Ej.: ATRIBUCION=on
   ATRIBUCION: z.string().optional(),
+  // Fork: sala de venta personal por comprador (vertical inmobiliario).
+  // Apagada por defecto: sin ella /salas, /s/<token> y su API dan 404.
+  // Ej.: SALA_VENTA=on
+  SALA_VENTA: z.string().optional(),
   // 015: bases de los conectores. Solo se sobreescriben para apuntar a los
   // mocks en el self-test; en producción se usan las reales.
   ZOOM_BASE_URL: z.string().url().default("https://api.zoom.us/v2"),

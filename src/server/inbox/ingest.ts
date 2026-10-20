@@ -28,6 +28,7 @@ import { onLeadActivity } from "@/server/inbox/lead-activity";
 import { maybeRunAgentTurn } from "@/server/ai/trigger";
 import { pausarPorRespuestaManual, reanudarSiVencio } from "@/server/agencia/pausa-manual";
 import { iaInicialPara } from "@/server/agencia/ia-inicial";
+import { atenderSalaEnWhatsapp } from "@/server/agencia/sala-whatsapp";
 
 /** Tipos de contenido soportados; el resto se ignora sin error. */
 const SUPPORTED_TYPES = new Set([
@@ -65,6 +66,15 @@ export function inboundText(msg: WebhookMessage): string | null {
     return msg.interactive?.button_reply?.title || null;
   }
   return msg.text?.body ?? null;
+}
+
+/** El id del botón que tocó (o el payload de una respuesta rápida de plantilla). */
+export function inboundReplyId(msg: WebhookMessage): string | null {
+  if (msg.type === "button") return msg.button?.payload || null;
+  if (msg.type === "interactive") {
+    return msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || null;
+  }
+  return null;
 }
 
 /** Tipos con archivo binario en Graph (008). */
@@ -307,6 +317,7 @@ export async function processMessagesValue(
       waMessageId: msg.id,
       type: msg.type,
       text,
+      replyId: inboundReplyId(msg),
       timestamp: msg.timestamp,
       media: mediaInputFrom(msg),
       // 018: normalizado aquí, en el adaptador del canal; la ingesta no sabe
@@ -464,6 +475,8 @@ export async function ingestInboundMessage(input: {
   waMessageId: string;
   type: string;
   text: string | null;
+  /** Fork: id del botón tocado, para la sala de venta (no se guarda en `message`). */
+  replyId?: string | null;
   timestamp: string;
   media?: MediaInput | null;
   /** 014: hilo en la plataforma de origen (Zernio); null en WhatsApp. */
@@ -576,6 +589,22 @@ export async function ingestInboundMessage(input: {
 
   // Un replay jamás le escribe al cliente: sin turno del agente (ni agent_job).
   if (input.replay) return;
+  // Fork — un botón de la sala de venta (o su respuesta al alquiler) lo
+  // contesta la sala; el agente no habla encima. Sin SALA_VENTA, no hace nada.
+  if (
+    await atenderSalaEnWhatsapp({
+      organizationId,
+      contactId: contact.id,
+      conversationId: conversation.id,
+      replyId: input.replyId ?? null,
+      text: input.text,
+    }).catch((err) => {
+      console.warn(`[sala] no se pudo atender el mensaje de ${conversation.id}:`, err);
+      return false;
+    })
+  ) {
+    return;
+  }
   await maybeRunAgentTurn(conversation.id, organizationId);
 }
 

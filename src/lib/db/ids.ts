@@ -48,6 +48,9 @@ const prefixes = {
   rawEvent: "rev",
   agentDecision: "dec",
   pushSubscription: "psub",
+  // Fork — sala de venta personal.
+  planPago: "plp",
+  salaVenta: "sala",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
