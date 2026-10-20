@@ -14,6 +14,7 @@ describe("defaultVerticalFromEnv", () => {
 
   it("sin DEFAULT_VERTICAL, ninguna organización nueva nace con vertical (caso allok)", () => {
     vi.stubEnv("DEFAULT_VERTICAL", "");
+    vi.stubEnv("BRAND", "allok");
     expect(defaultVerticalFromEnv()).toBeUndefined();
   });
 
@@ -22,8 +23,15 @@ describe("defaultVerticalFromEnv", () => {
     expect(defaultVerticalFromEnv()).toBe("inmobiliario");
   });
 
+  it("Rei sin DEFAULT_VERTICAL igual nace inmobiliario: solo vende ese plan", () => {
+    vi.stubEnv("DEFAULT_VERTICAL", "");
+    vi.stubEnv("BRAND", "rei");
+    expect(defaultVerticalFromEnv()).toBe("inmobiliario");
+  });
+
   it("un valor desconocido se ignora en vez de activar algo a medias", () => {
     vi.stubEnv("DEFAULT_VERTICAL", "otro-vertical-inventado");
+    vi.stubEnv("BRAND", "rei");
     expect(defaultVerticalFromEnv()).toBeUndefined();
   });
 });
