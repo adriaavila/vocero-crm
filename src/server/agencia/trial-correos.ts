@@ -3,14 +3,18 @@ import { brand, emailColors } from "@/lib/brand";
 import { getDb } from "@/lib/db";
 import { derivePlanState, planDate, TRIAL_ENDING_MS } from "@/lib/plan-estado";
 import { PLAN_CATALOG } from "@/lib/saas-plans";
+import { SETUP_STEP_CTA } from "@/lib/setup-steps";
 import { isAllokSaaSMode, resolvedRootDomain } from "@/lib/tenant-host";
 import { isSaaSSelfServe } from "@/server/auth/registration";
 import { sendEmail, isEmailConfigured, type EmailMessage } from "./email";
-import { billingFromMetadata } from "@/server/saas/billing";
+import { billingFromMetadata, SELF_SERVE_TRIAL_DAYS } from "@/server/saas/billing";
+import { getSetupProgress, type SetupProgress } from "./setup-progress";
 
 /**
- * Correos del ciclo de la prueba (capa de agencia): «tu prueba termina en 2
- * días» y «tu prueba terminó, tu agente está en pausa». Salen por el conector
+ * Correos del ciclo de la prueba (capa de agencia): «te falta un paso» al día
+ * siguiente del alta y a mitad de la prueba (solo si el agente sigue sin
+ * contestar), «tu prueba termina en 2 días» y «tu prueba terminó, tu agente
+ * está en pausa». Salen por el conector
  * de correo (apagado sin `RESEND_API_KEY` + `EMAIL_FROM`: entonces no se
  * reclama ni se manda nada).
  *
@@ -31,7 +35,11 @@ export const ENDED_MAIL_WINDOW_MS = 7 * DAY_MS;
 const POLL_MS = 15 * 60 * 1000;
 const FIRST_RUN_MS = 60 * 1000;
 
-export type LifecycleKey = "trialEnding" | "trialEnded";
+/** «Te falta un paso»: el primero pasado este tiempo del alta, el segundo a mitad de la prueba. */
+export const SETUP_NUDGE_FIRST_MS = 20 * 60 * 60 * 1000;
+export const SETUP_NUDGE_SECOND_MS = 3 * DAY_MS;
+
+export type LifecycleKey = "setupDay1" | "setupDay3" | "trialEnding" | "trialEnded";
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -125,6 +133,48 @@ export function buildTrialEndedEmail(input: MailInput): EmailMessage {
   return { to: input.to, subject, text, html };
 }
 
+type SetupMailInput = { to: string; baseUrl: string; progress: SetupProgress; daysLeft: number | null; second: boolean; brandName?: string };
+
+function helpLine(): string | null {
+  const whatsapp = brand().contact.whatsapp;
+  return whatsapp ? `¿Te trabaste en algún paso? Escríbenos por WhatsApp y te ayudamos: https://wa.me/${whatsapp}` : null;
+}
+
+/**
+ * «Te falta un paso»: la mayoría de las pruebas que no pagan nunca llegaron a
+ * ver a su agente contestar. Lleva directo al paso que toca y dice cuántos
+ * quedan; el segundo recuerda los días que le quedan a la prueba.
+ */
+export function buildSetupNudgeEmail(input: SetupMailInput): EmailMessage {
+  const name = input.brandName ?? brand().name;
+  const pending = input.progress.steps.filter((step) => !step.done);
+  const next = pending[0] ?? input.progress.steps[input.progress.steps.length - 1]!;
+  const url = `${input.baseUrl}${next.href}`;
+  const left = pending.length;
+  const stepsText = left === 1 ? "un paso" : `${left} pasos`;
+  const subject = input.second
+    ? `Tu agente de ${name} todavía no contesta: te falta ${stepsText}`
+    : `Tu agente está a ${stepsText} de contestar en tu WhatsApp`;
+  const lead = input.second && input.daysLeft !== null
+    ? `Te quedan ${input.daysLeft === 1 ? "1 día" : `${input.daysLeft} días`} de prueba gratis y tu agente todavía no contesta a tus clientes.`
+    : `Ya creaste tu cuenta de ${name}. Tu agente está a ${stepsText} de contestar solo en tu WhatsApp.`;
+  const list = input.progress.steps.map((step) => `${step.done ? "✓" : "○"} ${step.label}`);
+  const action = `Lo que sigue: ${next.label}. Son unos minutos.`;
+  const help = helpLine();
+  const text = ["Hola,", "", lead, "", ...list, "", action, "", `${SETUP_STEP_CTA[next.key]}: ${url}`, ...(help ? ["", help] : []), "", name].join("\n");
+  const html = layout(
+    [
+      escapeHtml(lead),
+      list.map(escapeHtml).join("<br>"),
+      `Lo que sigue: <strong>${escapeHtml(next.label)}</strong>. Son unos minutos.`,
+    ],
+    url,
+    escapeHtml(SETUP_STEP_CTA[next.key]),
+    help ? escapeHtml(help) : escapeHtml(name),
+  );
+  return { to: input.to, subject, text, html };
+}
+
 type Row = { id: string; slug: string | null; metadata: string | null; email: string; timezone: string | null };
 
 /** Negocios con prueba de autoservicio (el filtro fino lo hace `derivePlanState`) y el correo de su dueño. */
@@ -163,14 +213,31 @@ async function release(organizationId: string, key: LifecycleKey): Promise<void>
     where id = ${organizationId}`);
 }
 
-export type LifecycleResult = { ending: number; ended: number; failed: number };
+export type LifecycleResult = { setup: number; ending: number; ended: number; failed: number };
+
+function alreadyMarked(metadata: string | null, key: LifecycleKey): boolean {
+  try {
+    const parsed = JSON.parse(metadata ?? "{}") as { allok?: { lifecycle?: Record<string, unknown> } };
+    return Boolean(parsed.allok?.lifecycle?.[key]);
+  } catch {
+    return false;
+  }
+}
+
+/** Cuál «te falta un paso» toca según el tiempo desde el alta: uno por tramo, así quien llega tarde no recibe los dos. */
+function setupKeyFor(endsAt: string, now: number): LifecycleKey | null {
+  const elapsed = now - (Date.parse(endsAt) - SELF_SERVE_TRIAL_DAYS * DAY_MS);
+  if (elapsed >= SETUP_NUDGE_SECOND_MS) return "setupDay3";
+  if (elapsed >= SETUP_NUDGE_FIRST_MS) return "setupDay1";
+  return null;
+}
 
 /**
  * Una pasada: manda lo que toca y no se haya mandado. Seguro de repetir. Con el
  * conector de correo apagado (o fuera del autoservicio) no hace nada.
  */
 export async function runTrialLifecycleOnce(now = new Date()): Promise<LifecycleResult> {
-  const result: LifecycleResult = { ending: 0, ended: 0, failed: 0 };
+  const result: LifecycleResult = { setup: 0, ending: 0, ended: 0, failed: 0 };
   if (!isAllokSaaSMode() || !isSaaSSelfServe() || !isEmailConfigured()) return result;
 
   for (const row of await trialCandidates()) {
@@ -182,8 +249,35 @@ export async function runTrialLifecycleOnce(now = new Date()): Promise<Lifecycle
       key = "trialEnding";
     } else if (plan.kind === "trial_ended" && plan.endsAt && now.getTime() - Date.parse(plan.endsAt) <= ENDED_MAIL_WINDOW_MS) {
       key = "trialEnded";
+    } else if (plan.kind === "trial" && plan.endsAt) {
+      key = setupKeyFor(plan.endsAt, now.getTime());
     }
     if (!key || !plan.endsAt) continue;
+
+    if (key === "setupDay1" || key === "setupDay3") {
+      // La preparación cuesta consultas: solo para quien todavía no lo recibió.
+      if (alreadyMarked(row.metadata, key)) continue;
+      const progress = await getSetupProgress(row.id).catch(() => null);
+      if (!progress) continue;
+      // Con el agente ya contestando no hace falta: se marca igual para no volver a mirar.
+      if (!(await claim(row.id, key, now)) || !progress.active) continue;
+      const sent = await sendEmail(
+        buildSetupNudgeEmail({
+          to: row.email,
+          baseUrl: tenantBaseUrl(row.slug),
+          progress,
+          daysLeft: plan.daysLeft,
+          second: key === "setupDay3",
+        }),
+      );
+      if (sent.ok) result.setup++;
+      else {
+        result.failed++;
+        await release(row.id, key).catch(() => {});
+      }
+      continue;
+    }
+
     if (!(await claim(row.id, key, now))) continue;
 
     const input: MailInput = {
