@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, Check, ChevronRight, FileText, Loader2, MessageCircle, Sparkles, Trash2 } from "lucide-react";
 import { HorarioRespuesta, type HoursController } from "@/components/agencia/horario-respuesta";
+import { RecuperarAjuste } from "@/components/agencia/recuperar-ajuste";
 import { SeguimientoAjuste } from "@/components/agencia/seguimiento-ajuste";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -407,6 +408,8 @@ export function TuNegocio({
         )}
 
         <SeguimientoAjuste disabled={busy} />
+
+        <RecuperarAjuste disabled={busy} />
 
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
