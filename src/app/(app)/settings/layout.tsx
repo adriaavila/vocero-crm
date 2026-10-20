@@ -20,7 +20,7 @@ export default async function SettingsLayout({
   return (
     <div className="flex h-full flex-col">
       <header className="border-b px-4 py-3 sm:px-6 sm:py-4">
-        <h2 className="text-[17px] font-bold tracking-tight">Configuración</h2>
+        <h2 className="page-title text-[17px] font-bold tracking-tight">Configuración</h2>
       </header>
       {/* En móvil las pestañas van arriba (en fila), no como columna lateral. */}
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row">

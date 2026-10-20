@@ -146,7 +146,7 @@ export function ResultsClient({
     <div className="flex h-full flex-col">
       <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background px-4 py-3 sm:px-6 sm:py-4">
         <div className="min-w-0">
-          <h2 className="text-[17px] font-bold tracking-tight">Resultados</h2>
+          <h2 className="page-title text-[17px] font-bold tracking-tight">Resultados</h2>
           <p className="text-xs text-text-3">
             Ventas, el trabajo del agente, de dónde llegan y qué se está cayendo.
           </p>

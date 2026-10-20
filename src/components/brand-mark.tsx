@@ -48,6 +48,7 @@ export function BrandLogo({
     <span className={cn("flex min-w-0 items-center gap-2.5", className)}>
       <BrandTile branding={branding} className={TILE_SIZE[size]} />
       <span
+        data-brand-name
         className={cn(
           "truncate font-[750] leading-none tracking-tight",
           size === "lg" ? "text-[26px]" : "text-[17px]"

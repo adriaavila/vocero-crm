@@ -154,7 +154,7 @@ export function BillingClient({
       )}
       <div>
         <p className="kicker">{trial ? `${brandName} SaaS` : "Tu plan"}</p>
-        <h1 className="mt-1 text-2xl font-[700] tracking-tight">Facturación</h1>
+        <h1 className="page-title mt-1 text-2xl font-[700] tracking-tight">Facturación</h1>
         <p className="mt-1 text-sm text-text-2">Gestiona tu plan sin salir de Stripe. Tus conversaciones e historial se conservan aunque pauses la automatización.</p>
       </div>
 

@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { activeBrandId } from "@/lib/brand";
 import { getDb, schema } from "@/lib/db";
 
 /**
@@ -45,12 +46,17 @@ function parseMetadata(raw: string | null | undefined): OrgMetadata {
  * `DEFAULT_VERTICAL` sí está declarada en el esquema de `lib/env.ts`, donde
  * vive su documentación y su tipo.
  *
- * Sin ella (el caso de allok), `undefined`: las organizaciones nuevas nacen
- * sin vertical y el CRM se comporta exactamente como antes de este cambio.
+ * Sin ella, Rei (`BRAND=rei`) cae en el inmobiliario: solo vende el plan
+ * Inmobiliaria, así que un negocio de Rei sin catálogo de propiedades es un
+ * olvido de configuración, no una elección. Pasó en crm.reiprop.tech: la
+ * variable no estaba y el primer negocio nació sin Propiedades. En allok,
+ * `undefined`: las organizaciones nuevas nacen sin vertical, como siempre.
  */
 export function defaultVerticalFromEnv(): Vertical | undefined {
   const raw = process.env.DEFAULT_VERTICAL?.trim();
-  return isVertical(raw) ? raw : undefined;
+  if (isVertical(raw)) return raw;
+  if (raw) return undefined;
+  return activeBrandId() === "rei" ? "inmobiliario" : undefined;
 }
 
 /** El vertical guardado en `organization.metadata`, o `null` si no tiene. */

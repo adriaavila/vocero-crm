@@ -269,7 +269,7 @@ function Header({
   return (
     <header className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3 sm:px-6 sm:py-4">
       <div>
-        <h2 className="flex items-center gap-2 text-[17px] font-bold tracking-tight">
+        <h2 className="page-title flex items-center gap-2 text-[17px] font-bold tracking-tight">
           <FlaskConical className="h-4 w-4 text-primary" /> Probar tu agente
         </h2>
         <p className="text-xs text-muted-foreground">

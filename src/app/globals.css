@@ -465,11 +465,13 @@
     --overlay: rgba(15, 32, 40, 0.55);
     --knob: #ffffff;
 
+    /* Las tarjetas de REI Edificios son más redondas (16–24px) que las de
+       allok; los controles chicos conservan su esquina. */
     --radius-sm: 8px;
     --radius: 12px;
-    --radius-lg: 16px;
+    --radius-lg: 20px;
 
-    --shadow-sm: 0 1px 2px rgba(12, 24, 32, 0.05);
+    --shadow-sm: 0 1px 2px rgba(12, 24, 32, 0.04), 0 8px 20px -14px rgba(12, 24, 32, 0.14);
     --shadow-md: 0 6px 16px -4px rgba(12, 24, 32, 0.1), 0 0 0 1px rgba(12, 24, 32, 0.045);
     --shadow-pop: 0 16px 36px -12px rgba(12, 24, 32, 0.16);
 
@@ -478,12 +480,15 @@
        variable para no autorreferenciarse); Geist Mono para cifras y horas. */
     --font-sans: var(--font-grotesk);
     --font-serif: var(--font-instrument-serif);
-    --font-mono: var(--font-geist-mono);
+    /* Horas, cifras y etiquetas en la grotesca (con números tabulares, ver
+       `.font-mono` del SaaS): REI no usa mono en la interfaz. El código sí
+       conserva Geist Mono (regla de `code, kbd, pre`). */
+    --font-mono: var(--font-grotesk);
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-    /* Botones con esquina, nunca píldora (sistema rei); la presión es la
-       respuesta táctil, igual que `.rei-press`. */
-    --btn-radius: 10px;
+    /* Botones en píldora, como los de REI Edificios («Crear cuenta»,
+       «Registrar»); la presión es la respuesta táctil, igual que `.rei-press`. */
+    --btn-radius: 9999px;
     --btn-lift: 0px;
     --btn-press: 0.975;
   }
@@ -1240,6 +1245,89 @@
   .kicker {
     @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-text-3;
   }
+
+  /*
+    Rei · la voz de REI Edificios (rei-fm, `apps/buildings/src/app/globals.css`):
+    el ceja-título es grotesca en esmeralda con un filete delante (`.rei-eyebrow`),
+    no mono gris. `:where()` deja la especificidad en la de una clase, así una
+    utilidad del elemento (`hidden`, `text-brand`, `sr-only`) sigue mandando.
+  */
+  :where(:root[data-brand="rei"]) .kicker {
+    font-family: var(--font-sans);
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    color: var(--rei-brand-500);
+  }
+  /* El filete solo donde la ceja encabeza algo (un título, el nombre del
+     negocio); dentro de una píldora («HOY») o junto a un filtro era ruido. */
+  :where(:root[data-brand="rei"]) .kicker:has(+ :is(h1, h2, h3)):not(:is(h1, h2, h3))::before,
+  :where(:root[data-brand="rei"]) :is(h1, h2, h3, span):has(> [data-brand-name]) + .kicker::before {
+    content: "";
+    display: inline-block;
+    width: 20px;
+    height: 1px;
+    margin-right: 10px;
+    vertical-align: middle;
+    background: currentColor;
+    opacity: 0.5;
+  }
+}
+
+/*
+  Rei · títulos editoriales. En REI Edificios cada pantalla se nombra en
+  Instrument Serif itálica ("Inicio", "Buen día."), y el CRM los decía en
+  grotesca negra: era la diferencia que más se nota entre los dos productos.
+  `.page-title` es el título de la barra de cada sección; `.display-title`, el
+  saludo grande de Inicio. Sin Rei las dos clases no hacen nada. Fuera de
+  @layer y con :root delante a propósito: tienen que ganarle a las utilidades
+  de tamaño y peso que el mismo elemento trae para allok y Vocero.
+*/
+:root[data-brand="rei"] .page-title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+}
+:root[data-brand="rei"] .display-title {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 40px;
+  line-height: 1;
+  letter-spacing: -0.015em;
+}
+@media (min-width: 768px) {
+  :root[data-brand="rei"] .page-title {
+    font-size: 30px;
+  }
+  :root[data-brand="rei"] .display-title {
+    font-size: 54px;
+  }
+}
+/* El nombre del negocio en la barra, como el «rei» de REI Edificios. */
+:root[data-brand="rei"] [data-brand-name] {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+/* En la barra lateral cabe en dos renglones; cortarlo en uno dejaba
+   «Condominio Sa…». La barra de arriba del teléfono sigue en uno. */
+:root[data-brand="rei"] aside [data-brand-name] {
+  font-size: 22px;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/* La mono de Rei es para código, no para horas ni cifras: esas van en la
+   grotesca con números tabulares (ver --font-mono en el bloque de Rei). */
+:root[data-brand="rei"] :is(code, kbd, pre, samp) {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
 }
 
 /*
