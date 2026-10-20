@@ -143,10 +143,31 @@ function askMockAnswer(prompt: string): string {
 
 function borradorMock(prompt: string) {
   const source = prompt.split('"""')[1] ?? "";
+  if (prompt.startsWith("CHATS:")) return borradorChatsMock(source);
   const sentences = source.split(/(?<!\b[A-Z][a-z]{0,2}\.)(?<=[.!?])\s+|\n+/).map((t) => t.trim()).filter(Boolean);
   const pick = (re: RegExp) => sentences.filter((t) => re.test(t)).join(" ");
   const precios = pick(/\$|precio|cuesta|cobra/i);
   const zona = pick(/calle|av\.|avenida|zona|direcci|colonia|envi/i);
   const oferta = sentences.filter((t) => !precios.includes(t) && !zona.includes(t)).slice(0, 2).join(" ");
   return { oferta, precios, zona, preguntas: [] };
+}
+
+/** «Desde tus chats»: solo lo que dijo el negocio, y la pregunta de un cliente con la respuesta que le siguió. */
+function borradorChatsMock(source: string) {
+  const lines = source.split("\n");
+  const negocio = lines.filter((l) => l.startsWith("Negocio: ")).map((l) => l.slice(9));
+  const preguntas = lines.flatMap((line, i) => {
+    const next = lines[i + 1] ?? "";
+    return line.startsWith("Cliente: ") && line.includes("?") && next.startsWith("Negocio: ")
+      ? [{ pregunta: line.slice(9), respuesta: next.slice(9) }]
+      : [];
+  });
+  const usaEmojis = negocio.some((t) => /\p{Extended_Pictographic}/u.test(t));
+  return {
+    oferta: negocio.find((t) => /hacemos|vendemos|ofrecemos|tenemos/i.test(t)) ?? "",
+    precios: negocio.filter((t) => /\$|precio|cuesta/i.test(t)).join(" "),
+    zona: negocio.filter((t) => /calle|av\.|avenida|zona|colonia|envi/i.test(t)).join(" "),
+    preguntas,
+    tono: `${/usted/i.test(negocio.join(" ")) ? "Habla de usted" : "Tutea"}, mensajes cortos${usaEmojis ? ", usa emojis" : ""}.`,
+  };
 }
