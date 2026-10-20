@@ -1,11 +1,13 @@
-import { and, eq, gte, lt, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { textoResumenDia, type ResumenDia } from "@/lib/avisos";
 import { horaLocal } from "@/lib/seguimiento";
 import { todayInTz } from "@/lib/time/slots";
 import { businessTimezone } from "@/server/analytics/period";
 import { enviarAviso } from "@/server/agencia/avisos";
-import { getCentroMetricas } from "@/server/agencia/centro-metricas";
+import { valorCitasCents } from "@/lib/lo-que-trajo";
+import { getBranding } from "@/server/branding";
+import { centroPeriod, getCentroMetricas } from "@/server/agencia/centro-metricas";
+import { getLoQueTrajo } from "@/server/agencia/lo-que-trajo";
 import { agentOn } from "@/server/agencia/estado";
 import { getPrioridades } from "@/server/agencia/prioridades";
 
@@ -15,45 +17,33 @@ import { getPrioridades } from "@/server/agencia/prioridades";
  * Un dueño que contrata un empleado quiere saber al final del día qué hizo.
  * Con los avisos solo se enteraba de lo que salía mal (un traspaso); lo que el
  * agente resolvía solo no lo veía nunca. A las 19:00 en la zona del negocio,
- * quien dijo «avísame» recibe una línea: cuántos clientes escribieron, cuántos
- * mensajes contestó el agente, cuántas citas agendó y si alguien le espera.
+ * quien dijo «avísame» recibe una línea: cuánta plata le trajo el agente (las
+ * citas por lo que vale una, más las ventas cerradas), cuántos clientes
+ * escribieron y si alguien le espera.
  * Sin suscripciones no se calcula nada; un día sin clientes no se avisa.
  */
 
 export const RESUMEN_HORA = 19;
 
 export async function resumenDelDia(organizationId: string, now: Date): Promise<ResumenDia> {
-  const [metricas, agente] = await Promise.all([getCentroMetricas(organizationId, "hoy", now), agentOn(organizationId)]);
-  const [citas, prioridades] = await Promise.all([
-    citasDelAgenteHoy(organizationId, metricas.timezone, now),
+  const [metricas, agente, branding] = await Promise.all([
+    getCentroMetricas(organizationId, "hoy", now),
+    agentOn(organizationId),
+    getBranding(organizationId),
+  ]);
+  const [trajo, prioridades] = await Promise.all([
+    getLoQueTrajo(organizationId, centroPeriod("hoy", metricas.timezone, now), branding.currency),
     getPrioridades(organizationId, { agentOn: agente.on, now, light: true }),
   ]);
   return {
     clientes: metricas.conversations.total,
     respuestas: metricas.replies.ai,
-    citas,
+    citas: trajo.citas,
     teEsperan: prioridades.needsYou,
+    valorCitasCents: valorCitasCents(trajo),
+    ventas: trajo.ventas,
+    currency: trajo.currency,
   };
-}
-
-async function citasDelAgenteHoy(organizationId: string, timezone: string, now: Date): Promise<number> {
-  const b = schema.booking;
-  const hoy = todayInTz(now, timezone);
-  const rows = await getDb()
-    .select({ n: sql<number>`count(*)::int` })
-    .from(b)
-    .where(
-      and(
-        eq(b.organizationId, organizationId),
-        eq(b.source, "ai"),
-        eq(b.kind, "session"),
-        eq(b.isTest, false),
-        sql`to_char(${b.createdAt} at time zone 'UTC' at time zone ${timezone}, 'YYYY-MM-DD') = ${hoy}`,
-        gte(b.createdAt, new Date(now.getTime() - 36 * 3_600_000)),
-        lt(b.createdAt, new Date(now.getTime() + 60_000))
-      )
-    );
-  return rows[0]?.n ?? 0;
 }
 
 /**

@@ -43,6 +43,17 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   `/api/agent/borrador`): del texto o la web del dueño a un borrador de los
   campos, sin inventar y sin guardar solo. Lee webs públicas con guarda de IP
   privada; Instagram/Facebook/TikTok se rechazan con un aviso.
+- **«Enséñale con tus chats»** en Tu negocio (`lib/chat-exportado.ts`,
+  `lib/zip-texto.ts`, `/api/agent/borrador` con `{chats}`): el dueño sube chats
+  exportados de WhatsApp (.txt o el .zip del iPhone); se leen en el navegador
+  y al servidor viaja solo «Negocio:»/«Cliente:» sin nombres, teléfonos ni
+  correos. Del mismo borrador salen precios, preguntas y el TONO del dueño,
+  que se guarda en `agent_profile.tone` con el botón de siempre.
+- **Lo que te trajo tu agente, en plata** (`server/agencia/lo-que-trajo.ts`,
+  `lib/lo-que-trajo.ts`): el dueño dice cuánto le deja una cita
+  (`agent_profile.valor_cita_cents`, `/api/agent/valor-cita`); Inicio y el
+  resumen de las 19:00 cuentan las citas del agente por ese valor más las
+  ventas cerradas (las mismas de Resultados). Sin valor no se inventa plata.
 - **«Escríbele como cliente»** en Probar (`server/agencia/chat-prueba.ts`,
   `/api/lab/chat`): el dueño chatea con su agente con el turno real, en una
   conversación `is_test` de un contacto archivado (`prueba:dueno`): nada sale

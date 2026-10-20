@@ -310,6 +310,7 @@ export function AgentClient({
           onHoursOpenChange={setHoursOpen}
           brandName={brandNameLower}
           saveHandoff={(rules) => putProfile({ escalationRules: rules })}
+          saveTone={(tone) => putProfile({ tone })}
           onChanged={refetch}
         />
 

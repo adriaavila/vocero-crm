@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { apiError, parseBody, withOwner } from "@/lib/api";
-import { BORRADOR_INPUT_MAX } from "@/server/agencia/borrador-negocio-prompt";
-import { draftNegocio } from "@/server/agencia/borrador-negocio";
+import { BORRADOR_CHAT_SOURCE_MAX, BORRADOR_INPUT_MAX } from "@/server/agencia/borrador-negocio-prompt";
+import { draftDesdeChats, draftNegocio } from "@/server/agencia/borrador-negocio";
 import { importarDemo } from "@/server/agencia/demo-importar";
 
 export const runtime = "nodejs";
@@ -11,11 +11,13 @@ const Body = z.union([
   z.object({ fuente: z.string().trim().min(3).max(BORRADOR_INPUT_MAX) }).strict(),
   // La cuenta que nace de una demo del sitio: lo que esa demo ya sabe, sin modelo.
   z.object({ demo: z.string().trim().min(1).max(80) }).strict(),
+  // «Desde tus chats»: chats exportados de WhatsApp, condensados en el navegador.
+  z.object({ chats: z.string().trim().min(20).max(BORRADOR_CHAT_SOURCE_MAX) }).strict(),
 ]);
 
 /**
  * Fork (agencia): «Llénalo por mí» en «Tu negocio». Devuelve un BORRADOR de
- * los campos a partir del texto o la web del dueño; no guarda nada.
+ * los campos a partir del texto, la web o los chats del dueño; no guarda nada.
  */
 export const POST = withOwner<[Request]>(async (session, req: Request) => {
   const body = await parseBody(req, Body);
@@ -25,7 +27,10 @@ export const POST = withOwner<[Request]>(async (session, req: Request) => {
     if (!imported.ok) return apiError(imported.status, imported.code, imported.message);
     return Response.json({ borrador: imported.borrador });
   }
-  const result = await draftNegocio(session.organizationId, body.data.fuente);
+  const result =
+    "chats" in body.data
+      ? await draftDesdeChats(session.organizationId, body.data.chats)
+      : await draftNegocio(session.organizationId, body.data.fuente);
   if (!result.ok) return apiError(result.status, result.code, result.message);
   return Response.json({ borrador: result.borrador, remaining: result.remaining });
 });

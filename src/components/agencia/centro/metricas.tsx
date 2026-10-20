@@ -8,6 +8,8 @@ import type { StageCount } from "@/lib/embudo";
 import { cn } from "@/lib/utils";
 import { PERIOD_KEYS, PERIOD_LABEL, type PeriodKey } from "@/lib/centro";
 import type { CentroMetricas } from "@/server/agencia/centro-metricas";
+import { hayQueContar, type LoQueTrajo } from "@/lib/lo-que-trajo";
+import { LoQueTrajoTile } from "@/components/agencia/centro/lo-que-trajo";
 
 /**
  * Inicio · «Cómo va»: cuatro cifras del periodo que se elige (Hoy, 7, 30 o 90
@@ -16,23 +18,30 @@ import type { CentroMetricas } from "@/server/agencia/centro-metricas";
  * falta. Las cifras salen de lo mismo que Resultados.
  */
 
+/** El periodo dicho en una frase: «hoy», «en 7 días». */
+const PERIOD_PHRASE: Record<PeriodKey, string> = { hoy: "hoy", "7d": "en 7 días", "30d": "en 30 días", "90d": "en 90 días" };
+
 const ES_MONTH = new Intl.DateTimeFormat("es", { day: "numeric", month: "short", timeZone: "UTC" });
 const dayLabel = (iso: string) => ES_MONTH.format(new Date(`${iso}T12:00:00Z`)).replace(".", "");
 
 export function MetricasSection({
   metricas,
+  trajo,
   funnel,
   pro,
   owner,
   productLabel,
 }: {
   metricas: CentroMetricas;
+  /** Lo que trajo el agente en el periodo, en plata (`lib/lo-que-trajo.ts`). */
+  trajo: LoQueTrajo | null;
   funnel: StageCount[];
   /** Ventas (el embudo) es del plan Completo; sin él, la forma vacía y ninguna cifra. */
   pro: boolean;
   owner: boolean;
   productLabel: string;
 }) {
+  const showTrajo = Boolean(trajo && hayQueContar(trajo) && (pro || trajo.ventas.count > 0));
   return (
     <section aria-labelledby="metricas-titulo" className="mt-10">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
@@ -44,10 +53,13 @@ export function MetricasSection({
 
       {metricas.hasActivity ? (
         <div className="mt-3 grid gap-3 lg:grid-cols-2">
-          <Tile label="Conversaciones" className="lg:col-start-1 lg:row-start-1">
+          {showTrajo && trajo && (
+            <LoQueTrajoTile trajo={trajo} periodLabel={PERIOD_PHRASE[metricas.period]} owner={owner} />
+          )}
+          <Tile label="Conversaciones" className="lg:col-start-1">
             <ConversationsTile metricas={metricas} />
           </Tile>
-          <div className="grid gap-3 sm:grid-cols-2 lg:col-start-1 lg:row-start-2">
+          <div className="grid gap-3 sm:grid-cols-2 lg:col-start-1">
             <Tile label="Leads nuevos">
               <LeadsTile metricas={metricas} />
             </Tile>
@@ -55,7 +67,7 @@ export function MetricasSection({
               <RepliesTile replies={metricas.replies} productLabel={productLabel} />
             </Tile>
           </div>
-          <Tile label="Embudo" className="lg:col-start-2 lg:row-span-2 lg:row-start-1" aside={pro ? <TableroLink /> : <span className="kicker">Ahora</span>} flush>
+          <Tile label="Embudo" className={cn("lg:col-start-2 lg:row-span-2", showTrajo ? "lg:row-start-2" : "lg:row-start-1")} aside={pro ? <TableroLink /> : <span className="kicker">Ahora</span>} flush>
             <FunnelTile funnel={funnel} pro={pro} owner={owner} />
           </Tile>
         </div>

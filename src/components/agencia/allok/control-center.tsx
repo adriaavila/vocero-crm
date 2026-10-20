@@ -13,6 +13,7 @@ import { SetupProgressNav } from "@/components/agencia/setup-progress";
 import { deriveSetupProgress, SETUP_STEP_CTA } from "@/lib/setup-steps";
 import type { Centro } from "@/server/agencia/estado";
 import type { CentroMetricas } from "@/server/agencia/centro-metricas";
+import type { LoQueTrajo } from "@/lib/lo-que-trajo";
 import type { Prioridades } from "@/server/agencia/prioridades";
 import type { ReadinessResponse } from "@/server/readiness";
 import { buttonVariants } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export function ControlCenter({
   centro,
   prioridades,
   metricas,
+  trajo,
   funnel,
   askRemaining,
   hasDecisions,
@@ -53,6 +55,8 @@ export function ControlCenter({
   centro: Centro;
   prioridades: Prioridades;
   metricas: CentroMetricas;
+  /** Lo que trajo el agente en el periodo, en plata. */
+  trajo: LoQueTrajo | null;
   /** Los leads por etapa, ahora. */
   funnel: StageCount[];
   /** Preguntas libres que le quedan hoy al negocio (0: el campo nace deshabilitado). */
@@ -199,7 +203,7 @@ export function ControlCenter({
               <DayLine day={centro.day} timezone={tz} owner={owner} productLabel={productLabel} />
             </section>
 
-            <MetricasSection metricas={metricas} funnel={funnel} pro={pro} owner={owner} productLabel={productLabel} />
+            <MetricasSection metricas={metricas} trajo={trajo} funnel={funnel} pro={pro} owner={owner} productLabel={productLabel} />
           </>
         )}
 
