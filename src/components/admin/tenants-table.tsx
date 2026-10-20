@@ -15,6 +15,7 @@ import { billingStatusLabel, formatManualSource, PLAN_CATALOG, PLAN_ORDER } from
 import { onboardingErrorCopy } from "@/lib/onboarding-errors";
 import type { SaaSPlan } from "@/server/saas/billing";
 import type { SaaSTenantStatus } from "@/server/saas/admin";
+import { EnlaceContrasenaAdmin } from "@/components/agencia/enlace-contrasena-admin";
 
 type Billing = SaaSTenantStatus["billing"];
 type PendingAction = "grant" | "revoke" | null;
@@ -298,6 +299,8 @@ export function AdminTenantsTable({
             >
               {tenant.vertical === "inmobiliario" ? "Apagar catálogo de propiedades" : "Encender catálogo de propiedades"}
             </Button>
+            {/* Fork (agencia): soporte sin correo. */}
+            <EnlaceContrasenaAdmin tenantId={tenant.id} tenantName={tenant.name} />
           </div>
 
           {needsConfirm[tenant.id] && (
