@@ -179,7 +179,7 @@ export function WhatsappWizard({
             ? "Revisa que los mensajes lleguen y que tus respuestas salgan. Cada cosa se confirma sola."
             : reconnect
               ? "La conexión venció y tus respuestas están en pausa. Vuelve a conectar el mismo número; tus conversaciones siguen aquí."
-              : "Un solo paso: eliges tu número en la ventana de Meta. Si ya usas WhatsApp Business en tu teléfono, lo sigues usando igual."}
+              : "Eliges tu número en la ventana de Meta y la sigues hasta «Finalizar». Si ya usas WhatsApp Business en tu teléfono, lo sigues usando igual."}
         </p>
         {progress && <SetupProgressNav progress={progress} page="whatsapp" className="mt-3 max-w-2xl sm:mt-6" />}
       </header>

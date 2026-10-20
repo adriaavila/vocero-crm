@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inAppBrowserName } from "@/lib/navegador-meta";
+import { inAppBrowserName, isPhoneBrowser } from "@/lib/navegador-meta";
 import { onboardingErrorCopy } from "@/lib/onboarding-errors";
 
 const IG_IOS =
@@ -12,6 +12,13 @@ const SAFARI =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Mobile/15E148 Safari/604.1";
 const CHROME =
   "Mozilla/5.0 (Linux; Android 14; SM-A546E) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36";
+const ANDROID_TABLET =
+  "Mozilla/5.0 (Linux; Android 14; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+// iPadOS pide la versión de escritorio: se presenta como una Mac.
+const IPAD =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+const MAC_CHROME =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
 
 describe("navegador donde la ventana de Meta no abre", () => {
   it("reconoce los navegadores internos de Instagram, Facebook y TikTok", () => {
@@ -25,6 +32,16 @@ describe("navegador donde la ventana de Meta no abre", () => {
     expect(inAppBrowserName(CHROME)).toBeNull();
     expect(inAppBrowserName("")).toBeNull();
     expect(inAppBrowserName(undefined)).toBeNull();
+  });
+
+  it("reconoce un teléfono, no una tableta ni una computadora", () => {
+    expect(isPhoneBrowser(SAFARI)).toBe(true);
+    expect(isPhoneBrowser(CHROME)).toBe(true);
+    expect(isPhoneBrowser(ANDROID_TABLET)).toBe(false);
+    expect(isPhoneBrowser(IPAD)).toBe(false);
+    expect(isPhoneBrowser(MAC_CHROME)).toBe(false);
+    expect(isPhoneBrowser("")).toBe(false);
+    expect(isPhoneBrowser(undefined)).toBe(false);
   });
 
   it("un SDK bloqueado tiene su propia copia, con reintento", () => {
