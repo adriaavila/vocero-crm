@@ -878,6 +878,14 @@ export const agentProfile = pgTable(
      * citas sin inventarles precio. Ver `server/agencia/lo-que-trajo.ts`.
      */
     valorCitaCents: integer("valor_cita_cents"),
+    /**
+     * Fork — recuperar clientes: días sin saber de un cliente que ya vino (o
+     * ya compró) antes de que el agente le escriba UNA vez con la plantilla
+     * aprobada `recuperar_template_id`. NULL = apagado. Ver
+     * `server/agencia/recuperar.ts`.
+     */
+    recuperarDias: integer("recuperar_dias"),
+    recuperarTemplateId: text("recuperar_template_id"),
     activationEnabled: boolean("preset_only").notNull().default(false),
     activationMessages: jsonb("preset_replies")
       .$type<string[]>()

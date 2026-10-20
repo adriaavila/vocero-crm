@@ -22,6 +22,8 @@ type WorkerState = {
   siguiendo?: boolean;
   /** Fork — hay un barrido de resúmenes diarios en curso. */
   resumiendo?: boolean;
+  /** Fork — hay un barrido de «recuperar clientes» en curso. */
+  recuperando?: boolean;
 };
 
 const globalForWorker = globalThis as unknown as {
@@ -85,6 +87,17 @@ async function poll(state: WorkerState): Promise<void> {
           .catch((error) => console.error("[agent-worker] barrido de seguimientos falló:", error))
           .finally(() => {
             state.siguiendo = false;
+          });
+      }
+      // Fork — recuperar clientes que no volvieron (apagado por defecto; el
+      // barrido se espacia solo a cada 10 minutos).
+      if (!state.recuperando) {
+        state.recuperando = true;
+        void import("@/server/agencia/recuperar")
+          .then((m) => m.barrerRecuperar())
+          .catch((error) => console.error("[agent-worker] barrido de recuperar falló:", error))
+          .finally(() => {
+            state.recuperando = false;
           });
       }
       // Fork — resumen diario al celular (19:00 local, una vez por día).

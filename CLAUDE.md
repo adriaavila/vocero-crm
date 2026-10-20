@@ -54,6 +54,13 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   (`agent_profile.valor_cita_cents`, `/api/agent/valor-cita`); Inicio y el
   resumen de las 19:00 cuentan las citas del agente por ese valor más las
   ventas cerradas (las mismas de Resultados). Sin valor no se inventa plata.
+- **Clientes que no volvieron** (`server/agencia/recuperar.ts`,
+  `lib/recuperar.ts`, `/api/agent/recuperar`, tarjeta en Tu negocio): apagado
+  por defecto. Encendido (`agent_profile.recuperar_dias` + una plantilla
+  aprobada), el worker le escribe UNA vez por silencio al cliente que ya vino
+  a una cita o ya compró y lleva esos días sin escribir ni cita por delante:
+  de 10:00 a 19:00 locales, hasta 20 por negocio al día. Si no hay plantilla,
+  la tarjeta manda a Meta la propuesta (`recuperar_clientes`, MARKETING).
 - **«Escríbele como cliente»** en Probar (`server/agencia/chat-prueba.ts`,
   `/api/lab/chat`): el dueño chatea con su agente con el turno real, en una
   conversación `is_test` de un contacto archivado (`prueba:dueno`): nada sale
