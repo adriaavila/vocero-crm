@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { and, asc, eq, like } from "drizzle-orm";
 import { getAuth } from "@/lib/auth";
 import { getDb, schema } from "@/lib/db";
+import { isSaaSAdminEmail } from "@/lib/tenant-host";
 import { RESET_TOKEN_TTL_SECONDS } from "./restablecer-contrasena";
 import { tenantBaseUrl } from "./trial-correos";
 
@@ -24,7 +25,7 @@ import { tenantBaseUrl } from "./trial-correos";
 export type EnlaceContrasena = { url: string; email: string; expiresAt: string };
 
 export class EnlaceContrasenaError extends Error {
-  constructor(readonly code: "negocio_no_encontrado" | "usuario_no_encontrado") {
+  constructor(readonly code: "negocio_no_encontrado" | "usuario_no_encontrado" | "usuario_admin") {
     super(code);
   }
 }
@@ -56,8 +57,12 @@ export async function crearEnlaceContrasena(input: {
     ? members.find((m) => m.email.toLowerCase() === email)
     : (members.find((m) => m.role === "owner") ?? members[0]);
   if (!target) throw new EnlaceContrasenaError("usuario_no_encontrado");
+  // Un admin no le cambia la cuenta a otro admin: sería quedarse con su acceso al panel.
+  if (isSaaSAdminEmail(target.email)) throw new EnlaceContrasenaError("usuario_admin");
 
   // Uno vivo por usuario: los enlaces anteriores (de este panel o del correo) dejan de servir.
+  // Supone identificadores en claro (sin `verification.storeIdentifier` en lib/auth): con
+  // hash, este borrado dejaría de alcanzar a los viejos aunque el nuevo funcione igual.
   await db
     .delete(schema.verification)
     .where(and(like(schema.verification.identifier, `${PREFIX}%`), eq(schema.verification.value, target.userId)));

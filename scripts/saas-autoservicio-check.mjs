@@ -639,6 +639,8 @@ async function main() {
     const row = html.match(/title="test"[^>]*>test<\/th><td[^>]*>(\d+)<\/td>/);
     ok("la fila 'test' cuenta al menos las dos altas de esta corrida", Number(row?.[1] ?? 0) >= 2, row?.[0] ?? "sin fila 'test'");
 
+    ok("cada negocio trae «Enlace para cambiar contraseña»", html.includes("Enlace para cambiar contraseña"));
+
     console.log("\n== 13. Soporte sin correo: el admin crea el enlace para cambiar la contraseña ==");
     const [target] = await sql`select id from organization where slug = ${intruderSlug}`;
     const targetEmail = `otro-${stamp}@vocero.test`;
@@ -655,6 +657,13 @@ async function main() {
     ok("el enlace va al subdominio del negocio", (first.json?.url ?? "").startsWith(`http://${intruderSlug}.localhost`) && first.res.headers.get("cache-control") === "no-store", first.json?.url);
     const left = Date.parse(first.json?.expiresAt ?? "") - Date.now();
     ok("y vence en una hora", left > 55 * 60000 && left <= 60 * 60000, first.json?.expiresAt);
+    const plain = await admin(hostFor("admin"), `/api/saas/businesses/${target.id}/password-link`, { method: "POST", body: "{}", headers: { "content-type": "text/plain" } });
+    ok("sin JSON no se crea (415): un formulario de otro sitio no llega", plain.res.status === 415, String(plain.res.status));
+    const [adminOrg] = await sql`select m.organization_id as id from member m join "user" u on u.id = m.user_id where lower(u.email) = lower(${adminEmail}) limit 1`;
+    if (adminOrg) {
+      const forAdmin = await admin(hostFor("admin"), `/api/saas/businesses/${adminOrg.id}/password-link`, { method: "POST", body: JSON.stringify({ email: adminEmail }) });
+      ok("no sirve para la cuenta de otro admin (403)", forAdmin.res.status === 403, String(forAdmin.res.status));
+    }
     const stranger = await linkFor(admin, { email: `nadie-${stamp}@vocero.test` });
     ok("un correo que no es de ese negocio: 404", stranger.res.status === 404, String(stranger.res.status));
     const second = await linkFor(admin, { email: targetEmail });
