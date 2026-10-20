@@ -231,7 +231,9 @@ ok(
 );
 
 console.log("\n== Una organización SIN el vertical recibe 404, nunca el catálogo de otra ==");
-await sql`update organization set metadata = '{}' where id = ${orgId}`;
+// La llave en null, como la deja el «Apagar» del panel admin: sin la llave,
+// un negocio de Rei (BRAND=rei) sería inmobiliario igual.
+await sql`update organization set metadata = '{"vertical":null}' where id = ${orgId}`;
 const disabled = await api("/api/properties");
 ok(
   "GET /api/properties → 404 vertical_disabled",

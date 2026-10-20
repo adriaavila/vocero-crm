@@ -59,12 +59,28 @@ export function defaultVerticalFromEnv(): Vertical | undefined {
   return activeBrandId() === "rei" ? "inmobiliario" : undefined;
 }
 
-/** El vertical guardado en `organization.metadata`, o `null` si no tiene. */
+/**
+ * El vertical de una organización que nunca eligió uno: su metadata no trae
+ * la llave `vertical`. En Rei, el inmobiliario, por la misma razón que
+ * `defaultVerticalFromEnv`; así el negocio que nació sin la variable
+ * recupera Propiedades sin que nadie lo toque. En allok, ninguno, tenga o
+ * no `DEFAULT_VERTICAL`: allí la variable solo decide cómo NACEN.
+ */
+function implicitVertical(): Vertical | null {
+  return activeBrandId() === "rei" ? "inmobiliario" : null;
+}
+
+/**
+ * El vertical guardado en `organization.metadata`. Sin la llave, el de la
+ * instancia (`implicitVertical`); con la llave en `null` (el «Apagar» del
+ * panel admin) o con un valor desconocido, ninguno.
+ */
 export function verticalFromMetadata(
   raw: string | null | undefined
 ): Vertical | null {
   const meta = parseMetadata(raw);
-  return isVertical(meta.vertical) ? meta.vertical : null;
+  if (isVertical(meta.vertical)) return meta.vertical;
+  return "vertical" in meta ? null : implicitVertical();
 }
 
 /** El vertical de una organización. `null` = ninguno (comportamiento de allok). */
@@ -116,8 +132,10 @@ export async function setOrgVertical(
 
 /**
  * Apaga el vertical de una organización (el interruptor del panel admin),
- * sin pisar el resto de su metadata. Las propiedades cargadas se quedan:
- * volver a encenderlo las devuelve tal cual. Idempotente.
+ * sin pisar el resto de su metadata. Deja la llave en `null` en vez de
+ * borrarla: sin la llave, un negocio de Rei vuelve al inmobiliario
+ * (`verticalFromMetadata`) y apagarlo no serviría de nada. Las propiedades
+ * cargadas se quedan: volver a encenderlo las devuelve tal cual. Idempotente.
  */
 export async function clearOrgVertical(organizationId: string): Promise<void> {
   const db = getDb();
@@ -127,8 +145,8 @@ export async function clearOrgVertical(organizationId: string): Promise<void> {
     .where(eq(schema.organization.id, organizationId))
     .limit(1);
   const meta = parseMetadata(rows[0]?.metadata);
-  if (!("vertical" in meta)) return;
-  delete meta.vertical;
+  if (meta.vertical === null) return;
+  meta.vertical = null;
   await db
     .update(schema.organization)
     .set({ metadata: JSON.stringify(meta) })
