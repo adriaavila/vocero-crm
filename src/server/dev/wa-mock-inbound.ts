@@ -41,7 +41,7 @@ const MOCK_BINARY_TYPES = new Set(["image", "video", "audio", "document", "stick
 function applyMockContent(
   message: Record<string, unknown>,
   type: string,
-  input: { text?: string; description?: string } & MockMediaInput
+  input: { text?: string; description?: string; buttonId?: string } & MockMediaInput
 ): void {
   if (type === "text") {
     message.text = { body: input.text ?? "hola" };
@@ -49,7 +49,7 @@ function applyMockContent(
     // Tap en una respuesta rápida de plantilla; como en el ejemplo de Meta,
     // el payload repite la etiqueta.
     const label = input.text ?? "Sí, me interesa";
-    message.button = { payload: label, text: label };
+    message.button = { payload: input.buttonId ?? label, text: label };
   } else if (type === "interactive") {
     // Con descripción, fila de lista; sin ella, botón de respuesta.
     const title = input.text ?? "Sí";
@@ -58,7 +58,7 @@ function applyMockContent(
           type: "list_reply",
           list_reply: { id: `row_${nextN()}`, title, description: input.description },
         }
-      : { type: "button_reply", button_reply: { id: `btn_${nextN()}`, title } };
+      : { type: "button_reply", button_reply: { id: input.buttonId ?? `btn_${nextN()}`, title } };
   } else if (type === "location") {
     message.location = input.location ?? {
       latitude: 21.019,
@@ -105,6 +105,8 @@ export function buildInboundPayload(input: {
   text?: string;
   /** Solo `interactive`: descripción de la fila de lista (sin ella, botón). */
   description?: string;
+  /** El id del botón (o el payload de la respuesta rápida); sin él, uno inventado. */
+  buttonId?: string;
   waMessageId?: string;
   timestamp?: number;
 } & MockMediaInput &

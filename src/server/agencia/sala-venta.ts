@@ -445,6 +445,7 @@ export async function getSalaPublica(token: string) {
         superficie: p.builtArea === null ? null : Number(p.builtArea),
         terreno: p.lotArea === null ? null : Number(p.lotArea),
         descripcion: p.description,
+        operacion: p.operation,
         fotos: fotos.filter((f) => f.propertyId === p.id).slice(0, 8).map(urlFoto),
         calculo,
       };
@@ -457,6 +458,7 @@ export async function getSalaPublica(token: string) {
     saludo: sala.saludo,
     alquilerActual: alquiler,
     plan: planPago,
+    planAprobadoPor: plan[0]?.aprobadoPor ?? null,
     casas,
     whatsapp: telefono,
   };
@@ -491,6 +493,18 @@ export async function registrarSenal(
     .set(cambios)
     .where(and(eq(schema.salaVenta.id, sala.id), eq(schema.salaVenta.organizationId, sala.organizationId)));
   return true;
+}
+
+/** Lo mismo que `registrarSenal`, desde WhatsApp: ahí la sala se conoce por su fila. */
+export async function registrarSenalDeSala(
+  sala: { id: string; organizationId: string },
+  tipo: "calculadora" | "visita"
+): Promise<void> {
+  const ahora = new Date();
+  await getDb()
+    .update(schema.salaVenta)
+    .set(tipo === "calculadora" ? { calculadoraAt: ahora } : { visitaPedidaAt: ahora })
+    .where(and(eq(schema.salaVenta.id, sala.id), eq(schema.salaVenta.organizationId, sala.organizationId)));
 }
 
 /** La llave de una foto, solo si pertenece a una casa de esta sala. */

@@ -24,6 +24,9 @@ CREATE TABLE "sala_venta" (
 	"ultima_apertura_at" timestamp,
 	"calculadora_at" timestamp,
 	"visita_pedida_at" timestamp,
+	"espera_alquiler_de" text,
+	"espera_alquiler_at" timestamp,
+	"enviada_whatsapp_at" timestamp,
 	"created_by" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL

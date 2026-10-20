@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
   output: process.platform === "win32" ? undefined : "standalone",
   // El paquete `postgres` usa APIs de Node que no deben empaquetarse en el bundle.
   serverExternalPackages: ["postgres"],
+  // Fork — la imagen del cálculo de la sala de venta lee sus fuentes del disco
+  // en tiempo de ejecución: sin esto no entran a la imagen standalone.
+  outputFileTracingIncludes: {
+    "/api/s/[token]/cuota/[casaId]": ["./src/server/agencia/fonts/*.ttf"],
+  },
   // Se congelan al construir: el binario lleva dentro de qué código salió, así
   // que no puede mentir en tiempo de ejecución. `SOURCE_COMMIT` lo inyecta
   // Coolify solo; con docker compose se pasa por `--build-arg` y si falta, la

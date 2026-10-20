@@ -126,12 +126,20 @@ const fotoOtra = await api(`/api/properties/${otra.json?.property?.id}/photos`, 
   body: JSON.stringify({ mimeType: "image/jpeg", data: tinyJpegBase64(64, 48) }),
 });
 
+const PN = "PN-E2E-1";
+const conn = await api("/api/settings/whatsapp", {
+  method: "PUT",
+  body: JSON.stringify({ wabaId: "WABA-E2E", phoneNumberId: PN, token: "tok-e2e" }),
+});
+ok("WhatsApp conectado (wa-mock)", conn.res.ok, JSON.stringify(conn.json));
+
+const telefono = `5917${Math.floor(1000000 + Math.random() * 8999999)}`;
 const stages = (await api("/api/pipeline/stages")).json?.stages ?? [];
 const alta = await api("/api/contacts", {
   method: "POST",
   body: JSON.stringify({
     name: `Ana Comprador${S}`,
-    phone: `5917${Math.floor(1000000 + Math.random() * 8999999)}`,
+    phone: telefono,
     source: "otro",
     stageId: stages.find((s) => s.kind === "open")?.id,
   }),
@@ -230,6 +238,85 @@ ok(
   primero?.motivo === "Pidió visitar, usó la calculadora y abrió su sala 2 veces",
   primero?.motivo
 );
+
+console.log("\n== Dentro de WhatsApp: tarjetas, cálculo y visita con botones ==");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const outbox = async () => (await api("/api/dev/wa-mock/outbox")).json?.outbox ?? [];
+const nuevos = async (desde) => (await outbox()).filter((m) => m.n > desde && m.to.endsWith(telefono.slice(-7)));
+const ultimoN = async () => Math.max(0, ...(await outbox()).map((m) => m.n));
+const entra = async (body) => {
+  const r = await api("/api/dev/wa-mock/inbound", {
+    method: "POST",
+    body: JSON.stringify({ phoneNumberId: PN, from: telefono, name: `Ana Comprador${S}`, ...body }),
+  });
+  await sleep(1500);
+  return r;
+};
+const ids = (m) => (m?.body?.interactive?.action?.buttons ?? []).map((b) => b.reply.id);
+const cuerpo = (m) => m?.body?.interactive?.body?.text ?? m?.body?.text?.body ?? "";
+
+// Que todavía no sepa su alquiler, para que la sala se lo pregunte.
+await api("/api/salas", { method: "POST", body: JSON.stringify({ contactId, alquilerActual: null }) });
+const hola = await entra({ text: "Hola, ¿siguen teniendo casas?" });
+ok("el comprador escribe (abre la ventana de 24 h)", hola.res.ok, JSON.stringify(hola.json));
+
+let marca = await ultimoN();
+const envio = await api("/api/salas/whatsapp", { method: "POST", body: JSON.stringify({ contactId }) });
+ok("mandar la sala por WhatsApp → 200", envio.res.ok, JSON.stringify(envio.json));
+let salida = await nuevos(marca);
+ok("salen saludo, una tarjeta por casa y el link (3 mensajes)", salida.length === 3, JSON.stringify(salida.map((m) => m.type)));
+ok("el saludo lo llama por su nombre", cuerpo(salida[0]).startsWith("Hola, Ana."), cuerpo(salida[0]));
+const tarjeta = salida.find((m) => m.type === "interactive" && m.body.interactive.type === "button");
+ok("la tarjeta lleva la foto de la casa", String(tarjeta?.body?.interactive?.header?.image?.link ?? "").includes(`/api/s/${token}/foto/`));
+ok("y el precio", cuerpo(tarjeta).includes("US$ 120.000"), cuerpo(tarjeta));
+ok("con «Quiero visitar» y «Ver lo que pagaría»", JSON.stringify(ids(tarjeta)) === JSON.stringify([`sala:visita:${casaId}`, `sala:cuota:${casaId}`]), JSON.stringify(ids(tarjeta)));
+const link = salida.find((m) => m.body?.interactive?.type === "cta_url");
+ok("cierra con «Ver tu sala completa» y el link", link?.body?.interactive?.action?.parameters?.url === url, JSON.stringify(link?.body?.interactive));
+
+marca = await ultimoN();
+await entra({ type: "interactive", text: "Ver lo que pagaría", buttonId: `sala:cuota:${casaId}` });
+salida = await nuevos(marca);
+const cuota = salida[0];
+ok("tocar «Ver lo que pagaría» contesta con su cálculo", salida.length === 1 && cuerpo(cuota).includes(`Vivienda ${S}`) && cuerpo(cuota).includes("Los montos se confirman"), JSON.stringify(salida.map(cuerpo)));
+ok("y le pregunta cuánto paga de alquiler", cuerpo(cuota).includes("¿Cuánto pagas hoy de alquiler al mes, en dólares?"));
+const imagen = cuota?.body?.interactive?.header?.image?.link ?? "";
+ok("con la imagen del cálculo", imagen.includes(`/api/s/${token}/cuota/${casaId}`), imagen);
+const png = await fetch(imagen.replace(/^https?:\/\/[^/]+/, BASE));
+ok("la imagen del cálculo se sirve sin sesión (PNG)", png.status === 200 && png.headers.get("content-type") === "image/png", String(png.status));
+
+marca = await ultimoN();
+await entra({ text: "3.000 Bs" });
+salida = await nuevos(marca);
+ok("si lo dice en bolivianos, se lo pide en dólares", cuerpo(salida[0]).includes("en dólares"), JSON.stringify(salida.map(cuerpo)));
+
+marca = await ultimoN();
+await entra({ text: "pago 2.500" });
+salida = await nuevos(marca);
+ok("con su alquiler, el cálculo dice lo que pagaría de alquiler hasta la entrega", cuerpo(salida[0]).includes("Hasta la entrega pagarías US$ 5.000 de alquiler"), JSON.stringify(salida.map(cuerpo)));
+const [filaSala] = await sql`select alquiler_actual, espera_alquiler_de, calculadora_at from sala_venta where contact_id = ${contactId}`;
+ok("guarda su alquiler y deja de esperarlo", Number(filaSala?.alquiler_actual) === 2500 && filaSala?.espera_alquiler_de === null, JSON.stringify(filaSala));
+
+marca = await ultimoN();
+await entra({ type: "interactive", text: "Quiero visitar", buttonId: `sala:visita:${casaId}` });
+salida = await nuevos(marca);
+ok("«Quiero visitar» pregunta cuándo, con tres botones", ids(salida[0]).length === 3 && ids(salida[0]).every((id) => id.startsWith(`sala:cuando:${casaId}:`)), JSON.stringify(ids(salida[0])));
+
+marca = await ultimoN();
+await entra({ type: "interactive", text: "El fin de semana", buttonId: `sala:cuando:${casaId}:finde` });
+salida = await nuevos(marca);
+ok("elegir cuándo confirma que el equipo le escribe", cuerpo(salida[0]).startsWith("Listo."), JSON.stringify(salida.map(cuerpo)));
+const [conv] = await sql`select c.id, c.handoff_at, c.handoff_reason from conversation c where c.contact_id = ${contactId} and c.channel = 'whatsapp'`;
+ok("y pasa la conversación a una persona", conv?.handoff_at !== null && conv?.handoff_reason === "cliente", JSON.stringify(conv));
+const llamar = (await api("/api/salas")).json?.llamarHoy?.find((s) => s.contactId === contactId);
+ok("queda arriba en «llámalos hoy»", Boolean(llamar?.motivo?.startsWith("Pidió visitar")), llamar?.motivo);
+
+marca = await ultimoN();
+await entra({ type: "interactive", text: "Quiero visitar", buttonId: "sala:visita:prop_de_otra_sala" });
+ok("un botón con una casa que no es de su sala no responde nada", (await nuevos(marca)).length === 0);
+
+await sql`update conversation set last_inbound_at = now() - interval '2 days' where id = ${conv.id}`;
+const fuera = await api("/api/salas/whatsapp", { method: "POST", body: JSON.stringify({ contactId }) });
+ok("pasadas las 24 h no se manda (409, hace falta plantilla)", fuera.res.status === 409 && fuera.json?.error?.code === "window_closed", JSON.stringify(fuera.json));
 
 await sql.end();
 console.log(`\n${checks - failures}/${checks} comprobaciones OK`);

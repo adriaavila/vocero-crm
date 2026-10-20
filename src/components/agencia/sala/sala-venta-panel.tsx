@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Copy, ExternalLink, Presentation } from "lucide-react";
+import { Check, Copy, ExternalLink, MessageCircle, Presentation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -27,6 +27,7 @@ export function SalaVentaPanel({ contactId, nombre }: { contactId: string; nombr
   const [trabajando, setTrabajando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copiado, setCopiado] = useState<"link" | "mensaje" | null>(null);
+  const [whatsapp, setWhatsapp] = useState<"listo" | "confirmar" | "enviando" | "enviada">("listo");
 
   useEffect(() => {
     let vivo = true;
@@ -85,6 +86,23 @@ export function SalaVentaPanel({ contactId, nombre }: { contactId: string; nombr
     setTimeout(() => setCopiado(null), 1500);
   }
 
+  async function mandarPorWhatsapp() {
+    setWhatsapp("enviando");
+    setError(null);
+    const res = await fetch("/api/salas/whatsapp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ contactId }),
+    });
+    if (res.ok) {
+      setWhatsapp("enviada");
+      return;
+    }
+    const json = (await res.json().catch(() => null)) as { error?: { message: string } } | null;
+    setError(json?.error?.message ?? "No se pudo mandar por WhatsApp");
+    setWhatsapp("listo");
+  }
+
   if (!disponible) return null;
 
   return (
@@ -94,8 +112,8 @@ export function SalaVentaPanel({ contactId, nombre }: { contactId: string; nombr
       {!sala ? (
         <>
           <p className="mb-3 text-xs leading-relaxed text-text-3">
-            Un link que es suyo, con las casas que le caben y lo que le quedaría pagando. Ves
-            cuándo lo abre y si pide visita.
+            Las casas que le caben y lo que le quedaría pagando, dentro de su WhatsApp y en un
+            link que es suyo. Ves cuándo lo abre y si pide visita.
           </p>
           <Button size="sm" disabled={trabajando} onClick={() => void guardar({})}>
             <Presentation className="h-3.5 w-3.5" />
@@ -108,6 +126,31 @@ export function SalaVentaPanel({ contactId, nombre }: { contactId: string; nombr
             {sala.motivo ??
               (sala.aperturas === 0 ? "Todavía no la abre" : `La abrió ${sala.aperturas} ${sala.aperturas === 1 ? "vez" : "veces"}`)}
           </p>
+          {whatsapp === "confirmar" ? (
+            <div className="rounded-[var(--radius)] bg-brand-tint p-2.5">
+              <p className="mb-2 text-foreground">
+                Le llegan ahora a {nombre.split(" ")[0]}: un saludo, cada casa con su foto y botones, y el
+                link de su sala.
+              </p>
+              <div className="flex gap-1.5">
+                <Button size="sm" onClick={() => void mandarPorWhatsapp()}>
+                  Mandar
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setWhatsapp("listo")}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              disabled={whatsapp === "enviando"}
+              onClick={() => setWhatsapp("confirmar")}
+            >
+              {whatsapp === "enviada" ? <Check className="h-3.5 w-3.5" /> : <MessageCircle className="h-3.5 w-3.5" />}
+              {whatsapp === "enviando" ? "Mandando…" : whatsapp === "enviada" ? "Mandada por WhatsApp" : "Mandar por WhatsApp"}
+            </Button>
+          )}
           <div className="flex flex-wrap gap-1.5">
             <Button size="sm" variant="secondary" onClick={() => void copiar("mensaje")}>
               {copiado === "mensaje" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}

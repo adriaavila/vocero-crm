@@ -1,5 +1,5 @@
 {
-  "id": "be7d55a5-3033-4515-b782-4ddd60cd82e5",
+  "id": "aa8052d5-457e-4aad-9848-9ee256a190bb",
   "prevId": "a9212bb5-4be4-4fdc-bab5-f87537603662",
   "version": "7",
   "dialect": "postgresql",
@@ -6126,6 +6126,24 @@
         },
         "visita_pedida_at": {
           "name": "visita_pedida_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "espera_alquiler_de": {
+          "name": "espera_alquiler_de",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "espera_alquiler_at": {
+          "name": "espera_alquiler_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "enviada_whatsapp_at": {
+          "name": "enviada_whatsapp_at",
           "type": "timestamp",
           "primaryKey": false,
           "notNull": false

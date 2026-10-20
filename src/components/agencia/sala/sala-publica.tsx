@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BedDouble, Bath, Ruler, Trees, MessageCircle } from "lucide-react";
 import { calcularCuotas, formatoMonto, fraseAlquiler } from "@/lib/sala-cuotas";
+import { agruparPagos } from "@/lib/sala-whatsapp";
 import type { SalaPublica } from "@/server/agencia/sala-venta";
 
 /**
@@ -50,7 +51,7 @@ export function SalaPublicaView({ token, sala }: { token: string; sala: SalaPubl
   return (
     <main className="mx-auto min-h-screen max-w-xl bg-background px-4 pb-28 pt-8 text-foreground">
       <p className="kicker">{sala.negocio.nombre}</p>
-      <h1 className="mt-2 font-serif text-[2.4rem] leading-[1.05]">
+      <h1 className="mt-2 font-serif text-[2.6rem] italic leading-[1.02]">
         {primerNombre ? `Hola, ${primerNombre}.` : "Hola."}
       </h1>
       <p className="mt-3 text-[15px] leading-relaxed text-text-2">
@@ -123,7 +124,7 @@ export function SalaPublicaView({ token, sala }: { token: string; sala: SalaPubl
       {sala.plan && casa && calculo && (
         <section className="mt-10" aria-label="Lo que te quedaría pagando">
           <p className="kicker">Tu cálculo</p>
-          <h2 className="mt-2 font-serif text-[1.9rem] leading-tight">{casa.titulo}</h2>
+          <h2 className="mt-2 font-serif text-[2rem] italic leading-tight">{casa.titulo}</h2>
           <label className="mt-5 block text-sm font-medium" htmlFor="alquiler">
             ¿Cuánto pagas hoy de alquiler por mes?
           </label>
@@ -156,7 +157,7 @@ export function SalaPublicaView({ token, sala }: { token: string; sala: SalaPubl
               <li key={`${p.desde}-${p.etiqueta}`} className="flex items-baseline justify-between gap-3 px-4 py-3 text-sm">
                 <span>
                   <span className="block font-medium">{p.etiqueta}</span>
-                  <span className="text-text-3">{p.cuando}</span>
+                  <span className="text-text-3">{p.cuando[0]?.toUpperCase() + p.cuando.slice(1)}</span>
                 </span>
                 <span className="shrink-0 font-mono">
                   {p.veces > 1 ? `${p.veces} × ` : ""}
@@ -181,7 +182,7 @@ export function SalaPublicaView({ token, sala }: { token: string; sala: SalaPubl
           <a
             href={linkVisita}
             onClick={() => void avisar(token, "visita")}
-            className="mx-auto flex h-12 max-w-xl items-center justify-center gap-2 rounded-[var(--radius)] bg-brand text-base font-semibold text-brand-fg hover:bg-brand-hover"
+            className="mx-auto flex h-12 max-w-xl items-center justify-center gap-2 rounded-[var(--btn-radius,var(--radius))] bg-brand text-base font-semibold text-brand-fg hover:bg-brand-hover"
           >
             <MessageCircle className="h-5 w-5" />
             Quiero visitar
@@ -206,28 +207,4 @@ async function avisar(token: string, tipo: "apertura" | "calculadora" | "visita"
   } catch {
     /* una señal perdida no rompe la sala */
   }
-}
-
-/** Las cuotas mensuales iguales van en un renglón ("12 × US$ 3.000"), no en doce. */
-function agruparPagos(pagos: { mes: number; etiqueta: string; monto: number }[]) {
-  const filas: { etiqueta: string; monto: number; veces: number; desde: number; hasta: number; cuando: string }[] = [];
-  for (const pago of pagos) {
-    const base = pago.etiqueta.replace(/ \d+ de \d+$/, "");
-    const previa = filas[filas.length - 1];
-    if (previa && previa.etiqueta === base && Math.abs(previa.monto - pago.monto) < 0.01 && pago.mes === previa.hasta + 1) {
-      previa.veces += 1;
-      previa.hasta = pago.mes;
-      continue;
-    }
-    filas.push({ etiqueta: base, monto: pago.monto, veces: 1, desde: pago.mes, hasta: pago.mes, cuando: "" });
-  }
-  for (const fila of filas) {
-    fila.cuando =
-      fila.veces > 1
-        ? `Mensual, del mes ${fila.desde} al ${fila.hasta}`
-        : fila.desde === 0
-          ? "Al reservar"
-          : `Mes ${fila.desde}`;
-  }
-  return filas;
 }

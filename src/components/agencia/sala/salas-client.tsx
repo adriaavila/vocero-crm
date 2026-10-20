@@ -60,14 +60,15 @@ export function SalasClient() {
     <div className="mx-auto max-w-4xl space-y-10 p-6">
       <header>
         <p className="kicker">Salas de venta</p>
-        <h1 className="mt-1 font-serif text-3xl">
+        <h1 className="page-title mt-1 font-serif text-3xl italic">
           {llamar.length > 0
             ? `${llamar.length === 1 ? "Este está listo" : `Estos ${llamar.length} están listos`}: llámalos hoy`
             : "Nadie para llamar todavía"}
         </h1>
         <p className="mt-2 text-sm text-text-3">
-          Cada comprador tiene un link con sus casas y lo que le quedaría pagando. Aquí aparecen
-          los que lo abrieron, usaron la calculadora o pidieron visita en los últimos días.
+          Cada comprador recibe sus casas y lo que le quedaría pagando en su WhatsApp y en un link
+          suyo. Aquí aparecen los que abrieron la sala, calcularon su cuota o pidieron visita en los
+          últimos días.
         </p>
       </header>
 

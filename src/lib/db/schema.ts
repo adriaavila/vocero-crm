@@ -1862,6 +1862,14 @@ export const salaVenta = pgTable(
     ultimaAperturaAt: timestamp("ultima_apertura_at"),
     calculadoraAt: timestamp("calculadora_at"),
     visitaPedidaAt: timestamp("visita_pedida_at"),
+    /**
+     * Por WhatsApp: le preguntamos cuánto paga de alquiler para calcular con
+     * ESTA casa y su próximo mensaje es la respuesta. Se limpia al contestar.
+     */
+    esperaAlquilerDe: text("espera_alquiler_de"),
+    esperaAlquilerAt: timestamp("espera_alquiler_at"),
+    /** La última vez que se le mandó la sala por WhatsApp. */
+    enviadaWhatsappAt: timestamp("enviada_whatsapp_at"),
     createdBy: text("created_by").references(() => user.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

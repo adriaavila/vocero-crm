@@ -20,6 +20,8 @@ const schema = z
     text: z.string().optional(),
     // Respuesta a botón: `type: "interactive"` + descripción → fila de lista.
     description: z.string().optional(),
+    // El id del botón tocado (sala de venta: `sala:visita:<casa>`).
+    buttonId: z.string().max(256).optional(),
     waMessageId: z.string().optional(),
     timestamp: z.number().optional(),
     // 008 — adjuntos simulados
