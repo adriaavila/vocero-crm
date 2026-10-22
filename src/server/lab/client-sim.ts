@@ -24,6 +24,8 @@ const ClientTurn = z.object({
 
 export type ClientLine = { text: string; done: boolean };
 
+const CLIENT_SIM_TIMEOUT_MS = 15_000;
+
 /** Turnos de cliente como máximo: el guion más uno para contestar una pregunta. */
 export function maxClientTurns(persona: Persona): number {
   return persona.goal ? persona.script.length + 1 : persona.script.length;
@@ -80,10 +82,14 @@ export async function nextClientLine(input: {
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    { judge: true, credentials: input.credentials }
+    // Corto a propósito: si el proveedor tarda, sale la línea del guion y la
+    // corrida no se come su timeout esperando al cliente.
+    { judge: true, credentials: input.credentials, timeoutMs: CLIENT_SIM_TIMEOUT_MS }
   ).catch(() => null);
   if (result?.ok && typeof result.data?.mensaje === "string") {
-    const done = result.data.terminado === true;
+    // Un «terminado» temprano dejaría al juez con dos mensajes: solo cuenta
+    // cuando el guion ya se recorrió (el handoff corta aparte, en el runner).
+    const done = result.data.terminado === true && turn >= persona.script.length - 1;
     return { text: result.data.mensaje.trim(), done };
   }
   return scriptedLine(persona, turn);

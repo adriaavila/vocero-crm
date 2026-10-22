@@ -4,6 +4,7 @@ import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { memoriaParaPrompt } from "@/server/agencia/memoria-cliente";
+import { catalogoParaPrompt } from "@/server/agencia/catalogo-agente";
 import { historialParaAgente } from "@/server/agencia/oir-y-ver";
 import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
@@ -328,8 +329,12 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     conversationId,
     timezone: settings.timezone,
   });
+  // Fork — las propiedades disponibles de una inmobiliaria
+  // (`server/agencia/catalogo-agente`); sin vertical, null.
+  const catalogo = await catalogoParaPrompt(organizationId);
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
+    ...(catalogo ? [{ role: "system" as const, content: catalogo }] : []),
     ...(memoria ? [{ role: "system" as const, content: memoria }] : []),
     ...lineas.map((m) => ({
       role: m.direction === "in" ? ("user" as const) : ("assistant" as const),

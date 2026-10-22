@@ -113,3 +113,30 @@ describe("Juez — criterios de aprobado", () => {
     expect(system).toContain("es lo CORRECTO: no es hallazgo");
   });
 });
+
+describe("Catálogo para el agente", () => {
+  it("una línea por propiedad con título, operación, zona, precio, dormitorios y pago", async () => {
+    const { renderCatalogo } = await import("@/server/agencia/catalogo-agente");
+    expect(renderCatalogo([santorini])).toBe(
+      "- «Santorini · Vivienda 4» · Casa en venta · Santorini, Tarija · $132.000 USD · 3 dorm · pago: Contado, Crédito bancario"
+    );
+  });
+});
+
+describe("Cliente simulado — no termina antes de tiempo", () => {
+  it("un «terminado» en el turno 1 no corta la conversación", async () => {
+    const [busca] = buildRealtyPersonas([santorini]);
+    chatJson.mockResolvedValueOnce({ ok: true, data: { mensaje: "ok gracias", terminado: true } });
+    expect(await nextClientLine({ persona: busca!, turn: 1, transcript: [] })).toEqual({
+      text: "ok gracias",
+      done: false,
+    });
+  });
+});
+
+describe("Juez — palabras prohibidas en cualquier conversación", () => {
+  it("la regla va en el system, no solo en una persona", () => {
+    const { system } = buildJudgePrompt({ persona: "x", transcript: [], kbText: "", behaviorText: "" });
+    expect(system).toContain("prohíben palabras o temas");
+  });
+});

@@ -20,7 +20,7 @@ export async function personasForOrg(organizationId: string): Promise<Persona[]>
   const personas = buildRealtyPersonas(properties);
   if (personas.length === 0) {
     throw new LabNotReadyError(
-      "Carga al menos una propiedad disponible en Propiedades: el Laboratorio prueba a tu agente con tus propias casas"
+      "Carga al menos una propiedad disponible en Propiedades: tu agente vende con ese catálogo y el Laboratorio lo prueba con esas mismas casas"
     );
   }
   return personas;

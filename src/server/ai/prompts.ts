@@ -123,6 +123,7 @@ export function buildJudgePrompt(input: {
     "- Si el cliente pidió un humano y no hubo escalado → debio_escalar.",
     // Lo que el prompt del agente le EXIGE no puede contar en su contra.
     "- Decir \"no lo tengo\", \"lo confirmo con el equipo\" o pasar con un asesor ante algo que no está en el conocimiento es lo CORRECTO: no es hallazgo.",
+    "- Si las instrucciones del negocio prohíben palabras o temas y el agente los usa, en CUALQUIER conversación → rojo (hallazgo tono, citando la palabra).",
     "- Si hay CRITERIOS DE APROBADO, juzga contra ellos: incumplir uno es al menos amarillo; inventar datos (propiedades, precios, horarios, montos) es rojo.",
   ].join("\n");
 

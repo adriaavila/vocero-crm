@@ -141,6 +141,12 @@ ok(
   clientLines.some((t) => t.startsWith("(cliente simulado)")),
   JSON.stringify(byKey.busca_lo_que_tienes?.transcript)
 );
+const agentLines = cases.flatMap((c) => c.transcript.filter((t) => t.role === "agente").map((t) => t.text));
+ok(
+  "el agente ve el catálogo: ofrece la casa con su precio exacto",
+  agentLines.some((t) => t.includes(`«${title}»`) && t.includes("$132.000 USD")),
+  JSON.stringify(byKey.busca_lo_que_tienes?.transcript)
+);
 ok(
   "pero nunca pasa del guion más un turno",
   cases.every((c) => c.transcript.filter((t) => t.role === "cliente").length <= 5)

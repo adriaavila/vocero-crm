@@ -68,7 +68,14 @@ export function aiMockCompletion(messages: InMessage[]): string {
   // marca visible, para que el self-test vea que el cliente RESPONDE y no
   // recita el guion.
   if (system.includes(CLIENT_SIM_MARKER)) {
-    return JSON.stringify({ mensaje: "(cliente simulado) Sí, justo eso busco", terminado: false });
+    // Sigue con la primera línea del guion que todavía no mandó.
+    const guion = [...system.matchAll(/^\d+\. (.+)$/gm)].map((m) => m[1]!);
+    const enviadas = lastUser
+      .split("\n")
+      .filter((l) => l.startsWith("TÚ: "))
+      .map((l) => l.slice(4).replace(/^\(cliente simulado\) /, ""));
+    const siguiente = guion.find((l) => !enviadas.includes(l)) ?? "Gracias, eso era todo";
+    return JSON.stringify({ mensaje: `(cliente simulado) ${siguiente}`, terminado: false });
   }
 
   // «Pregúntale a allok» (Inicio): contesta con cifras del SNAPSHOT que recibió,
@@ -124,6 +131,13 @@ export function aiMockCompletion(messages: InMessage[]): string {
   if (cita && /mi cita|a qu[eé] hora/.test(text)) {
     const nombre = memoria.match(/Se llama ([^\n]+?)\./)?.[1];
     return JSON.stringify({ action: "reply", text: `${nombre ? `${nombre}, tu` : "Tu"} cita es el ${cita}.` });
+  }
+
+  // Catálogo de Propiedades (sistema aparte): «¿qué me puede mostrar?» se
+  // contesta con la primera propiedad que el CRM le pasó, con su precio.
+  const primera = memoria.match(/CATÁLOGO DE PROPIEDADES[^\n]*\n- «([^»]+)»[^\n]*?· (\$[\d.]+ [A-Z]{3}|Bs [\d.]+)/);
+  if (primera && /mostrar|qu[eé] tienen|cu[aá]nto cuesta/.test(text)) {
+    return JSON.stringify({ action: "reply", text: `Tengo «${primera[1]}» en ${primera[2]}.` });
   }
 
   const eco = lastUser.slice(0, 80);

@@ -10,6 +10,7 @@ import type { Persona } from "@/server/lab/personas";
 import { personasForOrg } from "@/server/lab/org-personas";
 import { nextClientLine } from "@/server/lab/client-sim";
 import { getAiRuntimeConfig } from "@/server/ai/credentials";
+import { catalogoParaPrompt } from "@/server/agencia/catalogo-agente";
 
 /**
  * Runner del Laboratorio (FR-030/FR-034): corrida en segundo plano DENTRO del
@@ -26,6 +27,7 @@ import { getAiRuntimeConfig } from "@/server/ai/credentials";
 
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
 const RUN_TIMEOUT_MS_NEA = 30 * 60 * 1000;
+const RUN_TIMEOUT_MS_ADAPTIVE = 20 * 60 * 1000;
 
 export class RunConflictError extends Error {}
 
@@ -76,7 +78,14 @@ async function executeRun(
   personas: Persona[]
 ): Promise<void> {
   const controller = new AbortController();
-  const timeoutMs = isNeaBrain() ? RUN_TIMEOUT_MS_NEA : RUN_TIMEOUT_MS;
+  // El cliente que contesta suma turnos y llamadas: la corrida inmobiliaria
+  // tiene más margen para no terminar entera en `failed` con un proveedor lento.
+  const adaptive = personas.some((p) => p.goal);
+  const timeoutMs = isNeaBrain()
+    ? RUN_TIMEOUT_MS_NEA
+    : adaptive
+      ? RUN_TIMEOUT_MS_ADAPTIVE
+      : RUN_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) =>
     (timer = setTimeout(
@@ -135,6 +144,12 @@ async function runAllCases(
         .join("\n")
     : "";
   const aiConfig = await getAiRuntimeConfig(organizationId);
+  // El juez ve lo mismo que el agente: sin el catálogo no puede comprobar una
+  // casa o un precio que el agente sacó de Propiedades.
+  const catalogo = personas.some((p) => p.goal)
+    ? await catalogoParaPrompt(organizationId)
+    : null;
+  const judgeKb = catalogo ? `${kbText}\n\n${catalogo}` : kbText;
 
   let done = 0;
   const total = cases.length;
@@ -179,7 +194,7 @@ async function runAllCases(
     const outcome = await judgeCase({
       personaKey: persona.key,
       transcript,
-      kbText,
+      kbText: judgeKb,
       behaviorText,
       expectations: persona.expectations,
       credentials: aiConfig.providers,
