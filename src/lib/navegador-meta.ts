@@ -11,6 +11,11 @@
  * - Un bloqueador de anuncios (Brave, uBlock, Safari con bloqueadores): el SDK
  *   de Meta no carga y el botón se quedaba en «Cargando Meta…» para siempre.
  *
+ * Y uno que funciona pero tropieza: el teléfono, en coexistencia. Meta pide
+ * confirmar dentro de WhatsApp Business; desde el mismo teléfono eso es salir
+ * del navegador, y quien ve «conectado» en WhatsApp no vuelve a la ventana a
+ * tocar «Finalizar», que es lo único que nos entrega el número.
+ *
  * Aquí viven las piezas puras; el puente (`embedded-signup-bridge.tsx`) las usa.
  */
 
@@ -31,4 +36,14 @@ export function inAppBrowserName(userAgent: string | null | undefined): string |
     if (pattern.test(userAgent)) return name;
   }
   return null;
+}
+
+/**
+ * Un teléfono: iPhone, o Android con «Mobile» (las tabletas Android no lo
+ * llevan y el iPad se presenta como Mac). Ahí conviene sugerir la computadora
+ * para conectar en coexistencia.
+ */
+export function isPhoneBrowser(userAgent: string | null | undefined): boolean {
+  if (!userAgent) return false;
+  return /\b(iPhone|iPod)\b/.test(userAgent) || (/\bAndroid\b/.test(userAgent) && /\bMobile\b/.test(userAgent));
 }

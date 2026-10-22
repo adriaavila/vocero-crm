@@ -8,6 +8,16 @@ describe("errores del alta en lenguaje humano", () => {
     expect(onboardingErrorCopy("cancelled").retry).toBe(true);
   });
 
+  it("cerrar antes de «Finalizar» dice cómo salir del número a medias", () => {
+    // Coexistencia: WhatsApp Business ya dice «conectado» y la app sigue pidiendo conectar.
+    const copy = onboardingErrorCopy(errorKeyForStep("cancelled"), { brandName: "Rei" });
+    expect(copy.title).toBe("Falta terminar en la ventana de Meta");
+    expect(copy.body).toContain("«Finalizar»");
+    expect(copy.body).toContain("no llegó a Rei");
+    expect(copy.body).toContain("Ajustes > Cuenta > Plataforma empresarial");
+    expect(onboardingErrorCopy("cancelled").body).toContain("no llegó hasta aquí");
+  });
+
   it("traduce los códigos que Meta manda dentro de su ventana", () => {
     expect(errorKeyForCancel(3441030)).toBe("number_on_whatsapp");
     expect(errorKeyForCancel("2655093")).toBe("other_provider");
