@@ -8,6 +8,8 @@ import { normalizeThemePreference, THEME_COOKIE } from "@/lib/theme";
 import { getBranding } from "@/server/branding";
 import { isAllokBrand, isAllokSaaSMode, isLegacyAppHost } from "@/lib/tenant-host";
 import { resolveLegacyOrganizationId, resolveOrganizationIdForHost } from "@/server/auth/on-signup";
+// Los valores de la marca allok, compartidos con allok.fun (creativ3).
+import "./allok-tokens.css";
 import "./globals.css";
 import "./rei-motion.css";
 
