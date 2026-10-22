@@ -167,8 +167,9 @@ async function runAllCases(
 
     let transcript: { role: "cliente" | "agente"; text: string }[];
     let conversationId: string;
+    let handedOff: boolean;
     try {
-      ({ transcript, conversationId } = await runConversation(
+      ({ transcript, conversationId, handedOff } = await runConversation(
         organizationId,
         persona,
         signal,
@@ -197,6 +198,7 @@ async function runAllCases(
       kbText: judgeKb,
       behaviorText,
       expectations: persona.expectations,
+      handedOff,
       credentials: aiConfig.providers,
     });
     if (signal.aborted) return;
@@ -253,6 +255,8 @@ async function runConversation(
 ): Promise<{
   transcript: { role: "cliente" | "agente"; text: string }[];
   conversationId: string;
+  /** Terminó porque el agente la pasó a una persona: el juez tiene que saberlo. */
+  handedOff: boolean;
 }> {
   const db = getDb();
 
@@ -269,6 +273,7 @@ async function runConversation(
   });
 
   let transcript: { role: "cliente" | "agente"; text: string }[] = [];
+  let handedOff = false;
   for (let turn = 0; ; turn += 1) {
     // El timeout de la corrida (o un cancel) puede llegar a mitad de guion —
     // se revisa ANTES de cada turno, no solo entre personas.
@@ -296,17 +301,25 @@ async function runConversation(
     await runAgentTurn(convId);
 
     const convRows = await db
-      .select({ handoffAt: schema.conversation.handoffAt })
+      .select({
+        handoffAt: schema.conversation.handoffAt,
+        handoffReason: schema.conversation.handoffReason,
+      })
       .from(schema.conversation)
       .where(eq(schema.conversation.id, convId))
       .limit(1);
-    if (convRows[0]?.handoffAt) break; // primer handoff → fin del guion
+    if (convRows[0]?.handoffAt) {
+      // Un turno que falló también pausa la conversación, pero eso no lo
+      // decidió el agente: para el juez no es un traspaso.
+      handedOff = convRows[0].handoffReason !== "error";
+      break; // primer handoff → fin del guion
+    }
     if (next.done) break;
     // Solo el cliente que contesta necesita leer al agente entre turnos.
     if (persona.goal) transcript = await readTranscript(convId);
   }
 
-  return { conversationId: convId, transcript: await readTranscript(convId) };
+  return { conversationId: convId, transcript: await readTranscript(convId), handedOff };
 }
 
 async function readTranscript(

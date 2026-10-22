@@ -2,6 +2,7 @@ import { z } from "zod";
 import { chatJson } from "@/lib/ai";
 import type { AiProviderSettings } from "@/lib/ai/config";
 import { buildJudgePrompt } from "@/server/ai/prompts";
+import { descartarHallazgosImposibles } from "@/server/agencia/juez-hallazgos";
 
 /** Veredicto estructurado del juez (FR-032, contrato ai.md). */
 export const Verdict = z.object({
@@ -35,6 +36,8 @@ export async function judgeCase(input: {
   behaviorText: string;
   /** Qué tiene que pasar para que esta persona salga verde (personas.ts). */
   expectations?: string[];
+  /** La conversación terminó porque el agente la pasó a una persona. */
+  handedOff?: boolean;
   credentials?: Partial<Record<"openai" | "openrouter", AiProviderSettings>>;
 }): Promise<JudgeOutcome> {
   const { system, user } = buildJudgePrompt({
@@ -43,6 +46,7 @@ export async function judgeCase(input: {
     kbText: input.kbText,
     behaviorText: input.behaviorText,
     expectations: input.expectations,
+    handedOff: input.handedOff,
   });
   const result = await chatJson(
     Verdict,
@@ -60,7 +64,13 @@ export async function judgeCase(input: {
     );
     return { status: "judge_failed", detail: result.detail };
   }
-  return { status: "done", verdict: result.data };
+  // Fork — fuera lo que el transcript desmiente (`server/agencia/juez-hallazgos`).
+  const verdict = descartarHallazgosImposibles({
+    veredicto: result.data,
+    transcript: input.transcript,
+    traspaso: input.handedOff ?? false,
+  });
+  return { status: "done", verdict };
 }
 
 /**
