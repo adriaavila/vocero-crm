@@ -2,6 +2,7 @@ import { JUDGE_MARKER } from "@/server/ai/prompts";
 import { ASK_MARKER } from "@/server/agencia/centro-ask-prompt";
 import { BORRADOR_MARKER } from "@/server/agencia/borrador-negocio-prompt";
 import { SEGUIMIENTO_MARKER } from "@/server/agencia/seguimiento-prompt";
+import { CLIENT_SIM_MARKER } from "@/server/lab/client-sim";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -61,6 +62,13 @@ export function aiMockCompletion(messages: InMessage[]): string {
       });
     }
     return JSON.stringify({ veredicto: "verde", hallazgos: [] });
+  }
+
+  // Cliente simulado del Laboratorio: contesta la pregunta del agente con una
+  // marca visible, para que el self-test vea que el cliente RESPONDE y no
+  // recita el guion.
+  if (system.includes(CLIENT_SIM_MARKER)) {
+    return JSON.stringify({ mensaje: "(cliente simulado) Sí, justo eso busco", terminado: false });
   }
 
   // «Pregúntale a allok» (Inicio): contesta con cifras del SNAPSHOT que recibió,

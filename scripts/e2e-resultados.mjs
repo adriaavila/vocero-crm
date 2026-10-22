@@ -545,6 +545,14 @@ async function main() {
   // Un lead para un contacto cuya ÚNICA conversación es de prueba (el
   // Laboratorio no los crea, pero si un camino lo hiciera no debe contar).
   let corrida = await api("/api/lab/runs", { method: "POST" });
+  if (corrida.res.status === 409 && corrida.json?.error?.code === "lab_not_ready") {
+    // Una inmobiliaria sin propiedades disponibles no se prueba: se carga una.
+    await api("/api/properties", {
+      method: "POST",
+      body: JSON.stringify({ operation: "venta", kind: "casa", price: 120000, currency: "USD", city: "Tarija" }),
+    });
+    corrida = await api("/api/lab/runs", { method: "POST" });
+  }
   if (corrida.res.status === 409 && corrida.json?.error?.code === "run_in_progress") {
     await sleep(15000);
     corrida = await api("/api/lab/runs", { method: "POST" });
