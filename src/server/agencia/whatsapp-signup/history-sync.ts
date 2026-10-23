@@ -163,7 +163,10 @@ export async function processHistoryValue(value: HistoryFieldValue): Promise<Syn
         waUserId: null,
         profileName: null,
       });
-      const conversation = await getOrCreateConversation(organizationId, contact.id);
+      // Chat viejo del teléfono, no un lead nuevo: nace con la IA apagada.
+      const conversation = await getOrCreateConversation(organizationId, contact.id, {
+        aiEnabled: false,
+      });
 
       let maxTimestamp: Date | null = null;
       for (const msg of thread.messages ?? []) {
