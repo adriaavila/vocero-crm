@@ -106,6 +106,38 @@ describe("descartarHallazgosImposibles", () => {
     ).toBe(veredicto);
   });
 
+  it("sin traspaso, fuera_de_kb que solo cita al cliente se descarta (sus modismos no son del agente)", () => {
+    const out = juzgar(
+      {
+        veredicto: "amarillo",
+        hallazgos: [{ tipo: "fuera_de_kb", evidencia: "kiero saber cuanto cuesta y si ai disponible" }],
+      },
+      [c("kiero saber cuanto cuesta y si ai disponible"), a("Desde $us 120.000 según la casa.")],
+      false
+    );
+    expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
+  });
+
+  it("sin traspaso, una alucinación que cita al agente se queda", () => {
+    const veredicto: VerdictType = {
+      veredicto: "rojo",
+      hallazgos: [{ tipo: "alucinacion", evidencia: "todos terminados y con entrega inmediata" }],
+    };
+    expect(
+      juzgar(veredicto, [c("¿Qué tienen?"), a("Casas y departamentos, todos terminados y con entrega inmediata.")], false)
+    ).toBe(veredicto);
+  });
+
+  it("una alucinación que solo cita la pregunta del cliente se queda: puede señalar lo que el agente inventó al contestarla", () => {
+    const veredicto: VerdictType = {
+      veredicto: "rojo",
+      hallazgos: [{ tipo: "alucinacion", evidencia: "¿Me hacen un 10 % de descuento?" }],
+    };
+    expect(
+      juzgar(veredicto, [c("¿Me hacen un 10 % de descuento?"), a("¡Claro! Te lo hacemos si firmas esta semana.")], false)
+    ).toBe(veredicto);
+  });
+
   it("sin traspaso, «debió escalar» se queda: el agente nunca pasó la conversación", () => {
     const veredicto: VerdictType = {
       veredicto: "amarillo",

@@ -11,8 +11,9 @@ import type { VerdictType } from "@/server/lab/judge";
  * puso en rojo 3 de 6 conversaciones de un agente que hizo lo correcto, y Rei
  * no deja activar al agente con un caso rojo.
  *
- * Aquí se descarta SOLO lo que el transcript desmiente. Lo que no se puede
- * comprobar sin un modelo (una alucinación que cita al agente) se queda.
+ * Aquí se descarta SOLO lo que el transcript desmiente. Una alucinación nunca:
+ * aunque cite la pregunta del cliente, puede estar señalando lo que el agente
+ * inventó al contestarla, y eso no se comprueba sin un modelo.
  * PURA: sin BD ni modelo.
  */
 
@@ -52,21 +53,19 @@ export function descartarHallazgosImposibles(input: {
 
   const desmentido = (h: Hallazgo): boolean => {
     const enAgente = delAgente.some((t) => cita(h.evidencia, t.text));
+    const soloDelCliente = !enAgente && delCliente.some((t) => cita(h.evidencia, t.text));
     // El tono es el del agente: una cita que solo dijo el cliente no lo prueba.
-    if (h.tipo === "tono") {
-      return !enAgente && delCliente.some((t) => cita(h.evidencia, t.text));
-    }
+    if (h.tipo === "tono") return soloDelCliente;
+    // Salirse del conocimiento también es cosa del agente: la pregunta del
+    // cliente no lo prueba, haya o no traspaso. Pasó con «kiero saber cuanto
+    // cuesta», marcado aunque el agente contestó con el conocimiento; y pasar
+    // al equipo lo que no está ahí es lo correcto. Si cita al agente, se queda.
+    if (h.tipo === "fuera_de_kb") return soloDelCliente;
     if (!traspaso) return false;
     // Escaló justo ahí: «debió escalar» sobre ese mismo intercambio es falso.
     // Si cita un pedido ANTERIOR (escaló tarde), se queda.
     if (h.tipo === "debio_escalar") {
       return cierre.some((t) => cita(h.evidencia, t.text));
-    }
-    // Pasar al equipo lo que no está en el conocimiento es lo correcto (lo
-    // pide el prompt del agente). Si cita lo que el agente dijo, se queda.
-    if (h.tipo === "fuera_de_kb") {
-      const pregunta = cierre[0];
-      return !enAgente && pregunta !== undefined && cita(h.evidencia, pregunta.text);
     }
     return false;
   };
