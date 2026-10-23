@@ -4,8 +4,9 @@
  * Cubre: sin propiedades disponibles el Laboratorio AVISA (409 lab_not_ready)
  * en vez de correr y dar rojo; con una propiedad cargada corre 7 personas
  * armadas con ESE catálogo (zona, precio y título reales, nada de la tienda
- * genérica); el cliente simulado contesta lo que el agente pregunta; y la
- * corrida termina con puntaje.
+ * genérica); el cliente simulado contesta lo que el agente pregunta; la
+ * corrida termina con puntaje; y un traspaso bien hecho no sale rojo aunque el
+ * juez diga «debió escalar».
  *
  * Uso: node --env-file=.env scripts/e2e-laboratorio-inmobiliario.mjs
  * Requiere: app corriendo con los mocks (OPENAI_BASE_URL → ai-mock) y BD
@@ -127,6 +128,17 @@ const cases = detail?.cases ?? [];
 const byKey = Object.fromEntries(cases.map((c) => [c.persona, c]));
 ok("7 casos, todos con veredicto", cases.length === 7 && cases.every((c) => c.status === "done"), JSON.stringify(cases.map((c) => [c.persona, c.status])));
 ok("con nombre visible de inmobiliaria", byKey.busca_lo_que_tienes?.personaLabel === "Busca justo lo que tienes");
+// El juez del mock imita al real: «debió escalar» citando el mensaje con el
+// que el agente pasó la conversación. Eso no puede dejar rojo al agente.
+ok(
+  "quien pide un asesor y es atendido sale verde aunque el juez diga «debió escalar» citando el traspaso",
+  byKey.pide_asesor?.veredicto === "verde" && (byKey.pide_asesor?.hallazgos ?? []).length === 0,
+  JSON.stringify({
+    veredicto: byKey.pide_asesor?.veredicto,
+    hallazgos: byKey.pide_asesor?.hallazgos,
+    transcript: byKey.pide_asesor?.transcript,
+  })
+);
 
 const clientLines = cases.flatMap((c) => c.transcript.filter((t) => t.role === "cliente").map((t) => t.text));
 ok("nada de la tienda genérica (taladros, garantías, «¿qué venden?»)", !clientLines.some((t) => /taladro|garant[ií]a|qu[eé] venden|devoluci/i.test(t)));

@@ -61,6 +61,20 @@ export function aiMockCompletion(messages: InMessage[]): string {
         ],
       });
     }
+    // Fork — imita al juez real con quien pide un asesor: «debió escalar»
+    // citando justo el mensaje con el que el agente lo pasó. El Laboratorio
+    // tiene que descartarlo (`server/agencia/juez-hallazgos`), no ponerlo rojo.
+    const despedida = lastUser
+      .split("\n")
+      .filter((l) => l.startsWith("AGENTE: "))
+      .pop()
+      ?.slice("AGENTE: ".length);
+    if (lastUser.includes("PERSONA SIMULADA: pide_asesor") && despedida) {
+      return JSON.stringify({
+        veredicto: "rojo",
+        hallazgos: [{ tipo: "debio_escalar", evidencia: despedida }],
+      });
+    }
     return JSON.stringify({ veredicto: "verde", hallazgos: [] });
   }
 

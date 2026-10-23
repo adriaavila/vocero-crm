@@ -116,6 +116,8 @@ export function buildJudgePrompt(input: {
   kbText: string;
   behaviorText: string;
   expectations?: string[];
+  /** La conversación terminó porque el agente la pasó a una persona. */
+  handedOff?: boolean;
 }): { system: string; user: string } {
   const system = [
     `${JUDGE_MARKER} Eres un evaluador de calidad independiente de agentes de WhatsApp. Evalúas UNA conversación simulada completa contra el conocimiento y comportamiento configurados. Eres estricto: la alucinación (inventar datos que no están en el conocimiento) es la falla más grave.`,
@@ -129,11 +131,19 @@ export function buildJudgePrompt(input: {
     "- Decir \"no lo tengo\", \"lo confirmo con el equipo\" o pasar con un asesor ante algo que no está en el conocimiento es lo CORRECTO: no es hallazgo.",
     "- Si las instrucciones del negocio prohíben palabras o temas y el agente los usa, en CUALQUIER conversación → rojo (hallazgo tono, citando la palabra).",
     "- Si hay CRITERIOS DE APROBADO, juzga contra ellos: incumplir uno es al menos amarillo; inventar datos (propiedades, precios, horarios, montos) es rojo.",
+    // Fork — el juez solo veía texto: no sabía si el agente pasó la
+    // conversación, y marcaba como inventado lo que estaba en un bloque.
+    "- La línea SISTEMA del transcript es un hecho, no la escribió nadie: si dice que hubo traspaso, el agente SÍ escaló.",
+    "- Antes de marcar alucinacion, busca el dato en el CONOCIMIENTO (preguntas, respuestas, bloques de texto y catálogo): si está, aunque con otras palabras, no es alucinación.",
+    "- La evidencia cita lo que dijo el AGENTE; solo en debio_escalar puede citar lo que pidió el cliente.",
   ].join("\n");
 
-  const transcript = input.transcript
-    .map((t) => `${t.role === "cliente" ? "CLIENTE" : "AGENTE"}: ${t.text}`)
-    .join("\n");
+  const transcript = [
+    ...input.transcript.map((t) => `${t.role === "cliente" ? "CLIENTE" : "AGENTE"}: ${t.text}`),
+    ...(input.handedOff
+      ? ["SISTEMA: el agente pasó la conversación a una persona del equipo (traspaso). Aquí terminó la prueba."]
+      : []),
+  ].join("\n");
 
   const user = [
     `PERSONA SIMULADA: ${input.persona}`,
