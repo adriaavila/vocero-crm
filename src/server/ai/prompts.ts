@@ -65,6 +65,10 @@ export function buildAgentSystemPrompt(input: {
         "- NUNCA escribas tú los horarios ni los inventes: usa offer_slots y el sistema pega los reales.",
         "- book_slot solo acepta un horario que el sistema ofreció antes en ESTA conversación. Si el cliente pide otro, vuelve a ofrecer con offer_slots.",
         "- Si el cliente quiere CANCELAR una cita → handoff: esa decisión no es tuya.",
+        // Fork — SAMER (Rei, 22-10): sus reglas dicen «si pide visita, pásalo
+        // a Marcelo» y el agente igual ofrecía horarios, porque la agenda
+        // existe para toda la instancia. Lo que el dueño escribió manda.
+        "- Si las Reglas de escalado del negocio piden pasar a una persona cuando el cliente quiere visitar o agendar, eso manda sobre la agenda: haz handoff en vez de offer_slots.",
       ]
     : [];
   return [

@@ -101,3 +101,14 @@ describe("el prompt del agente lleva reloj", () => {
     expect(out).not.toContain("book_slot");
   });
 });
+
+describe("la agenda no pasa por encima de las reglas del dueño", () => {
+  it("con agenda, el prompt dice que las reglas de escalado de visitas mandan", () => {
+    const out = prompt({ profile: perfil, kb: [], stages: [], agenda: true, now: AHORA });
+    expect(out).toContain("eso manda sobre la agenda: haz handoff en vez de offer_slots");
+  });
+  it("sin agenda, no se habla de ella", () => {
+    const out = prompt({ profile: perfil, kb: [], stages: [], agenda: false, now: AHORA });
+    expect(out).not.toContain("offer_slots");
+  });
+});

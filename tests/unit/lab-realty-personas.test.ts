@@ -140,3 +140,13 @@ describe("Juez — palabras prohibidas en cualquier conversación", () => {
     expect(system).toContain("prohíben palabras o temas");
   });
 });
+
+describe("Catálogo para el agente — la ficha", () => {
+  it("lleva la descripción (entrega y oferta), recortada si es larga", async () => {
+    const { renderCatalogo, DESCRIPCION_MAX } = await import("@/server/agencia/catalogo-agente");
+    const linea = renderCatalogo([{ ...santorini, description: "Casa de dos plantas.\n Entrega: junio 2027." }]);
+    expect(linea.endsWith(" — Casa de dos plantas. Entrega: junio 2027.")).toBe(true);
+    const larga = renderCatalogo([{ ...santorini, description: "x".repeat(1000) }]);
+    expect(larga.split(" — ")[1]!.length).toBe(DESCRIPCION_MAX);
+  });
+});
