@@ -127,9 +127,9 @@ export function LabClient({ initialProgress = null }: { initialProgress?: SetupP
       setError(data?.error?.message ?? "No se pudo lanzar la corrida");
       return;
     }
-    const data = (await res.json()) as { runId: string };
+    const data = (await res.json()) as { runId: string; total?: number };
     setSelectedRunId(data.runId);
-    setProgress({ done: 0, total: 6 });
+    setProgress({ done: 0, total: data.total ?? 6 });
     void refetchRuns();
   }
 

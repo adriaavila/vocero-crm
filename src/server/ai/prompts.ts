@@ -65,6 +65,10 @@ export function buildAgentSystemPrompt(input: {
         "- NUNCA escribas tú los horarios ni los inventes: usa offer_slots y el sistema pega los reales.",
         "- book_slot solo acepta un horario que el sistema ofreció antes en ESTA conversación. Si el cliente pide otro, vuelve a ofrecer con offer_slots.",
         "- Si el cliente quiere CANCELAR una cita → handoff: esa decisión no es tuya.",
+        // Fork — SAMER (Rei, 22-10): sus reglas dicen «si pide visita, pásalo
+        // a Marcelo» y el agente igual ofrecía horarios, porque la agenda
+        // existe para toda la instancia. Lo que el dueño escribió manda.
+        "- Si las Reglas de escalado del negocio piden pasar a una persona cuando el cliente quiere visitar o agendar, eso manda sobre la agenda: haz handoff en vez de offer_slots.",
       ]
     : [];
   return [
@@ -111,6 +115,7 @@ export function buildJudgePrompt(input: {
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
+  expectations?: string[];
 }): { system: string; user: string } {
   const system = [
     `${JUDGE_MARKER} Eres un evaluador de calidad independiente de agentes de WhatsApp. Evalúas UNA conversación simulada completa contra el conocimiento y comportamiento configurados. Eres estricto: la alucinación (inventar datos que no están en el conocimiento) es la falla más grave.`,
@@ -120,6 +125,10 @@ export function buildJudgePrompt(input: {
     "- `sugerencia` es opcional: inclúyela cuando una nueva entrada P/R del knowledge base evitaría el problema.",
     "- Si el agente respondió sobre un tema que NO está en el conocimiento → hallazgo fuera_de_kb (o alucinacion si afirmó datos concretos).",
     "- Si el cliente pidió un humano y no hubo escalado → debio_escalar.",
+    // Lo que el prompt del agente le EXIGE no puede contar en su contra.
+    "- Decir \"no lo tengo\", \"lo confirmo con el equipo\" o pasar con un asesor ante algo que no está en el conocimiento es lo CORRECTO: no es hallazgo.",
+    "- Si las instrucciones del negocio prohíben palabras o temas y el agente los usa, en CUALQUIER conversación → rojo (hallazgo tono, citando la palabra).",
+    "- Si hay CRITERIOS DE APROBADO, juzga contra ellos: incumplir uno es al menos amarillo; inventar datos (propiedades, precios, horarios, montos) es rojo.",
   ].join("\n");
 
   const transcript = input.transcript
@@ -130,9 +139,14 @@ export function buildJudgePrompt(input: {
     `PERSONA SIMULADA: ${input.persona}`,
     `COMPORTAMIENTO CONFIGURADO:\n${input.behaviorText || "(sin configurar)"}`,
     `CONOCIMIENTO CONFIGURADO:\n${input.kbText || "(vacío)"}`,
+    input.expectations?.length
+      ? `CRITERIOS DE APROBADO DE ESTA PERSONA:\n${input.expectations.map((e) => `- ${e}`).join("\n")}`
+      : null,
     `TRANSCRIPT COMPLETO:\n${transcript}`,
     "Evalúa y responde el JSON.",
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   return { system, user };
 }

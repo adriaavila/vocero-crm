@@ -33,6 +33,8 @@ export async function judgeCase(input: {
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
+  /** Qué tiene que pasar para que esta persona salga verde (personas.ts). */
+  expectations?: string[];
   credentials?: Partial<Record<"openai" | "openrouter", AiProviderSettings>>;
 }): Promise<JudgeOutcome> {
   const { system, user } = buildJudgePrompt({
@@ -40,6 +42,7 @@ export async function judgeCase(input: {
     transcript: input.transcript,
     kbText: input.kbText,
     behaviorText: input.behaviorText,
+    expectations: input.expectations,
   });
   const result = await chatJson(
     Verdict,

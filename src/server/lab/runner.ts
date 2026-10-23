@@ -6,8 +6,11 @@ import { publish } from "@/server/events/bus";
 import { runAgentTurn } from "@/server/ai/pipeline";
 import { renderKb } from "@/server/ai/prompts";
 import { computeScore, judgeCase } from "@/server/lab/judge";
-import { PERSONAS, type Persona } from "@/server/lab/personas";
+import type { Persona } from "@/server/lab/personas";
+import { personasForOrg } from "@/server/lab/org-personas";
+import { nextClientLine } from "@/server/lab/client-sim";
 import { getAiRuntimeConfig } from "@/server/ai/credentials";
+import { catalogoParaPrompt } from "@/server/agencia/catalogo-agente";
 
 /**
  * Runner del Laboratorio (FR-030/FR-034): corrida en segundo plano DENTRO del
@@ -24,11 +27,17 @@ import { getAiRuntimeConfig } from "@/server/ai/credentials";
 
 const RUN_TIMEOUT_MS = 10 * 60 * 1000;
 const RUN_TIMEOUT_MS_NEA = 30 * 60 * 1000;
+const RUN_TIMEOUT_MS_ADAPTIVE = 20 * 60 * 1000;
 
 export class RunConflictError extends Error {}
 
-export async function startRun(organizationId: string): Promise<string> {
+export async function startRun(
+  organizationId: string
+): Promise<{ runId: string; total: number }> {
   const db = getDb();
+  // Antes de abrir la corrida: si faltan datos para probar con sentido,
+  // LabNotReadyError sale al POST como un aviso, no como una corrida en rojo.
+  const personas = await personasForOrg(organizationId);
   let runId: string;
   try {
     const inserted = await db
@@ -45,7 +54,7 @@ export async function startRun(organizationId: string): Promise<string> {
   }
 
   await db.insert(schema.agentTestCase).values(
-    PERSONAS.map((p) => ({
+    personas.map((p) => ({
       id: newId("testCase"),
       organizationId,
       runId,
@@ -55,20 +64,28 @@ export async function startRun(organizationId: string): Promise<string> {
   );
 
   // Fire-and-forget in-process: el POST regresa ya; el progreso va por SSE.
-  void executeRun(runId, organizationId).catch(async (err) => {
+  void executeRun(runId, organizationId, personas).catch(async (err) => {
     console.error("[lab] corrida falló:", err);
-    await failRun(runId, organizationId, String(err));
+    await failRun(runId, organizationId, String(err), personas.length);
   });
 
-  return runId;
+  return { runId, total: personas.length };
 }
 
 async function executeRun(
   runId: string,
-  organizationId: string
+  organizationId: string,
+  personas: Persona[]
 ): Promise<void> {
   const controller = new AbortController();
-  const timeoutMs = isNeaBrain() ? RUN_TIMEOUT_MS_NEA : RUN_TIMEOUT_MS;
+  // El cliente que contesta suma turnos y llamadas: la corrida inmobiliaria
+  // tiene más margen para no terminar entera en `failed` con un proveedor lento.
+  const adaptive = personas.some((p) => p.goal);
+  const timeoutMs = isNeaBrain()
+    ? RUN_TIMEOUT_MS_NEA
+    : adaptive
+      ? RUN_TIMEOUT_MS_ADAPTIVE
+      : RUN_TIMEOUT_MS;
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) =>
     (timer = setTimeout(
@@ -81,11 +98,11 @@ async function executeRun(
   );
   try {
     await Promise.race([
-      runAllCases(runId, organizationId, controller.signal),
+      runAllCases(runId, organizationId, personas, controller.signal),
       timeout,
     ]);
   } catch (err) {
-    await failRun(runId, organizationId, String(err));
+    await failRun(runId, organizationId, String(err), personas.length);
   } finally {
     clearTimeout(timer!);
   }
@@ -94,6 +111,7 @@ async function executeRun(
 async function runAllCases(
   runId: string,
   organizationId: string,
+  personas: Persona[],
   signal: AbortSignal
 ): Promise<void> {
   const db = getDb();
@@ -126,6 +144,12 @@ async function runAllCases(
         .join("\n")
     : "";
   const aiConfig = await getAiRuntimeConfig(organizationId);
+  // El juez ve lo mismo que el agente: sin el catálogo no puede comprobar una
+  // casa o un precio que el agente sacó de Propiedades.
+  const catalogo = personas.some((p) => p.goal)
+    ? await catalogoParaPrompt(organizationId)
+    : null;
+  const judgeKb = catalogo ? `${kbText}\n\n${catalogo}` : kbText;
 
   let done = 0;
   const total = cases.length;
@@ -133,7 +157,7 @@ async function runAllCases(
 
   for (const testCase of cases) {
     if (signal.aborted) return;
-    const persona = PERSONAS.find((p) => p.key === testCase.persona);
+    const persona = personas.find((p) => p.key === testCase.persona);
     if (!persona) continue;
 
     await db
@@ -147,7 +171,8 @@ async function runAllCases(
       ({ transcript, conversationId } = await runConversation(
         organizationId,
         persona,
-        signal
+        signal,
+        aiConfig.providers
       ));
     } catch (err) {
       // Un despacho a Nea que agota sus reintentos (o cualquier otro fallo
@@ -169,8 +194,9 @@ async function runAllCases(
     const outcome = await judgeCase({
       personaKey: persona.key,
       transcript,
-      kbText,
+      kbText: judgeKb,
       behaviorText,
+      expectations: persona.expectations,
       credentials: aiConfig.providers,
     });
     if (signal.aborted) return;
@@ -214,11 +240,16 @@ async function runAllCases(
   publishProgress(organizationId, runId, "done", done, total, score);
 }
 
-/** Conversa el guion completo contra el agente real; corta al primer handoff. */
+/**
+ * Conversa contra el agente real; corta al primer handoff. Con guion fijo, las
+ * líneas salen tal cual; con `goal`, el cliente simulado contesta lo que el
+ * agente le pregunta (`client-sim.ts`).
+ */
 async function runConversation(
   organizationId: string,
   persona: Persona,
-  signal: AbortSignal
+  signal: AbortSignal,
+  credentials?: Parameters<typeof nextClientLine>[0]["credentials"]
 ): Promise<{
   transcript: { role: "cliente" | "agente"; text: string }[];
   conversationId: string;
@@ -237,10 +268,14 @@ async function runConversation(
     aiEnabled: true,
   });
 
-  for (const line of persona.script) {
+  let transcript: { role: "cliente" | "agente"; text: string }[] = [];
+  for (let turn = 0; ; turn += 1) {
     // El timeout de la corrida (o un cancel) puede llegar a mitad de guion —
     // se revisa ANTES de cada turno, no solo entre personas.
     if (signal.aborted) break;
+    const next = await nextClientLine({ persona, turn, transcript, credentials });
+    if (!next || signal.aborted) break;
+    const line = next.text;
     const now = new Date();
     await db.insert(schema.message).values({
       id: newId("message"),
@@ -266,23 +301,28 @@ async function runConversation(
       .where(eq(schema.conversation.id, convId))
       .limit(1);
     if (convRows[0]?.handoffAt) break; // primer handoff → fin del guion
+    if (next.done) break;
+    // Solo el cliente que contesta necesita leer al agente entre turnos.
+    if (persona.goal) transcript = await readTranscript(convId);
   }
 
-  const messages = await db
+  return { conversationId: convId, transcript: await readTranscript(convId) };
+}
+
+async function readTranscript(
+  conversationId: string
+): Promise<{ role: "cliente" | "agente"; text: string }[]> {
+  const messages = await getDb()
     .select()
     .from(schema.message)
-    .where(eq(schema.message.conversationId, convId))
+    .where(eq(schema.message.conversationId, conversationId))
     .orderBy(asc(schema.message.createdAt));
-
-  return {
-    conversationId: convId,
-    transcript: messages
-      .filter((m) => m.text)
-      .map((m) => ({
-        role: m.direction === "in" ? ("cliente" as const) : ("agente" as const),
-        text: m.text!,
-      })),
-  };
+  return messages
+    .filter((m) => m.text)
+    .map((m) => ({
+      role: m.direction === "in" ? ("cliente" as const) : ("agente" as const),
+      text: m.text!,
+    }));
 }
 
 async function upsertTestContact(
@@ -328,14 +368,15 @@ async function upsertTestContact(
 async function failRun(
   runId: string,
   organizationId: string,
-  error: string
+  error: string,
+  total: number
 ): Promise<void> {
   const db = getDb();
   await db
     .update(schema.agentTestRun)
     .set({ status: "failed", error, finishedAt: new Date() })
     .where(eq(schema.agentTestRun.id, runId));
-  publishProgress(organizationId, runId, "failed", 0, PERSONAS.length);
+  publishProgress(organizationId, runId, "failed", 0, total);
 }
 
 function publishProgress(
