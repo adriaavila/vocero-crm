@@ -28,6 +28,8 @@ import type { CatalogProperty } from "@/server/lab/personas";
  */
 
 export const CATALOGO_MAX = 40;
+/** La descripción entra recortada: la entrega y la oferta suelen ir al final. */
+export const DESCRIPCION_MAX = 450;
 
 export const CATALOGO_ENCABEZADO =
   "CATÁLOGO DE PROPIEDADES DISPONIBLES (también es tu fuente de verdad: usa los precios, zonas y formas de pago EXACTOS de aquí; no ofrezcas propiedades que no estén en esta lista ni inventes datos que no aparezcan aquí o en el conocimiento):";
@@ -52,9 +54,21 @@ export function renderCatalogo(properties: CatalogProperty[]): string {
         payments.length ? `pago: ${payments.join(", ")}` : null,
       ]
         .filter(Boolean)
-        .join(" · ");
+        .join(" · ")
+        .concat(descripcion(p.description));
     })
     .join("\n");
+}
+
+// SAMER (Rei, 22-10): sin la ficha, el agente dijo que Santorini estaba
+// «terminado y con entrega inmediata»; la entrega de cada casa estaba en su
+// descripción.
+function descripcion(texto: string | null | undefined): string {
+  const limpio = texto?.replace(/\s+/g, " ").trim();
+  if (!limpio) return "";
+  return limpio.length > DESCRIPCION_MAX
+    ? ` — ${limpio.slice(0, DESCRIPCION_MAX - 1)}…`
+    : ` — ${limpio}`;
 }
 
 /** El bloque para el prompt del agente (y el juez), o `null` si no aplica. */

@@ -158,6 +158,8 @@ export type CatalogProperty = {
   city: string | null;
   bedrooms: number | null;
   acceptedPayments: string[];
+  /** La ficha del asesor: ahí suelen vivir la entrega y la oferta. */
+  description?: string | null;
 };
 
 const REALTY_LABELS: Record<string, string> = {
