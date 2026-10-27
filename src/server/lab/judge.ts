@@ -69,6 +69,7 @@ export async function judgeCase(input: {
     veredicto: result.data,
     transcript: input.transcript,
     traspaso: input.handedOff ?? false,
+    conocimiento: input.kbText,
   });
   return { status: "done", verdict };
 }

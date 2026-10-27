@@ -138,12 +138,14 @@ export function prometeTraspaso(text: string): boolean {
   if (/\b(si quieres|si prefieres|quieres que|te gustar[ií]a que|puedo pasarte)\b/.test(t)) return false;
   return (
     /\b(te paso con|te paso a|te comunico con|ya le avis[eé]|ya avis[eé]|ya le pas[eé]|te derivo)\b/.test(t) ||
-    /\b(estamos|estoy) coordinando el paso\b/.test(t)
+    /\b(estamos|estoy) coordinando el paso\b/.test(t) ||
+    // «Marcelo te escribe mañana tempranito» (Rei, 27-10) sin pasarlo.
+    /\b(te escribe|te va a escribir|te contacta|te va a contactar|te contactar[aá]|te llama|te va a llamar)\b/.test(t)
   );
 }
 
 /** El texto que el cliente recibiría con esta acción. */
-function textoDe(action: AgentActionType): string | undefined {
+export function textoDe(action: AgentActionType): string | undefined {
   switch (action.action) {
     case "reply":
       return action.text;
