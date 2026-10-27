@@ -6,7 +6,9 @@ import { isNeaBrain } from "@/lib/env";
 import { neaMessageId } from "@/lib/db/ids";
 import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
-import { persistTestOutbound } from "@/server/ai/pipeline";
+import { applyHandoff, persistTestOutbound } from "@/server/ai/pipeline";
+// Fork — las reglas del dueño se cumplen también con un cerebro externo.
+import { revisarSalidaDe } from "@/server/agencia/guardia-salida";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +73,16 @@ export async function POST(req: Request) {
     return apiError(409, "ai_paused", "La IA está en pausa en esta conversación");
   }
 
+  // Fork — palabras prohibidas, visitas que lleva una persona y traspasos
+  // prometidos: lo que el cerebro externo no cumplió se corrige aquí
+  // (`server/agencia/guardia-salida`). Sin texto que mandar, no se manda.
+  const revision = await revisarSalidaDe(organizationId, conv.id, body.data.text);
+  if (revision.text === null) return Response.json({ messageId: null, dropped: true });
+  const text = revision.text;
+  const traspasar = async () => {
+    if (revision.traspaso) await applyHandoff(conv.id, organizationId, revision.traspaso);
+  };
+
   // Laboratorio CON Nea: el runner llama a `runAgentTurn` directo (sin pasar
   // por esta ruta), pero Nea SÍ contesta por aquí — se persiste como saliente
   // de prueba y JAMÁS toca la API real (FR-031).
@@ -83,7 +95,8 @@ export async function POST(req: Request) {
     const testMessageId = body.data.dispatchId
       ? neaMessageId(organizationId, conv.id, body.data.dispatchId, body.data.seq ?? 0)
       : undefined;
-    const result = await persistTestOutbound(conv, body.data.text, { messageId: testMessageId });
+    const result = await persistTestOutbound(conv, text, { messageId: testMessageId });
+    await traspasar();
     return Response.json(
       result.duplicate
         ? { messageId: result.messageId, duplicate: true }
@@ -95,11 +108,12 @@ export async function POST(req: Request) {
     const result = await sendText({
       conversationId: body.data.conversationId,
       organizationId,
-      text: body.data.text,
+      text,
       aiGenerated: true,
       dispatchId: body.data.dispatchId,
       seq: body.data.seq,
     });
+    await traspasar();
     return Response.json(
       result.duplicate
         ? { messageId: result.messageId, duplicate: true }

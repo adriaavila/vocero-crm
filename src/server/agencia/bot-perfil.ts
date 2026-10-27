@@ -5,6 +5,7 @@ import { partsInTz } from "@/lib/time/slots";
 import { getSettings } from "@/server/agenda/settings";
 import { agendaEnabled } from "@/server/agenda/flag";
 import { getBusinessHours } from "@/server/business-hours";
+import { catalogoParaPrompt } from "@/server/agencia/catalogo-agente";
 
 /**
  * Capa de agencia — lo que el cerebro externo necesita y el contrato de
@@ -204,4 +205,32 @@ export function citasVisibles(conversation: { id: string; isTest: boolean }) {
         eq(schema.booking.conversationId, conversation.id)
       )
     : eq(schema.booking.isTest, false);
+}
+
+/**
+ * Lo que el agente interno ve y el cerebro externo no: en un negocio
+ * inmobiliario, el catálogo de propiedades (al final del conocimiento) y las
+ * reglas que el Laboratorio de SAMER en Rei (27-10) mostró que hacían falta.
+ * Nea preguntaba presupuesto, zona y plazo tres veces antes de nombrar una
+ * sola casa. Sin vertical o sin propiedades, el perfil queda como estaba.
+ */
+export const REGLAS_DE_LA_CASA = [
+  "Reglas de la casa:",
+  "- Si el cliente pregunta qué tienen, qué opciones hay o pide algo barato, nómbrale 2 o 3 propiedades del catálogo con su precio (la más barata primero si pidió barato) ANTES de cualquier pregunta para calificarlo.",
+  "- No repitas una pregunta que ya hiciste: si no la contestó o no aplica, sigue sin ella.",
+  "- Mientras tú atiendes, no digas que el negocio está cerrado.",
+  "- No le digas al cliente que lo pasas con alguien («te paso con…», «te escribe…») salvo que de verdad lo pases a una persona en ese mismo turno.",
+  "- Nunca escribas JSON, nombres de herramientas ni acotaciones como «(traspaso)» en el texto para el cliente.",
+].join("\n");
+
+export async function conocimientoDeAgencia(
+  organizationId: string,
+  base: { instructions: string | null; kb: string }
+): Promise<{ instructions: string | null; kb: string }> {
+  const catalogo = await catalogoParaPrompt(organizationId);
+  if (!catalogo) return base;
+  return {
+    instructions: [base.instructions, REGLAS_DE_LA_CASA].filter(Boolean).join("\n\n"),
+    kb: [base.kb, catalogo].filter(Boolean).join("\n\n"),
+  };
 }
