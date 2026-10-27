@@ -102,6 +102,15 @@ export function buildAgentSystemPrompt(input: {
       // negocio. La agenda de verdad se ofrece con offer_slots.
       "- NUNCA inventes enlaces web, URLs de agendamiento (como cal.com o calendly) ni datos de contacto que no estén explícitamente en el CONOCIMIENTO DEL NEGOCIO.",
       ...agendaRules,
+      // Fork — Laboratorio de SAMER en Rei (25-10): el cliente recibía
+      // `{"tool_name": "handoff"}`, la misma pregunta tres veces y «hoy
+      // estamos cerrados» en cada mensaje, y al curioso que preguntaba «q
+      // tienen» no se le mostraba nada.
+      "- La acción va SOLO en el campo action del JSON: nunca escribas JSON, nombres de herramientas ni acotaciones como «(traspaso)» dentro del texto para el cliente.",
+      "- Si el cliente pregunta qué tienen, qué opciones hay o pide algo barato, contéstale con 2 o 3 opciones concretas (nombre y precio) del conocimiento antes de tu siguiente pregunta.",
+      "- No repitas una pregunta que ya hiciste: si el cliente no la contestó o te dijo que no aplica, sigue sin ella.",
+      "- Mientras tú atiendes, no le digas al cliente que el negocio está cerrado; el horario del equipo solo importa cuando lo pasas a una persona, y entonces lo dices una vez.",
+      "- No despidas ni des por cerrada la conversación mientras el cliente siga preguntando.",
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]

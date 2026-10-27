@@ -32,7 +32,7 @@ export const CATALOGO_MAX = 40;
 export const DESCRIPCION_MAX = 450;
 
 export const CATALOGO_ENCABEZADO =
-  "CATÁLOGO DE PROPIEDADES DISPONIBLES (también es tu fuente de verdad: usa los precios, zonas y formas de pago EXACTOS de aquí; no ofrezcas propiedades que no estén en esta lista ni inventes datos que no aparezcan aquí o en el conocimiento):";
+  "CATÁLOGO DE PROPIEDADES DISPONIBLES (también es tu fuente de verdad: usa los precios, zonas y formas de pago EXACTOS de aquí; no ofrezcas propiedades que no estén en esta lista ni inventes datos que no aparezcan aquí o en el conocimiento. Si el cliente pregunta qué tienen o pide algo barato, nómbrale 2 o 3 de esta lista con su precio, empezando por la más barata si pidió barato):";
 
 /** Una línea por propiedad. PURA. */
 export function renderCatalogo(properties: CatalogProperty[]): string {
