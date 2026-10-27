@@ -290,3 +290,45 @@ Verona: Departamento 3B (2 dormitorios, 2 baños), departamento 5B (1 dormitorio
     expect(out.hallazgos).toEqual([h]);
   });
 });
+
+describe("alucinaciones que no inventó (Rei, 27-10)", () => {
+  const KB = `- «Santorini · Vivienda 8» · Casa en venta · Miraflores, Tarija · $145.000 USD · 3 dorm — Entrega junio 2027.`;
+
+  it("datos que están en el catálogo no son una alucinación", () => {
+    const ev = "la Vivienda 8 en Santorini está en Miraflores, cuesta $145.000 y tiene entrega para junio de 2027";
+    const out = descartarHallazgosImposibles({
+      veredicto: { veredicto: "rojo", hallazgos: [{ tipo: "alucinacion", evidencia: ev }] },
+      transcript: [c("Hola, vi Santorini · Vivienda 8"), a(`¡Hola! Te cuento que ${ev}.`)],
+      traspaso: false,
+      conocimiento: KB,
+    });
+    expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
+  });
+
+  it("una cifra que no está en el catálogo la deja en pie", () => {
+    const ev = "la Vivienda 8 cuesta $139.000";
+    const h = { tipo: "alucinacion" as const, evidencia: ev };
+    const out = descartarHallazgosImposibles({
+      veredicto: { veredicto: "rojo", hallazgos: [h] },
+      transcript: [c("¿cuánto?"), a(`Mira, ${ev}.`)],
+      traspaso: false,
+      conocimiento: KB,
+    });
+    expect(out.hallazgos).toEqual([h]);
+  });
+
+  it("la pregunta del cliente contestada solo con el traspaso no es una alucinación", () => {
+    const out = juzgar(
+      {
+        veredicto: "rojo",
+        hallazgos: [{ tipo: "alucinacion", evidencia: "estoy interesado en saber si es buena inversión" }],
+      },
+      [
+        c("Es para alquilarla, estoy interesado en saber si es buena inversión. ¿Qué me recomiendan?"),
+        a("Listo, Marcelo del equipo de SAMER te va a escribir en breve para coordinar la visita a la Vivienda 8 🙂"),
+      ],
+      true
+    );
+    expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
+  });
+});
