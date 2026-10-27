@@ -150,3 +150,29 @@ describe("corregirAccion", () => {
     });
   });
 });
+
+describe("traspaso prometido dentro de otra acción (Rei, 27-10)", () => {
+  it("un update_lead que dice «te paso con él» se vuelve traspaso y conserva la nota", () => {
+    const out = corregirAccion({
+      action: {
+        action: "update_lead",
+        note: "Para vivir con su familia; pregunta por crédito bancario.",
+        reply: "Para el financiamiento te paso con él, del equipo de SAMER. Te escribe en un ratito 🙂",
+      },
+      ultimaDelCliente: "Quería saber si aceptan crédito del banco.",
+      escalationRules: REGLAS,
+    });
+    expect(out.action).toEqual({
+      action: "handoff",
+      reason: "prometió pasarlo",
+      farewell: "Para el financiamiento te paso con él, del equipo de SAMER. Te escribe en un ratito 🙂",
+    });
+    expect(out.nota).toBe("Para vivir con su familia; pregunta por crédito bancario.");
+  });
+
+  it("un update_lead sin promesa no cambia ni trae nota aparte", () => {
+    const action = { action: "update_lead" as const, note: "Busca algo barato.", reply: "¿Para cuándo te mudarías?" };
+    const out = corregirAccion({ action, ultimaDelCliente: "algo baratito", escalationRules: REGLAS });
+    expect(out).toEqual({ action, ajustes: [] });
+  });
+});

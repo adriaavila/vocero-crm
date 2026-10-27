@@ -378,11 +378,15 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
 
   // Fork — sin herramientas escritas en el texto, y «si pide visita, pásalo»
   // cuando el dueño lo escribió (`server/agencia/accion-del-agente`).
-  let action: AgentActionType = corregirAccion({
+  const corregida0 = corregirAccion({
     action: result.data,
     ultimaDelCliente: ultimaDelCliente.content,
     escalationRules: profile.escalationRules,
-  }).action;
+  });
+  let action: AgentActionType = corregida0.action;
+  if (corregida0.nota) {
+    await appendLeadNote(organizationId, conversation.contactId, corregida0.nota);
+  }
 
   // Fork — las palabras que el dueño prohibió (`server/agencia/
   // palabras-prohibidas`): una respuesta que las usa se reescribe una vez; si
