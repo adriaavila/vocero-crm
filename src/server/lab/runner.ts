@@ -375,7 +375,16 @@ async function upsertTestContact(
       )
     )
     .limit(1);
-  return rows[0]!.id;
+  const id = rows[0]!.id;
+  // Fork — cada caso es un cliente NUEVO. El contacto se reutiliza entre
+  // corridas, y sus notas ([IA] …) volvían como memoria del
+  // cliente: en Rei (27-10) el agente contestó «Hola» con «quedó registrada tu
+  // consulta para Marcelo», lo que había pasado en la corrida anterior.
+  await db
+    .update(schema.contact)
+    .set({ notes: null, name: persona.contactName })
+    .where(and(eq(schema.contact.id, id), eq(schema.contact.organizationId, organizationId)));
+  return id;
 }
 
 async function failRun(

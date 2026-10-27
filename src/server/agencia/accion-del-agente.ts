@@ -176,9 +176,15 @@ export function corregirAccion(input: {
   action: AgentActionType;
   ultimaDelCliente: string;
   escalationRules: string | null | undefined;
-}): { action: AgentActionType; ajustes: Ajuste[] } {
+}): {
+  action: AgentActionType;
+  ajustes: Ajuste[];
+  /** La nota de un update_lead que se volvió traspaso: se guarda igual. */
+  nota?: string;
+} {
   let action = input.action;
   const ajustes: Ajuste[] = [];
+  let nota: string | undefined;
 
   const original = textoDe(action);
   if (original !== undefined) {
@@ -196,11 +202,14 @@ export function corregirAccion(input: {
     }
   }
 
-  // Dijo «te paso con Marcelo» pero contestó con reply: el cliente espera a
-  // alguien que nunca se entera. Lo que prometió, se hace.
-  if (action.action === "reply" && prometeTraspaso(action.text)) {
+  // Dijo «te paso con Marcelo» pero no lo pasó: el cliente espera a alguien
+  // que nunca se entera. Lo que prometió, se hace. Vale para cualquier acción
+  // con texto: en Rei (27-10) lo prometía dentro de un update_lead.
+  const prometido = action.action === "handoff" ? undefined : textoDe(action);
+  if (prometido && prometeTraspaso(prometido)) {
     ajustes.push("traspaso_prometido");
-    action = { action: "handoff", reason: "prometió pasarlo", farewell: action.text };
+    if (action.action === "update_lead") nota = action.note;
+    action = { action: "handoff", reason: "prometió pasarlo", farewell: prometido };
   }
 
   if (
@@ -216,5 +225,5 @@ export function corregirAccion(input: {
     };
   }
 
-  return { action, ajustes };
+  return { action, ajustes, ...(nota ? { nota } : {}) };
 }
