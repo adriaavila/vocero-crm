@@ -173,7 +173,7 @@ function diaCorto(iso: string): string {
 }
 
 /** «2026-10-24 10:00» → «24 oct, 10:00». */
-function cuandoCorto(stamp: string): string {
+export function cuandoCorto(stamp: string): string {
   const [dia, hora] = stamp.split(" ");
   return dia ? `${diaCorto(dia)}${hora ? `, ${hora}` : ""}` : stamp;
 }

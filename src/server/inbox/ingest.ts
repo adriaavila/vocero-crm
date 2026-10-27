@@ -576,6 +576,15 @@ export async function ingestInboundMessage(input: {
 
   // Un replay jamás le escribe al cliente: sin turno del agente (ni agent_job).
   if (input.replay) return;
+  // Fork — el número de Rei lo contesta el gerente de ventas, no el agente.
+  // Import perezoso: sin GERENTE_NEGOCIO no se carga nada.
+  if (process.env.GERENTE_NEGOCIO) {
+    const gerente = await import("@/server/agencia/gerente");
+    if (await gerente.esNumeroDelGerente(organizationId)) {
+      await gerente.atenderGerente({ organizationId, conversationId: conversation.id, text: input.text });
+      return;
+    }
+  }
   await maybeRunAgentTurn(conversation.id, organizationId);
 }
 

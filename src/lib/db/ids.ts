@@ -48,6 +48,7 @@ const prefixes = {
   rawEvent: "rev",
   agentDecision: "dec",
   pushSubscription: "psub",
+  gerenteDueno: "gdu",
 } as const;
 
 export type IdKind = keyof typeof prefixes;
