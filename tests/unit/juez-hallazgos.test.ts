@@ -215,3 +215,39 @@ describe("descartarHallazgosImposibles", () => {
     expect(out.hallazgos).toEqual([{ tipo: "tono", evidencia: "Te paso con Ana, del equipo" }]);
   });
 });
+
+describe("alucinación que solo deriva (Rei, 25-10)", () => {
+  const pago = [
+    c("Me gustaría mudarme lo antes posible. ¿Cuánto tendría que dar de inicial?"),
+    a("Te paso con Marcelo, del equipo, que te va a dar los detalles exactos del enganche y las opciones de financiamiento para la Vivienda 8. Te escribe en un ratito 🙂"),
+    c("¿Y cuántos años de plazo se manejan?"),
+    a("El plazo y las condiciones exactas de financiamiento las maneja Marcelo directamente, porque son temas muy específicos del banco."),
+  ];
+
+  it("la cita del agente que solo pasa el tema a una persona se descarta", () => {
+    const out = juzgar(
+      {
+        veredicto: "rojo",
+        hallazgos: [
+          { tipo: "alucinacion", evidencia: "Te paso con Marcelo, del equipo, que te va a dar los detalles exactos del enganche y las opciones de financiamiento para la Vivienda 8." },
+          { tipo: "alucinacion", evidencia: "El plazo y las condiciones exactas de financiamiento las maneja Marcelo directamente, porque son temas muy específicos del banco." },
+        ],
+      },
+      pago,
+      true
+    );
+    expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
+  });
+
+  it("si la cita trae una cifra, se queda: ahí sí pudo inventar", () => {
+    const transcript = [c("¿Y el plazo?"), a("Son 20 años de plazo; los detalles te los confirma Marcelo.")];
+    const h = { tipo: "alucinacion" as const, evidencia: "Son 20 años de plazo; los detalles te los confirma Marcelo." };
+    expect(juzgar({ veredicto: "rojo", hallazgos: [h] }, transcript, true).hallazgos).toEqual([h]);
+  });
+
+  it("una alucinación que no deriva se queda", () => {
+    const transcript = [c("¿Tiene piscina?"), a("Sí, y también gimnasio y sauna.")];
+    const h = { tipo: "alucinacion" as const, evidencia: "Sí, y también gimnasio y sauna." };
+    expect(juzgar({ veredicto: "rojo", hallazgos: [h] }, transcript, false).hallazgos).toEqual([h]);
+  });
+});

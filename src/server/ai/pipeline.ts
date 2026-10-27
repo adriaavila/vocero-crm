@@ -34,6 +34,7 @@ import { toHandoffReason } from "@/server/bot/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { avisarTraspaso } from "@/server/agencia/avisos";
 import { agendaEnabled } from "@/server/agenda/flag";
+import { corregirAccion, reglasPasanVisitas } from "@/server/agencia/accion-del-agente";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
@@ -310,7 +311,10 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
         .orderBy(asc(schema.pipelineStage.position))
     : [];
 
-  const agenda = proEnabled && agendaEnabled();
+  // Fork — si el dueño escribió que las visitas las lleva una persona, el
+  // agente no agenda: no ve offer_slots (`server/agencia/accion-del-agente`).
+  const agenda =
+    proEnabled && agendaEnabled() && !reglasPasanVisitas(profile.escalationRules);
   const settings = await getSettings(organizationId);
   const systemPrompt = buildAgentSystemPrompt({
     profile,
@@ -361,7 +365,13 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
-  let action: AgentActionType = result.data;
+  // Fork — sin herramientas escritas en el texto, y «si pide visita, pásalo»
+  // cuando el dueño lo escribió (`server/agencia/accion-del-agente`).
+  let action: AgentActionType = corregirAccion({
+    action: result.data,
+    ultimaDelCliente: ultimaDelCliente.content,
+    escalationRules: profile.escalationRules,
+  }).action;
 
   // 015 — Agenda. Un fallo del motor degrada el turno (el agente responde sin
   // agendar), nunca lo tumba: quedarse callado es peor que no agendar.

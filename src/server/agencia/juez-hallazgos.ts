@@ -11,7 +11,8 @@ import type { VerdictType } from "@/server/lab/judge";
  * puso en rojo 3 de 6 conversaciones de un agente que hizo lo correcto, y Rei
  * no deja activar al agente con un caso rojo.
  *
- * Aquí se descarta SOLO lo que el transcript desmiente. Una alucinación nunca:
+ * Aquí se descarta SOLO lo que el transcript desmiente. Una alucinación solo
+ * cuando la cita es del agente y lo único que hace es derivar, sin una cifra:
  * aunque cite la pregunta del cliente, puede estar señalando lo que el agente
  * inventó al contestarla, y eso no se comprueba sin un modelo.
  * PURA: sin BD ni modelo.
@@ -35,6 +36,23 @@ function normalizar(texto: string): string {
 function cita(evidencia: string, mensaje: string): boolean {
   const e = normalizar(evidencia);
   return e.length > 0 && normalizar(mensaje).includes(e);
+}
+
+/** Frases con que el agente pasa algo a una persona en vez de contestarlo. */
+const DERIVA =
+  /\b(te paso con|te paso a|te comunico con|te contacto con|lo maneja|la maneja|los maneja|las maneja|te (lo |la |los |las )?confirm|te (va a |van a )?(escrib|contact|llam|respond|contest)|coordin|con el equipo|una persona del equipo)/i;
+
+/**
+ * ¿La cita solo deriva? Sin cifras (precio, plazo, porcentaje, fecha) y con
+ * una frase de derivar. Cualquier número la deja en pie: ahí sí pudo inventar.
+ */
+export function soloDeriva(evidencia: string): boolean {
+  // «Vivienda 8», «Departamento 3B»: el nombre de la propiedad no es una cifra.
+  const sinNombres = evidencia.replace(
+    /\b(vivienda|casa|departamento|depto|depa|local|lote|unidad|torre|bloque)\s+\d+[a-z]?\b/gi,
+    ""
+  );
+  return !/\d/.test(sinNombres) && DERIVA.test(evidencia);
 }
 
 export function descartarHallazgosImposibles(input: {
@@ -61,6 +79,11 @@ export function descartarHallazgosImposibles(input: {
     // cuesta», marcado aunque el agente contestó con el conocimiento; y pasar
     // al equipo lo que no está ahí es lo correcto. Si cita al agente, se queda.
     if (h.tipo === "fuera_de_kb") return soloDelCliente;
+    // Pasar al equipo lo que no sabe no inventa nada. Pasó en Rei (25-10):
+    // «Te paso con Marcelo, que te va a dar los detalles exactos del
+    // enganche» salió como alucinación. Solo si la cita es del agente, no trae
+    // ni una cifra y lo único que hace es derivar.
+    if (h.tipo === "alucinacion") return enAgente && soloDeriva(h.evidencia);
     if (!traspaso) return false;
     // Escaló justo ahí: «debió escalar» sobre ese mismo intercambio es falso.
     // Si cita un pedido ANTERIOR (escaló tarde), se queda.
