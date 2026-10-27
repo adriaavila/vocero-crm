@@ -60,7 +60,7 @@ export default async function MarketingLayout({
 
       <footer className="border-t border-border bg-subtle">
         <div className="mx-auto flex max-w-5xl flex-col gap-3 px-4 py-8 text-sm text-text-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <p>{name}: CRM de WhatsApp con agente de IA para inmobiliarias.</p>
+          <p>{name}: vende por WhatsApp para constructoras e inmobiliarias.</p>
           <nav className="flex flex-wrap gap-1">
             <Link href="/privacidad" className="rei-underline inline-flex min-h-11 items-center hover:text-foreground">
               Privacidad
