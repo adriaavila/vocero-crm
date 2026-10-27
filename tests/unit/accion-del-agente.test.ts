@@ -79,6 +79,8 @@ describe("prometeTraspaso", () => {
     expect(prometeTraspaso("Te confirmo que ya estamos coordinando el paso contigo a Marcelo.")).toBe(true);
     expect(prometeTraspaso("Si quieres, te paso con Marcelo.")).toBe(false);
     expect(prometeTraspaso("La Vivienda 2 cuesta $us 120.000.")).toBe(false);
+    expect(prometeTraspaso("Quedo pendiente por vos. Marcelo te escribe mañana tempranito 🙂")).toBe(true);
+    expect(prometeTraspaso("Si quieres, Marcelo te llama.")).toBe(false);
   });
 });
 

@@ -34,7 +34,18 @@ import { toHandoffReason } from "@/server/bot/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { avisarTraspaso } from "@/server/agencia/avisos";
 import { agendaEnabled } from "@/server/agenda/flag";
-import { corregirAccion, reglasPasanVisitas } from "@/server/agencia/accion-del-agente";
+import {
+  corregirAccion,
+  mensajeAlPasar,
+  reglasPasanVisitas,
+  textoDe,
+} from "@/server/agencia/accion-del-agente";
+import {
+  DESPEDIDA_SIN_PROHIBIDAS,
+  palabrasProhibidas,
+  pedidoDeReescritura,
+  usaProhibida,
+} from "@/server/agencia/palabras-prohibidas";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
@@ -372,6 +383,38 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     ultimaDelCliente: ultimaDelCliente.content,
     escalationRules: profile.escalationRules,
   }).action;
+
+  // Fork — las palabras que el dueño prohibió (`server/agencia/
+  // palabras-prohibidas`): una respuesta que las usa se reescribe una vez; si
+  // vuelve a usarlas, pasa a una persona en vez de mandarla.
+  const prohibidas = palabrasProhibidas(profile.instructions);
+  const usada = usaProhibida(textoDe(action) ?? "", prohibidas);
+  if (usada) {
+    const otra = await chatJson(
+      agentActionSchema(agenda),
+      [
+        ...messages,
+        { role: "assistant", content: JSON.stringify(result.data) },
+        { role: "system", content: pedidoDeReescritura(usada) },
+      ],
+      { provider: profile.aiProvider, credentials: aiConfig.providers }
+    );
+    const corregida = otra.ok
+      ? corregirAccion({
+          action: otra.data,
+          ultimaDelCliente: ultimaDelCliente.content,
+          escalationRules: profile.escalationRules,
+        }).action
+      : null;
+    action =
+      corregida && !usaProhibida(textoDe(corregida) ?? "", prohibidas)
+        ? corregida
+        : {
+            action: "handoff",
+            reason: "palabra prohibida",
+            farewell: mensajeAlPasar(profile.escalationRules) ?? DESPEDIDA_SIN_PROHIBIDAS,
+          };
+  }
 
   // 015 — Agenda. Un fallo del motor degrada el turno (el agente responde sin
   // agendar), nunca lo tumba: quedarse callado es peor que no agendar.

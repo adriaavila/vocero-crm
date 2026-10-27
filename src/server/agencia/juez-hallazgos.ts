@@ -55,13 +55,47 @@ export function soloDeriva(evidencia: string): boolean {
   return !/\d/.test(sinNombres) && DERIVA.test(evidencia);
 }
 
+const RELLENO = new Set(["y", "o", "de", "del", "la", "el", "los", "las", "a", "en", "con"]);
+
+function plano(texto: string): string {
+  return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/**
+ * ¿Todos los datos de la cita están en el conocimiento? Un dato es una cifra:
+ * las largas («120.000») o con letra («5B») tienen que aparecer tal cual; las
+ * cortas («3») junto a la misma palabra («3 dormitorios»). Sin ningún dato no
+ * se puede comprobar y el hallazgo se queda.
+ */
+export function datosEnConocimiento(evidencia: string, conocimiento: string): boolean {
+  const ev = plano(evidencia);
+  const kb = plano(conocimiento);
+  const datos = [...ev.matchAll(/\d[\d.,]*\d|\d[a-z]?/g)];
+  if (datos.length === 0) return false;
+  return datos.every((m) => {
+    const dato = m[0];
+    const suelto = new RegExp(`(^|[^\\d.,a-z])${dato.replace(/[.]/g, "\\.")}($|[^\\d,a-z]|\\.(?!\\d))`);
+    if (dato.length >= 4 || /[a-z]$/.test(dato)) return suelto.test(kb);
+    // La palabra que sigue a la cifra corta, saltando «y», «de»…
+    const despues = ev
+      .slice((m.index ?? 0) + dato.length)
+      .split(/[^a-z0-9ñ]+/)
+      .filter((w) => w && !RELLENO.has(w) && !/^\d/.test(w));
+    const palabra = despues[0]?.slice(0, 4);
+    if (!palabra) return false;
+    return new RegExp(`(^|[^\\d.,])${dato}\\s+${palabra}`).test(kb);
+  });
+}
+
 export function descartarHallazgosImposibles(input: {
   veredicto: VerdictType;
   transcript: Turno[];
   /** La conversación terminó porque el agente la pasó a una persona. */
   traspaso: boolean;
+  /** Lo que el juez recibió como conocimiento (P/R, bloques y catálogo). */
+  conocimiento?: string;
 }): VerdictType {
-  const { veredicto, transcript, traspaso } = input;
+  const { veredicto, transcript, traspaso, conocimiento } = input;
   const delAgente = transcript.filter((t) => t.role === "agente");
   const delCliente = transcript.filter((t) => t.role === "cliente");
   // El intercambio que terminó en el traspaso: el último mensaje del cliente
@@ -78,7 +112,12 @@ export function descartarHallazgosImposibles(input: {
     // cliente no lo prueba, haya o no traspaso. Pasó con «kiero saber cuanto
     // cuesta», marcado aunque el agente contestó con el conocimiento; y pasar
     // al equipo lo que no está ahí es lo correcto. Si cita al agente, se queda.
-    if (h.tipo === "fuera_de_kb") return soloDelCliente;
+    if (h.tipo === "fuera_de_kb") {
+      if (soloDelCliente) return true;
+      // Rei (27-10): «Las casas de Santorini arrancan en $us 120.000» salió
+      // fuera del conocimiento, y la Vivienda 2 está ahí a $us 120.000.
+      return enAgente && !!conocimiento && datosEnConocimiento(h.evidencia, conocimiento);
+    }
     // Pasar al equipo lo que no sabe no inventa nada. Pasó en Rei (25-10):
     // «Te paso con Marcelo, que te va a dar los detalles exactos del
     // enganche» salió como alucinación. Solo si la cita es del agente, no trae

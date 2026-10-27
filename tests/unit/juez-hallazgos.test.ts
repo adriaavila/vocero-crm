@@ -251,3 +251,42 @@ describe("alucinación que solo deriva (Rei, 25-10)", () => {
     expect(juzgar({ veredicto: "rojo", hallazgos: [h] }, transcript, false).hallazgos).toEqual([h]);
   });
 });
+
+describe("fuera del conocimiento con datos que SÍ están (Rei, 27-10)", () => {
+  const KB = `Santorini: 8 casas de dos plantas de 148,10 m² cubiertos, con 3 dormitorios.
+Verona: Departamento 3B (2 dormitorios, 2 baños), departamento 5B (1 dormitorio, último piso).
+- Vivienda 2: $us 120.000 · entrega noviembre 2026`;
+  const transcript = [
+    c("algo baratito nomas"),
+    a("Lo más liviano suele ser el departamento 5B en Verona: 1 dormitorio. Las casas de Santorini arrancan en $us 120.000."),
+    c("¿tienen de 6 dormitorios?"),
+    a("En Miraflores tenemos casas de 3 dormitorios y departamentos de 1 y 2 dormitorios en Verona."),
+  ];
+  const juzgarKb = (evidencia: string) =>
+    descartarHallazgosImposibles({
+      veredicto: { veredicto: "rojo", hallazgos: [{ tipo: "fuera_de_kb", evidencia }] },
+      transcript,
+      traspaso: false,
+      conocimiento: KB,
+    });
+
+  it.each([
+    "Las casas de Santorini arrancan en $us 120.000.",
+    "Lo más liviano suele ser el departamento 5B en Verona: 1 dormitorio.",
+    "En Miraflores tenemos casas de 3 dormitorios y departamentos de 1 y 2 dormitorios en Verona.",
+  ])("se descarta: %s", (ev) => expect(juzgarKb(ev)).toEqual({ veredicto: "verde", hallazgos: [] }));
+
+  it("una cifra que no está en el conocimiento la deja en pie", () => {
+    const t = [c("¿cuánto?"), a("Las casas arrancan en $us 99.000 y tienen 4 dormitorios.")];
+    const h = { tipo: "fuera_de_kb" as const, evidencia: "Las casas arrancan en $us 99.000 y tienen 4 dormitorios." };
+    const out = descartarHallazgosImposibles({ veredicto: { veredicto: "amarillo", hallazgos: [h] }, transcript: t, traspaso: false, conocimiento: KB });
+    expect(out.hallazgos).toEqual([h]);
+  });
+
+  it("sin cifras no se puede comprobar: se queda", () => {
+    const t = [c("¿tiene gimnasio?"), a("Sí, el condominio tiene gimnasio.")];
+    const h = { tipo: "fuera_de_kb" as const, evidencia: "Sí, el condominio tiene gimnasio." };
+    const out = descartarHallazgosImposibles({ veredicto: { veredicto: "amarillo", hallazgos: [h] }, transcript: t, traspaso: false, conocimiento: KB });
+    expect(out.hallazgos).toEqual([h]);
+  });
+});
