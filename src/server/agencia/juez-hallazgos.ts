@@ -47,12 +47,15 @@ const DERIVA =
  * una frase de derivar. Cualquier número la deja en pie: ahí sí pudo inventar.
  */
 export function soloDeriva(evidencia: string): boolean {
-  // «Vivienda 8», «Departamento 3B»: el nombre de la propiedad no es una cifra.
-  const sinNombres = evidencia.replace(
+  return !/\d/.test(sinNombres(evidencia)) && DERIVA.test(evidencia);
+}
+
+/** «Vivienda 8», «Departamento 3B»: el nombre de la propiedad no es una cifra. */
+function sinNombres(texto: string): string {
+  return texto.replace(
     /\b(vivienda|casa|departamento|depto|depa|local|lote|unidad|torre|bloque)\s+\d+[a-z]?\b/gi,
     ""
   );
-  return !/\d/.test(sinNombres) && DERIVA.test(evidencia);
 }
 
 const RELLENO = new Set(["y", "o", "de", "del", "la", "el", "los", "las", "a", "en", "con"]);
@@ -68,7 +71,7 @@ function plano(texto: string): string {
  * se puede comprobar y el hallazgo se queda.
  */
 export function datosEnConocimiento(evidencia: string, conocimiento: string): boolean {
-  const ev = plano(evidencia);
+  const ev = plano(sinNombres(evidencia));
   const kb = plano(conocimiento);
   const datos = [...ev.matchAll(/\d[\d.,]*\d|\d[a-z]?/g)];
   if (datos.length === 0) return false;
@@ -122,7 +125,26 @@ export function descartarHallazgosImposibles(input: {
     // «Te paso con Marcelo, que te va a dar los detalles exactos del
     // enganche» salió como alucinación. Solo si la cita es del agente, no trae
     // ni una cifra y lo único que hace es derivar.
-    if (h.tipo === "alucinacion") return enAgente && soloDeriva(h.evidencia);
+    //
+    // Rei (27-10): «cuesta $145.000 y tiene entrega para junio de 2027» salió
+    // como alucinación con los dos datos en el catálogo; y «estoy interesado
+    // en saber si es buena inversión», que lo escribió el cliente y el agente
+    // solo pasó a Marcelo. La pregunta del cliente puede señalar lo que el
+    // agente inventó al contestarla; si lo único que contestó fue el traspaso,
+    // no inventó nada.
+    if (h.tipo === "alucinacion") {
+      if (soloDelCliente) {
+        return (
+          traspaso &&
+          cierre.some((t) => t.role === "cliente" && cita(h.evidencia, t.text)) &&
+          cierre.every((t) => t.role === "cliente" || soloDeriva(t.text))
+        );
+      }
+      return (
+        enAgente &&
+        (soloDeriva(h.evidencia) || (!!conocimiento && datosEnConocimiento(h.evidencia, conocimiento)))
+      );
+    }
     if (!traspaso) return false;
     // Escaló justo ahí: «debió escalar» sobre ese mismo intercambio es falso.
     // Si cita un pedido ANTERIOR (escaló tarde), se queda.
