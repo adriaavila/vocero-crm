@@ -22,6 +22,7 @@ type WorkerState = {
   siguiendo?: boolean;
   /** Fork — hay un barrido de resúmenes diarios en curso. */
   resumiendo?: boolean;
+  reportando?: boolean;
 };
 
 const globalForWorker = globalThis as unknown as {
@@ -85,6 +86,16 @@ async function poll(state: WorkerState): Promise<void> {
           .catch((error) => console.error("[agent-worker] barrido de seguimientos falló:", error))
           .finally(() => {
             state.siguiendo = false;
+          });
+      }
+      // Fork — reporte de ventas de los lunes por el WhatsApp de Rei.
+      if (!state.reportando && process.env.GERENTE_NEGOCIO) {
+        state.reportando = true;
+        void import("@/server/agencia/gerente")
+          .then((m) => m.barrerReportesSemanales())
+          .catch((error) => console.error("[agent-worker] barrido de reportes falló:", error))
+          .finally(() => {
+            state.reportando = false;
           });
       }
       // Fork — resumen diario al celular (19:00 local, una vez por día).

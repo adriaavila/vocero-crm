@@ -58,6 +58,7 @@ jobs:
       OPENAI_MODEL: ci-model
       OPENAI_BASE_URL: http://localhost:3000/api/dev/ai-mock
       BOT_API_KEY: ci-bot-key-long-enough
+      HERMES_API_KEY: ci-hermes-key-long-enough
       # Todo encendido: es la configuración que ejercitan los guiones. Que las
       # banderas apagadas tampoco estorben lo prueba `ci.yml` en su matriz.
       AGENDA: "on"
@@ -123,7 +124,7 @@ jobs:
       # que ci.yml no las corre). Van DESPUÉS del e2e: limpian lo suyo, pero así
       # nada de lo que dejen puede alterar a los guiones.
       - name: data spine e Inicio contra Postgres real
-        run: pnpm exec vitest run tests/unit/data-spine-realdb.test.ts tests/unit/centro-realdb.test.ts tests/unit/hilo-paginas-realdb.test.ts tests/unit/oir-y-ver-realdb.test.ts
+        run: pnpm exec vitest run tests/unit/data-spine-realdb.test.ts tests/unit/centro-realdb.test.ts tests/unit/hilo-paginas-realdb.test.ts tests/unit/oir-y-ver-realdb.test.ts tests/unit/hermes-ventas-realdb.test.ts tests/unit/gerente-realdb.test.ts
         env:
           REALDB_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vocero
 

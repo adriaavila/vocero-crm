@@ -1804,3 +1804,42 @@ export const resumenDiario = pgTable(
   },
   (t) => [uniqueIndex("resumen_diario_org_dia_uq").on(t.organizationId, t.dia)]
 );
+
+/**
+ * Fork — el gerente de ventas por WhatsApp (`server/agencia/gerente.ts`). Un
+ * renglón por persona del equipo que conectó su WhatsApp al número de Rei:
+ * cuando escribe a ese número, Rei sabe de qué negocio es y le contesta con
+ * las cifras de ESE negocio y de ningún otro.
+ *
+ * El teléfono se prueba como en el «Conectar mi WhatsApp» de cualquier app:
+ * el CRM muestra un código y la persona lo manda desde su WhatsApp. Hasta
+ * entonces `wa_identity` es null y el renglón no abre nada.
+ */
+export const gerenteDueno = pgTable(
+  "gerente_dueno",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    /** El código de 6 cifras que la persona manda («REI 482913»); null ya conectado. */
+    codigo: text("codigo"),
+    codigoVence: timestamp("codigo_vence"),
+    /** Misma llave que `contact.wa_identity`; null hasta que manda el código. */
+    waIdentity: text("wa_identity"),
+    conectadoAt: timestamp("conectado_at"),
+    /** El reporte de los lunes; se apaga respondiendo «pausar reporte». */
+    reporteSemanal: boolean("reporte_semanal").notNull().default(true),
+    /** Último lunes (día local, `YYYY-MM-DD`) en que salió: uno por semana aunque haya reinicios. */
+    ultimoReporte: text("ultimo_reporte"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("gerente_dueno_org_user_uq").on(t.organizationId, t.userId),
+    uniqueIndex("gerente_dueno_codigo_uq").on(t.codigo).where(sql`${t.codigo} is not null`),
+    index("gerente_dueno_wa_idx").on(t.waIdentity),
+  ]
+);

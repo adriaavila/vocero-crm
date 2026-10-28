@@ -757,6 +757,45 @@ export async function sendStructured(
   return { messageId };
 }
 
+/**
+ * Fork — texto con hasta 3 botones de respuesta rápida (WhatsApp
+ * `interactive.button`). Lo usa el gerente de ventas (`agencia/gerente.ts`);
+ * la bandeja lo muestra como texto. Solo WhatsApp: en otro canal sale el
+ * texto sin botones.
+ */
+export async function sendButtons(input: {
+  conversationId: string;
+  organizationId: string;
+  body: string;
+  buttons: readonly { id: string; title: string }[];
+}): Promise<SendResult> {
+  const target = await prepareSend(input.conversationId, input.organizationId);
+  if (!target.credentials || target.instagram || target.messenger) {
+    return sendText({ conversationId: input.conversationId, organizationId: input.organizationId, text: input.body, aiGenerated: true });
+  }
+  const waMessageId = await callGraphSend(target.credentials, {
+    messaging_product: "whatsapp",
+    to: target.recipient,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: input.body },
+      action: { buttons: input.buttons.slice(0, 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+    },
+  });
+  const messageId = await persistOutbound({
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    waMessageId,
+    type: "interactive",
+    text: input.body,
+    status: "pending",
+    aiGenerated: true,
+    origin: "ai",
+  });
+  return { messageId };
+}
+
 /** Llama a Graph /messages y traduce errores de Meta a SendError. */
 export async function callGraphSend(
   credentials: Credentials,
