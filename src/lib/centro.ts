@@ -62,6 +62,8 @@ export function homeStatus(i: {
   owner: boolean;
   /** `PlanState.kind`: decide si el botón dice «Elegir plan» o «Actualizar pago». */
   planKind?: string;
+  /** Encendido pero fuera de su turno: quién atiende ahora y cuándo entra el agente. */
+  offShift?: string | null;
 }): HomeStatus {
   const { snapshot, needsYou, live, closed, productLabel } = i;
 
@@ -92,7 +94,9 @@ export function homeStatus(i: {
   }
 
   // La tarjeta de tinta describe SOLO al sistema (¿contesta allok?), nunca repite
-  // lo que dice la línea de arriba: apagado, trabajando o contestando.
+  // lo que dice la línea de arriba: apagado, trabajando, fuera de su turno o
+  // contestando. Fuera de su turno no es una falla: es el horario que eligió
+  // el dueño, así que el punto sigue verde y la frase dice quién atiende.
   const agentOffHref = i.owner ? "/agent#activar" : null;
   const strip: HomeStatus["strip"] = !i.agentOn
     ? {
@@ -103,7 +107,9 @@ export function homeStatus(i: {
       }
     : live > 0
       ? { state: "atendiendo", reason: `${productLabel} está respondiendo ahora.`, href: null, actionLabel: null }
-      : { state: "activo", reason: `${productLabel} contesta por ti.`, href: null, actionLabel: null };
+      : i.offShift
+        ? { state: "activo", reason: i.offShift, href: null, actionLabel: null }
+        : { state: "activo", reason: `${productLabel} contesta por ti.`, href: null, actionLabel: null };
   return { headline, strip };
 }
 

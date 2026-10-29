@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Loader2, Moon, SunMoon } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
 import type { GateState } from "@/components/agencia/activation-gate";
+import { allDayDetail, type HoursController, type HoursSettings } from "@/components/agencia/horario-respuesta";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { describeTeamHours } from "@/lib/horario";
 import type { ActivationSummary } from "@/server/agencia/activacion";
 
 /**
@@ -29,8 +32,102 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function Summary({ activation }: { activation: ActivationSummary }) {
+type Mode = HoursSettings["responseMode"];
+
+/**
+ * «Cuándo responde», elegido aquí mismo con dos opciones en palabras de dueño.
+ * Antes la regla solo se leía, y quien probaba su agente escribiéndole a media
+ * tarde no recibía respuesta («Fuera de horario» calla mientras el equipo
+ * atiende) sin saber por qué. Se guarda al tocar (solo el modo: ver
+ * `saveMode`) y la frase de «ahora» se vuelve a leer del servidor.
+ */
+function ModoRespuesta({ hours, onChange }: { hours: HoursController; onChange?: () => void }) {
+  const [busy, setBusy] = useState<Mode | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const settings = hours.settings;
+  if (!settings) return null;
+  const current = settings.responseMode;
+  const team = describeTeamHours(settings);
+
+  async function choose(mode: Mode) {
+    if (mode === current || busy) return;
+    setBusy(mode);
+    setError(null);
+    const result = await hours.saveMode(mode);
+    setBusy(null);
+    if (!result.ok) setError(result.message);
+    else onChange?.();
+  }
+
+  const options: { mode: Mode; icon: typeof Moon; title: string; detail: string; locked: boolean }[] = [
+    {
+      mode: "all_day",
+      icon: SunMoon,
+      title: "Todo el día",
+      detail: allDayDetail(hours.canUseAllDay),
+      locked: !hours.canUseAllDay,
+    },
+    {
+      mode: "outside_hours",
+      icon: Moon,
+      title: "Cuando no atiendes tú",
+      detail: team ? `Atiendes tú ${team}. Tu agente, el resto del tiempo.` : "Tú eliges en qué horas atiendes tú.",
+      locked: false,
+    },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <div role="radiogroup" aria-label="Cuándo responde tu agente" className="grid gap-2">
+        {options.map(({ mode, icon: Icon, title, detail, locked }) => {
+          const selected = current === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={locked || busy !== null}
+              onClick={() => void choose(mode)}
+              className={`flex w-full min-h-11 items-start gap-3 rounded-lg border p-3 text-left transition-colors duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed ${
+                selected ? "border-brand bg-brand-tint" : "border-border-strong hover:border-foreground"
+              } ${locked ? "opacity-55" : ""}`}
+            >
+              {busy === mode ? (
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-brand-text motion-reduce:animate-none" aria-hidden="true" />
+              ) : (
+                <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${selected ? "text-brand-text" : "text-text-3"}`} aria-hidden="true" />
+              )}
+              <span className="min-w-0">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-medium">
+                  {title} {locked && <Badge variant="secondary">Plan Completo</Badge>}
+                </span>
+                <span className="mt-0.5 block text-xs leading-5 text-text-2">{detail}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {error && (
+        <p role="alert" className="text-xs leading-5 text-danger-text">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Summary({
+  activation,
+  hours,
+  onScheduleChange,
+}: {
+  activation: ActivationSummary;
+  hours?: HoursController | null;
+  onScheduleChange?: () => void;
+}) {
   const { number, schedule, handoff, handoffSuggested, restrictions, knowledgeCount, enforced } = activation;
+  const choosing = Boolean(hours?.settings);
   return (
     <dl className="divide-y divide-border rounded-md border border-border px-4">
       <Row label="Número">
@@ -45,12 +142,23 @@ function Summary({ activation }: { activation: ActivationSummary }) {
       </Row>
       <Row label="Cuándo responde">
         {schedule ? (
-          <>
-            <p>{schedule.rule}</p>
+          <div className="space-y-2">
+            {/* Con la elección a la vista, la regla escrita sobra: la dice la opción marcada. */}
+            {choosing && hours ? <ModoRespuesta hours={hours} onChange={onScheduleChange} /> : <p>{schedule.rule}</p>}
             <p className="text-text-2">
               {schedule.now} <span className="text-text-3">({schedule.timezone})</span>
             </p>
-          </>
+            {choosing && hours?.settings?.responseMode === "outside_hours" && (
+              // Un ancla de esta misma pantalla: abre el horario dentro de «Más ajustes».
+              <a
+                href="#horario"
+                className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-brand-text hover:underline"
+              >
+                Cambiar mis horas
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </a>
+            )}
+          </div>
         ) : enforced ? (
           <span className="text-text-2">Todavía sin horario.</span>
         ) : (
@@ -92,6 +200,8 @@ export function ActivarSection({
   onRetry,
   onActivate,
   onPause,
+  hours = null,
+  onScheduleChange,
 }: {
   enabled: boolean;
   gate: GateState;
@@ -99,6 +209,10 @@ export function ActivarSection({
   /** Devuelve el motivo si el servidor no dejó activar, o null si quedó activo. */
   onActivate: () => Promise<string | null>;
   onPause: () => Promise<void>;
+  /** El horario de Tu negocio (solo SaaS): «Cuándo responde» se elige aquí mismo. */
+  hours?: HoursController | null;
+  /** Tras cambiar el modo: volver a leer lo que dice «ahora» y qué falta. */
+  onScheduleChange?: () => void;
 }) {
   const [busy, setBusy] = useState<"activar" | "pausar" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -178,7 +292,7 @@ export function ActivarSection({
 
         {activation && (
           <>
-            {enabled && <Summary activation={activation} />}
+            {enabled && <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} />}
 
             {blockers.length > 0 && (
               <div className="space-y-2">
@@ -222,7 +336,9 @@ export function ActivarSection({
             {!enabled && gate.kind === "ready" && blockers.length === 0 && (
               <p className="text-sm text-text-2">Todo está listo. Esto es lo que va a pasar cuando actives:</p>
             )}
-            {!enabled && gate.kind === "ready" && <Summary activation={activation} />}
+            {!enabled && gate.kind === "ready" && (
+              <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} />
+            )}
           </>
         )}
 

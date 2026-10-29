@@ -6,7 +6,7 @@ import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { describeAgentSchedule, type ScheduleDescription } from "@/server/agencia/horario-texto";
-import type { SetupStepKey } from "@/lib/setup-steps";
+import { SETUP_STEP_ORDER, type SetupStepKey } from "@/lib/setup-steps";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
 import {
@@ -188,7 +188,7 @@ export async function activationBlockers(
       message: "La atención todo el día está disponible en Completo.",
       step: "negocio",
       title: "Atender todo el día es del plan Completo",
-      detail: "Elige «Fuera de horario» o cambia de plan.",
+      detail: "Elige «Cuando no atiendes tú» o cambia de plan.",
       href: "/agent#horario",
       cta: "Cambiar horario",
     });
@@ -335,7 +335,13 @@ export async function getActivationSummary(
 
   return {
     enforced,
-    blockers: [...blockers.map(publicBlocker), ...advisory],
+    // En el orden de los pasos que el dueño ve arriba (Tu negocio, Probar,
+    // Conectar, Activar): antes «Conecta tu WhatsApp» salía primero aunque
+    // fuera el tercer paso. Solo la lista de la pantalla: el error de la ruta
+    // que enciende sigue saliendo del primer bloqueo, en su orden de siempre.
+    blockers: [...blockers.map(publicBlocker), ...advisory].sort(
+      (a, b) => SETUP_STEP_ORDER.indexOf(a.step) - SETUP_STEP_ORDER.indexOf(b.step),
+    ),
     number: credentials
       ? { display: credentials.displayPhoneNumber ?? null, name: credentials.verifiedName ?? null }
       : null,

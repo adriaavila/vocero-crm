@@ -105,9 +105,17 @@ export function AgentClient({
       if (window.location.hash === "#avanzado") setAdvancedOpen(true);
       if (window.location.hash === "#horario") setHoursOpen(true);
     };
+    // El horario vive en «Más ajustes», plegado: el salto del navegador pudo
+    // caer antes de que se abriera, así que se repite ya abierto.
+    const onHash = () => {
+      open();
+      if (window.location.hash === "#horario") {
+        requestAnimationFrame(() => document.getElementById("horario")?.scrollIntoView({ block: "start" }));
+      }
+    };
     open();
-    window.addEventListener("hashchange", open);
-    return () => window.removeEventListener("hashchange", open);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
   // Un enlace con ancla (/agent#activar) tiene que llegar a su sitio, y el
@@ -320,6 +328,8 @@ export function AgentClient({
           onRetry={retrySetup}
           onActivate={activate}
           onPause={pause}
+          hours={saasMode ? hours : null}
+          onScheduleChange={() => void reloadSetup()}
         />
 
         <details

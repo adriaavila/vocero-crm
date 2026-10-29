@@ -143,8 +143,13 @@ export function TuNegocio({
   const [handoff, setHandoff] = useState(savedHandoff);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
-  // Sin ninguna pregunta guardada, el formulario va abierto: es lo que toca hacer.
-  const [faqOpen, setFaqOpen] = useState(faqs.length === 0);
+  // Cerrado de entrada: abierto, en el teléfono la pantalla era de tres pantallazos
+  // antes de llegar a «Guardar». El título ya dice qué hacer, y el resultado de
+  // «Probar» lleva directo a la respuesta que falte.
+  const [faqOpen, setFaqOpen] = useState(false);
+  // Lo que ya viene puesto (horario, cuándo pasar con una persona, seguimiento)
+  // va plegado en «Más ajustes»: arriba queda solo lo que el dueño tiene que escribir.
+  const [moreOpen, setMoreOpen] = useState(() => !savedHandoff.trim());
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [errors, setErrors] = useState<string[]>([]);
   // Lo que falta ANTES de mandar nada se dice bajo el campo, no en el aviso de arriba.
@@ -238,7 +243,9 @@ export function TuNegocio({
     setErrors([]);
     if (!handoff.trim()) {
       setFieldErrors({ handoff: "Escribe en qué casos quieres que tu agente te pase la conversación." });
-      document.getElementById("negocio-handoff")?.focus();
+      // Vive en «Más ajustes»: se abre y se enfoca en el cuadro siguiente.
+      setMoreOpen(true);
+      requestAnimationFrame(() => document.getElementById("negocio-handoff")?.focus());
       return;
     }
     if (faqDraft && (!question.trim() || !answer.trim())) {
@@ -396,50 +403,6 @@ export function TuNegocio({
           </div>
         ))}
 
-        {hours && (
-          <HorarioRespuesta
-            hours={hours}
-            brandName={brandName}
-            open={hoursOpen}
-            onOpenChange={onHoursOpenChange}
-            disabled={busy}
-          />
-        )}
-
-        <SeguimientoAjuste disabled={busy} />
-
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <Label htmlFor="negocio-handoff">Cuándo pasar con una persona</Label>
-            {isSuggestedHandoff(handoff) && <Badge variant="secondary">Sugerencia</Badge>}
-          </div>
-          <GrowingTextarea
-            id="negocio-handoff"
-            rows={3}
-            maxLength={4000}
-            className="resize-y break-words"
-            aria-invalid={fieldErrors.handoff ? true : undefined}
-            aria-describedby={fieldErrors.handoff ? "negocio-handoff-error negocio-handoff-hint" : "negocio-handoff-hint"}
-            value={handoff}
-            disabled={busy}
-            onChange={(event) => {
-              setHandoff(event.target.value);
-              setStatus("idle");
-              setFieldErrors((prev) => ({ ...prev, handoff: undefined }));
-            }}
-          />
-          {fieldErrors.handoff && (
-            <p id="negocio-handoff-error" role="alert" className="text-sm text-danger-text">
-              {fieldErrors.handoff}
-            </p>
-          )}
-          <p id="negocio-handoff-hint" className="text-xs text-text-3">
-            {isSuggestedHandoff(handoff)
-              ? "Es una sugerencia para empezar: cámbiala por lo que de verdad te sirva. Cuando la edites, deja de ser una sugerencia."
-              : "En qué casos tu agente deja de responder y te avisa. Ejemplo: cuando pidan un descuento, tengan un reclamo o quieran hablar con alguien."}
-          </p>
-        </div>
-
         <section aria-labelledby="faq-title" className="space-y-3 border-t border-border pt-5">
           <div>
             <h4 id="faq-title" className="text-sm font-semibold">
@@ -565,6 +528,79 @@ export function TuNegocio({
             </div>
           </details>
         </section>
+
+        <details
+          id="mas-ajustes"
+          open={moreOpen || hoursOpen}
+          onToggle={(event) => {
+            const open = event.currentTarget.open;
+            setMoreOpen(open);
+            if (!open) onHoursOpenChange(false);
+          }}
+          className="group scroll-mt-4 rounded-lg border border-border"
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 px-3 py-2.5 [&::-webkit-details-marker]:hidden">
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Más ajustes</span>
+              <span className="block break-words text-xs leading-5 text-text-3">
+                {hours ? "Horario, cuándo te pasa la conversación y seguimiento." : "Cuándo te pasa la conversación y seguimiento."}
+                {" Ya vienen puestos: cámbialos si quieres."}
+                {(hours?.dirty || handoff.trim() !== savedHandoff.trim()) && (
+                  <span className="font-medium text-warning-text"> · sin guardar</span>
+                )}
+              </span>
+            </span>
+            <ChevronRight
+              className="h-5 w-5 shrink-0 text-text-3 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              aria-hidden="true"
+            />
+          </summary>
+          <div className="space-y-5 border-t border-border p-3">
+            {hours && (
+              <HorarioRespuesta
+                hours={hours}
+                brandName={brandName}
+                open={hoursOpen}
+                onOpenChange={onHoursOpenChange}
+                disabled={busy}
+              />
+            )}
+
+            <SeguimientoAjuste disabled={busy} />
+
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="negocio-handoff">Cuándo pasar con una persona</Label>
+                {isSuggestedHandoff(handoff) && <Badge variant="secondary">Sugerencia</Badge>}
+              </div>
+              <GrowingTextarea
+                id="negocio-handoff"
+                rows={3}
+                maxLength={4000}
+                className="resize-y break-words"
+                aria-invalid={fieldErrors.handoff ? true : undefined}
+                aria-describedby={fieldErrors.handoff ? "negocio-handoff-error negocio-handoff-hint" : "negocio-handoff-hint"}
+                value={handoff}
+                disabled={busy}
+                onChange={(event) => {
+                  setHandoff(event.target.value);
+                  setStatus("idle");
+                  setFieldErrors((prev) => ({ ...prev, handoff: undefined }));
+                }}
+              />
+              {fieldErrors.handoff && (
+                <p id="negocio-handoff-error" role="alert" className="text-sm text-danger-text">
+                  {fieldErrors.handoff}
+                </p>
+              )}
+              <p id="negocio-handoff-hint" className="text-xs text-text-3">
+                {isSuggestedHandoff(handoff)
+                  ? "Es una sugerencia para empezar: cámbiala por lo que de verdad te sirva. Cuando la edites, deja de ser una sugerencia."
+                  : "En qué casos tu agente deja de responder y te avisa. Ejemplo: cuando pidan un descuento, tengan un reclamo o quieran hablar con alguien."}
+              </p>
+            </div>
+          </div>
+        </details>
 
         {errors.length > 0 && (
           <div role="alert" className="space-y-1 rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">

@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { casesToFix, probarKind, PASS_SCORE, type CaseLite, type CaseToFix, type ProbarKind } from "@/lib/probar";
+import { SETUP_STEP_CTA, type SetupStepKey } from "@/lib/setup-steps";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 
 /**
@@ -69,8 +70,11 @@ export function ProbarPanel({
 
   const probarDone = progress?.steps.find((step) => step.key === "probar")?.done ?? null;
   // Con el agente ya activo no hay a dónde «seguir»: solo el resultado y, si
-  // quiere, probar de nuevo.
+  // quiere, probar de nuevo. Si no, el paso que falta después de probar (casi
+  // siempre conectar WhatsApp): antes decía «Ya puedes activarlo» y llevaba a
+  // Activar, donde lo primero era «Conecta tu WhatsApp».
   const agentOn = progress ? !progress.active : false;
+  const next = agentOn ? null : (progress?.steps.find((step) => !step.done && step.key !== "probar") ?? null);
   const kind = probarKind({
     latest: latest ? { status: latest.status, score: latest.score } : null,
     cases,
@@ -93,7 +97,7 @@ export function ProbarPanel({
           <p className="max-w-2xl text-sm leading-6 text-text-2" role="status">
             {kind === "en_curso" && runProgress
               ? `Seis clientes simulados están conversando con tu agente (${runProgress.done} de ${runProgress.total}).`
-              : BODY[kind](latest?.score ?? null, toFix, agentOn)}
+              : BODY[kind](latest?.score ?? null, toFix, next?.key ?? null)}
           </p>
 
           {toFix.length > 0 && (
@@ -105,9 +109,9 @@ export function ProbarPanel({
           )}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {kind === "paso" && !agentOn ? (
-              <Link href="/agent#activar" className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
-                Seguir: activar tu agente
+            {kind === "paso" && next ? (
+              <Link href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
+                {next.key === "whatsapp" ? "Seguir: conectar tu WhatsApp" : SETUP_STEP_CTA[next.key]}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             ) : (
@@ -146,13 +150,22 @@ const TITLE: Record<ProbarKind, string> = {
   no_paso: "Tu agente todavía no pasa la prueba",
 };
 
-const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[], agentOn: boolean) => string> = {
+/** `next`: el paso que falta después de probar (null con el agente ya activo). */
+const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[], next: SetupStepKey | null) => string> = {
   sin_prueba: () =>
     "Seis clientes simulados le escriben con casos reales: precios, dudas, reclamos. Un revisor califica cada respuesta, y así ves cómo contesta antes de que hable con tus clientes de verdad.",
   en_curso: () => "Seis clientes simulados están conversando con tu agente.",
   no_termino: () => "Hubo un problema al correr la prueba. Vuelve a intentarlo en un momento.",
-  paso: (score, _toFix, agentOn) =>
-    `Sacó ${score} de 100 y no tuvo problemas graves.${agentOn ? "" : " Ya puedes activarlo."}`,
+  paso: (score, _toFix, next) =>
+    `Sacó ${score} de 100 y no tuvo problemas graves.${
+      next === "whatsapp"
+        ? " Ahora conecta tu WhatsApp para que les conteste a tus clientes."
+        : next === "activar"
+          ? " Ya puedes activarlo."
+          : next
+            ? " Sigue con el paso que falta."
+            : ""
+    }`,
   vieja: (score) =>
     `Pasó con ${score} de 100, pero cambiaste tu información después de esa prueba. Vuelve a probar para asegurarte de que sigue contestando bien.`,
   no_paso: (score, toFix) => {

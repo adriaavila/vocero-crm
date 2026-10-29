@@ -4,6 +4,7 @@ import {
   DEFAULT_AGENT_PROFILE,
   DEFAULT_AGENT_TEMPLATE_VERSION,
   defaultAgentProfile,
+  defaultResponseSchedule,
 } from "@/server/agent/default-profile";
 
 describe("plantilla SaaS del agente", () => {
@@ -49,5 +50,22 @@ describe("plantilla SaaS del agente", () => {
     expect(first).not.toBe(second);
     expect(first.activationMessages).not.toBe(second.activationMessages);
     expect(first.allowedWaIds).not.toBe(second.allowedWaIds);
+  });
+});
+
+describe("horario con el que nace un negocio SaaS", () => {
+  it("por defecto contesta cuando el equipo no atiende (lunes a sábado, 9 a 18)", () => {
+    const schedule = defaultResponseSchedule("America/Caracas");
+    expect(schedule.responseMode).toBe("outside_hours");
+    expect(schedule.businessTimezone).toBe("America/Caracas");
+    expect(Object.keys(schedule.businessHours)).toEqual(["mon", "tue", "wed", "thu", "fri", "sat"]);
+  });
+
+  it("la prueba de autoservicio (Completo) nace en «todo el día» y guarda la semana igual", () => {
+    const schedule = defaultResponseSchedule(null, { allDay: true });
+    expect(schedule.responseMode).toBe("all_day");
+    // Para cuando elija «cuando no atiendes tú» o pague Esencial.
+    expect(schedule.businessHours.mon).toEqual([{ start: "09:00", end: "18:00" }]);
+    expect(schedule).not.toHaveProperty("businessTimezone");
   });
 });

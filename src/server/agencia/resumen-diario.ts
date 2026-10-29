@@ -8,7 +8,7 @@ import { valorCitasCents } from "@/lib/lo-que-trajo";
 import { getBranding } from "@/server/branding";
 import { centroPeriod, getCentroMetricas } from "@/server/agencia/centro-metricas";
 import { getLoQueTrajo } from "@/server/agencia/lo-que-trajo";
-import { agentOn } from "@/server/agencia/estado";
+import { agentAnswersNow } from "@/server/agencia/estado";
 import { getPrioridades } from "@/server/agencia/prioridades";
 
 /**
@@ -26,14 +26,14 @@ import { getPrioridades } from "@/server/agencia/prioridades";
 export const RESUMEN_HORA = 19;
 
 export async function resumenDelDia(organizationId: string, now: Date): Promise<ResumenDia> {
-  const [metricas, agente, branding] = await Promise.all([
+  const [metricas, answering, branding] = await Promise.all([
     getCentroMetricas(organizationId, "hoy", now),
-    agentOn(organizationId),
+    agentAnswersNow(organizationId, now),
     getBranding(organizationId),
   ]);
   const [trajo, prioridades] = await Promise.all([
     getLoQueTrajo(organizationId, centroPeriod("hoy", metricas.timezone, now), branding.currency),
-    getPrioridades(organizationId, { agentOn: agente.on, now, light: true }),
+    getPrioridades(organizationId, { agentOn: answering, now, light: true }),
   ]);
   return {
     clientes: metricas.conversations.total,

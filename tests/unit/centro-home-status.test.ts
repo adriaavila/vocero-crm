@@ -105,6 +105,14 @@ describe("la tarjeta de estado compacta", () => {
     expect(working.strip).toMatchObject({ state: "atendiendo", reason: "allok está respondiendo ahora." });
   });
 
+  it("encendido pero fuera de su turno: sigue en orden y dice quién atiende ahora, no «allok contesta por ti»", () => {
+    const offShift = "Ahora atiendes tú. Tu agente empieza a responder hoy a las 18:00.";
+    const s = homeStatus({ ...base, snapshot: snapshot(), offShift });
+    expect(s.strip).toEqual({ state: "activo", reason: offShift, href: null, actionLabel: null });
+    // Apagado manda sobre el turno: encenderlo es la única acción.
+    expect(homeStatus({ ...base, snapshot: snapshot(), agentOn: false, offShift }).strip.reason).toBe("El agente está apagado: contestas tú.");
+  });
+
   it("al llegar al techo dice «200+», no un número exacto", () => {
     const s = homeStatus({ ...base, snapshot: snapshot(), needsYou: 200, capped: true });
     expect(s.headline.text).toBe("200+ conversaciones te necesitan ahora.");

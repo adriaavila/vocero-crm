@@ -39,6 +39,13 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   bloqueos para activar (la usa la ruta que enciende y la pantalla «Activar»).
   `agent_profile.updated_at` es la versión del CONTENIDO del agente: pausar o
   encender no vuelve vieja la prueba.
+- **La prueba de autoservicio nace contestando «Todo el día»**
+  (`server/agent/default-profile.ts`): es Completo, y quien la abre le
+  escribe a su número a media tarde para probar. Las demás altas nacen en
+  «Cuando no atiendes tú» (lunes a sábado, 9 a 18). El modo se elige también
+  en «Activar». Inicio, «Pregúntale» y el resumen de las 19:00 cuentan como
+  «te necesita» a quien escribe fuera del turno del agente
+  (`agentAnswersNow` en `server/agencia/estado.ts`).
 - **«Llénalo por mí»** en Tu negocio (`server/agencia/borrador-negocio*.ts`,
   `/api/agent/borrador`): del texto o la web del dueño a un borrador de los
   campos, sin inventar y sin guardar solo. Lee webs públicas con guarda de IP
