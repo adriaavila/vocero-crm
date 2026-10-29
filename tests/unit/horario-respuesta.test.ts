@@ -34,6 +34,16 @@ describe("hoursSignature: detecta cambios reales, no de orden", () => {
     expect(hoursSignature(shuffled)).toBe(hoursSignature(monSat));
   });
 
+  it("tampoco importa el orden dentro de cada tramo (la base devuelve {end, start})", () => {
+    const fromDb = {
+      ...monSat,
+      weeklyHours: Object.fromEntries(
+        Object.entries(monSat.weeklyHours).map(([day, intervals]) => [day, intervals?.map(({ start, end }) => ({ end, start }))]),
+      ),
+    } as HoursSettings;
+    expect(hoursSignature(fromDb)).toBe(hoursSignature(monSat));
+  });
+
   it("cambiar una hora, la zona o el modo cambia la firma", () => {
     const base = hoursSignature(monSat);
     expect(hoursSignature({ ...monSat, weeklyHours: { ...monSat.weeklyHours, sun: open() } })).not.toBe(base);

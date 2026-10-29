@@ -7,7 +7,7 @@ import { planMeetsTier } from "@/lib/saas-plans";
 import { getOrganizationBilling } from "@/server/saas/billing";
 import { getBranding } from "@/server/branding";
 import { brand } from "@/lib/brand";
-import { agentOn, getCentro } from "@/server/agencia/estado";
+import { agentAnswersNow, getCentro } from "@/server/agencia/estado";
 import { centroPeriod, getCentroMetricas, hasAnyDecision, parsePeriod, pipelineNow } from "@/server/agencia/centro-metricas";
 import { getLoQueTrajo } from "@/server/agencia/lo-que-trajo";
 import { getPrioridades } from "@/server/agencia/prioridades";
@@ -48,7 +48,8 @@ export default async function OverviewPage({
       getBranding(orgId),
       getCentroMetricas(orgId, parsePeriod(params.p)),
       pipelineNow(orgId),
-      agentOn(orgId).then((agent) => getPrioridades(orgId, { agentOn: agent.on })),
+      // «La tiene el agente» solo si contesta AHORA (en su turno y con plan).
+      agentAnswersNow(orgId).then((answering) => getPrioridades(orgId, { agentOn: answering })),
       hasAnyDecision(orgId),
       askRemaining(orgId),
     ]);

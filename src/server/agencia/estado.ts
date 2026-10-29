@@ -11,7 +11,14 @@ import { getPlanState } from "@/server/agencia/plan-estado";
 import type { PlanState } from "@/lib/plan-estado";
 import { cerebroExternoLegadoSiempreOn } from "@/server/agencia/cerebro-externo";
 import { hasPaidSaaSPlanFromMetadata } from "@/server/agencia/entitlements";
-import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
+import {
+  agentShiftOpen,
+  canAgentRespondNow,
+  getBusinessHours,
+  hasConfiguredBusinessHours,
+} from "@/server/business-hours";
+import { describeAgentSchedule } from "@/server/agencia/horario-texto";
+import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
 import { getPrioridades } from "@/server/agencia/prioridades";
@@ -36,6 +43,18 @@ export async function agentOn(organizationId: string): Promise<{ on: boolean; ti
     on: Boolean(rows[0]?.enabled) || (await cerebroExternoLegadoSiempreOn(organizationId)),
     timezone: rows[0]?.timezone ?? "UTC",
   };
+}
+
+/**
+ * Si el agente contesta AHORA: encendido, con un plan que lo deja y en su
+ * turno del horario (`canAgentRespondNow`, el mismo freno que el turno). Es lo
+ * que decide si un cliente que acaba de escribir «lo tiene el agente» o te
+ * toca a ti: con «Solo cuando no atiendes tú», en horas del equipo el agente
+ * calla, y decir «allok está respondiendo» dejaba a ese cliente sin nadie.
+ */
+export async function agentAnswersNow(organizationId: string, now: Date = new Date()): Promise<boolean> {
+  const [agent, plan] = await Promise.all([agentOn(organizationId), getPlanState(organizationId)]);
+  return agent.on && plan.agentAllowed && (await canAgentRespondNow(organizationId, now));
 }
 
 /**
@@ -98,7 +117,9 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   // tope de la prueba, cobro fallido) no «está respondiendo» aunque esté
   // encendido, y un cliente sin respuesta tiene que contar como espera.
   const billingActive = plan.agentAllowed;
-  const agentLive = agent.on && billingActive;
+  // Y el horario: en horas del equipo el agente no contesta, así que quien
+  // escribe espera por una persona (la misma regla que `agentAnswersNow`).
+  const agentLive = agent.on && billingActive && (await canAgentRespondNow(organizationId));
 
   // LA regla de «esperando» es la de «Por dónde arrancar» (`prioridades.ts`):
   // el punto, la barra, el icono y el encabezado de Inicio cuentan lo mismo.
@@ -138,6 +159,13 @@ export type Centro = {
     /** Sin horario de respuesta el agente del SaaS no contesta nunca. */
     configured: boolean;
     allDay: boolean;
+    /**
+     * Encendido y con plan, pero fuera de su turno: quién atiende ahora y
+     * cuándo entra el agente («Ahora atiendes tú. Tu agente empieza a
+     * responder hoy a las 18:00.»). null si el agente contesta ahora, o si
+     * está apagado o sin plan (eso ya lo dicen otras frases).
+     */
+    offShift: string | null;
   };
 };
 
@@ -209,6 +237,16 @@ export async function getCentro(organizationId: string, stateById: Record<string
   const weekday = weekdayInTz(new Date(now), tz);
   const shifts = coverage(schedule.weeklyHours, schedule.responseMode, pro, weekday);
   const tomorrow = coverage(schedule.weeklyHours, schedule.responseMode, pro, nextDay(weekday)).team[0]?.[0] ?? null;
+  const configured = hasConfiguredBusinessHours(schedule);
+  // La regla del turno (`canAgentRespondNow`) con lo que ya se leyó.
+  const shiftOpen = !isAllokSaaSMode() || agentShiftOpen(schedule, pro, new Date(now));
+  const offShift =
+    agent.on && plan.agentAllowed && !shiftOpen
+      ? configured
+        ? (describeAgentSchedule({ ...schedule, responseMode: allDay ? "all_day" : "outside_hours" }, new Date(now))?.now ??
+          null)
+        : "Sin horario de respuesta, tu agente no contesta."
+      : null;
 
   return {
     timezone: tz,
@@ -219,8 +257,9 @@ export async function getCentro(organizationId: string, stateById: Record<string
       tomorrow,
       agentOn: agent.on,
       billingActive: plan.agentAllowed,
-      configured: hasConfiguredBusinessHours(schedule),
+      configured,
       allDay,
+      offShift,
     },
   };
 }

@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   listDecisions: vi.fn(),
   getBranding: vi.fn(),
   getAiRuntimeConfig: vi.fn(),
-  agentOn: vi.fn(),
+  agentAnswersNow: vi.fn(),
   canAutomate: vi.fn(),
   businessTimezone: vi.fn(),
 }));
@@ -39,7 +39,7 @@ vi.mock("@/server/agencia/prioridades", () => ({ getPrioridades: mocks.getPriori
 vi.mock("@/server/agencia/decisions-read", () => ({ listDecisions: mocks.listDecisions }));
 vi.mock("@/server/branding", () => ({ getBranding: mocks.getBranding }));
 vi.mock("@/server/ai/credentials", () => ({ getAiRuntimeConfig: mocks.getAiRuntimeConfig }));
-vi.mock("@/server/agencia/estado", () => ({ agentOn: mocks.agentOn }));
+vi.mock("@/server/agencia/estado", () => ({ agentAnswersNow: mocks.agentAnswersNow }));
 vi.mock("@/server/agencia/entitlements", () => ({ canAutomate: mocks.canAutomate }));
 vi.mock("@/server/analytics/period", () => ({ businessTimezone: mocks.businessTimezone }));
 
@@ -79,7 +79,7 @@ beforeEach(() => {
   }
   mocks.canAutomate.mockResolvedValue(true);
   mocks.businessTimezone.mockResolvedValue("America/Caracas");
-  mocks.agentOn.mockResolvedValue({ on: true, timezone: "America/Caracas" });
+  mocks.agentAnswersNow.mockResolvedValue(true);
   mocks.getBranding.mockImplementation(async (org: string) => ({ name: `Negocio de ${org}` }));
   mocks.getCentroMetricas.mockImplementation(async (_org: string, key: string) => metrics(key === "hoy" ? 3 : 20));
   mocks.pipelineNow.mockImplementation(async (org: string) => [{ id: "s1", name: `Nuevo ${org}`, kind: "open", count: 5 }]);

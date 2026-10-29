@@ -118,6 +118,7 @@ export function ControlCenter({
     productLabel,
     owner,
     planKind: centro.plan.kind,
+    offShift: centro.day.offShift,
   });
   const tz = centro.timezone;
   // Fork (agencia): mientras la puesta en marcha sigue abierta, lo primero que

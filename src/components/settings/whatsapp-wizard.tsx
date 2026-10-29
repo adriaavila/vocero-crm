@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WhatsappOnboardingPanel, type OnboardingPanelView } from "@/components/settings/whatsapp-onboarding-panel";
 import { AlertTriangle, ArrowRight, Copy, Info, Sparkles, ShieldCheck } from "lucide-react";
+import { AntesDeConectar } from "@/components/agencia/antes-de-conectar";
 import { ConnectionCard, type ConnectionEvidence } from "@/components/agencia/whatsapp-conexion";
 import { SetupProgressNav } from "@/components/agencia/setup-progress";
 import { Button } from "@/components/ui/button";
@@ -325,6 +326,7 @@ function BridgeConnectCard({
         </div>
       </CardHeader>
       <CardContent>
+        <AntesDeConectar />
         <ActionButton onAct={() => window.location.assign(bridgeUrl)} label={label} pending="Abriendo…" />
         <p className="mt-3 text-xs text-text-3">Se abre una ventana segura de Meta y vuelves aquí al terminar.</p>
       </CardContent>
@@ -386,6 +388,7 @@ function GuidedConnectCard({
         </div>
       </CardHeader>
       <CardContent>
+        <AntesDeConectar />
         <GuidedButton label="Conectar WhatsApp" />
         <p className="mt-3 text-xs text-text-3">Se abre una ventana segura de Meta y vuelves aquí al terminar.</p>
         {shouldShowHandoverRecovery(guidedAvailable, connection) && (

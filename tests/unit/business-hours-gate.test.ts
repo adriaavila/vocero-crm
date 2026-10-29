@@ -14,7 +14,7 @@ vi.mock("@/lib/db", async (importOriginal) => ({
 }));
 vi.mock("@/server/agencia/entitlements", () => ({ hasSaaSPlan: async () => pro }));
 
-import { canAgentRespondNow } from "@/server/business-hours";
+import { agentShiftOpen, businessHoursFromProfile, canAgentRespondNow } from "@/server/business-hours";
 
 const MON_9_TO_18 = { mon: [{ start: "09:00", end: "18:00" }] };
 const INSIDE = new Date("2026-09-07T15:00:00Z"); // Mon 09:00 America/Mexico_City
@@ -41,5 +41,25 @@ describe("canAgentRespondNow with responseMode all_day", () => {
     pro = true;
     expect(await canAgentRespondNow("org_1", INSIDE)).toBe(true);
     expect(await canAgentRespondNow("org_1", OUTSIDE)).toBe(true);
+  });
+});
+
+describe("agentShiftOpen: the same rule, pure (Inicio reuses what it already read)", () => {
+  const settings = (responseMode: string, businessHours: unknown = MON_9_TO_18) =>
+    businessHoursFromProfile({ businessHours, businessTimezone: "America/Mexico_City", responseMode });
+
+  it("«solo cuando no atiendes tú»: quiet inside the team's hours, answering outside", () => {
+    expect(agentShiftOpen(settings("outside_hours"), true, INSIDE)).toBe(false);
+    expect(agentShiftOpen(settings("outside_hours"), true, OUTSIDE)).toBe(true);
+  });
+
+  it("«todo el día» answers inside the hours only with Completo", () => {
+    expect(agentShiftOpen(settings("all_day"), true, INSIDE)).toBe(true);
+    expect(agentShiftOpen(settings("all_day"), false, INSIDE)).toBe(false);
+    expect(agentShiftOpen(settings("all_day"), false, OUTSIDE)).toBe(true);
+  });
+
+  it("without any schedule the agent never answers", () => {
+    expect(agentShiftOpen(settings("outside_hours", {}), true, OUTSIDE)).toBe(false);
   });
 });
