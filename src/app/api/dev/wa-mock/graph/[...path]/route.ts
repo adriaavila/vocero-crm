@@ -112,6 +112,10 @@ export async function GET(req: Request, ctx: Params) {
             ]
           : [],
         issued_at: Math.floor(Date.now() / 1000),
+        // Quién autorizó: determinista a partir del `code` (mtok_<code>_<n>)
+        // para que el guion de cumplimiento pueda firmar un signed_request
+        // con el mismo usuario sin leer la BD.
+        user_id: `fbu_${inputToken.slice(5, Math.max(5, inputToken.lastIndexOf("_")))}`,
       },
     });
   }

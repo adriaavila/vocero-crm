@@ -1804,3 +1804,45 @@ export const resumenDiario = pgTable(
   },
   (t) => [uniqueIndex("resumen_diario_org_dia_uq").on(t.organizationId, t.dia)]
 );
+
+/**
+ * Fork — quién autorizó la app de Meta para cada negocio (el `user_id` de
+ * `debug_token` al conectar WhatsApp). Es la única forma de encontrar el
+ * negocio cuando Meta llama al callback de desautorizar o de borrar datos:
+ * esos avisos traen el usuario de Facebook, no la cuenta de WhatsApp.
+ */
+export const metaAutorizacion = pgTable(
+  "meta_autorizacion",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    fbUserId: text("fb_user_id").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("meta_autorizacion_fb_user_idx").on(t.fbUserId)]
+);
+
+/**
+ * Fork — avisos de cumplimiento que manda Meta (webhooks de desautorizar y de
+ * borrar datos), firmados con `META_APP_SECRET`. Bitácora de la INSTANCIA, no
+ * de un negocio: llega antes de saber a qué negocio toca y puede tocar a
+ * varios, por eso no lleva `organization_id` (van en `organization_ids`). El
+ * `codigo` es el número de confirmación que Meta le enseña a la persona.
+ */
+export const metaSolicitud = pgTable(
+  "meta_solicitud",
+  {
+    id: text("id").primaryKey(),
+    tipo: text("tipo", { enum: ["desautorizar", "eliminar_datos"] }).notNull(),
+    fbUserId: text("fb_user_id").notNull(),
+    codigo: text("codigo").notNull(),
+    organizationIds: jsonb("organization_ids").$type<string[]>().notNull().default([]),
+    estado: text("estado", { enum: ["recibida", "hecha"] }).notNull().default("recibida"),
+    issuedAt: timestamp("issued_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    doneAt: timestamp("done_at"),
+  },
+  (t) => [uniqueIndex("meta_solicitud_codigo_uq").on(t.codigo)]
+);
