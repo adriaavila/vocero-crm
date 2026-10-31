@@ -638,6 +638,47 @@ async function main() {
     ok("muestra el embudo con sus columnas", html.includes("De dónde llegan y cuántos pagan") && ["Altas", "WhatsApp conectado", "Agente activo", "Pagando", "MRR"].every((c) => html.includes(c)));
     const row = html.match(/title="test"[^>]*>test<\/th><td[^>]*>(\d+)<\/td>/);
     ok("la fila 'test' cuenta al menos las dos altas de esta corrida", Number(row?.[1] ?? 0) >= 2, row?.[0] ?? "sin fila 'test'");
+
+    ok("cada negocio trae «Enlace para cambiar contraseña»", html.includes("Enlace para cambiar contraseña"));
+
+    console.log("\n== 13. Soporte sin correo: el admin crea el enlace para cambiar la contraseña ==");
+    const [target] = await sql`select id from organization where slug = ${intruderSlug}`;
+    const targetEmail = `otro-${stamp}@vocero.test`;
+    const linkFor = (who, body = {}) =>
+      who(hostFor("admin"), `/api/saas/businesses/${target.id}/password-link`, { method: "POST", body: JSON.stringify(body) });
+    const tokenOf = (url) => (url ? new URL(url).searchParams.get("token") : null);
+    const resetWith = (token, newPassword) =>
+      client()(hostFor(intruderSlug), "/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, newPassword }) });
+
+    const notAdmin = await linkFor(intruder);
+    ok("alguien que no es admin no puede crearlo (404)", notAdmin.res.status === 404, String(notAdmin.res.status));
+    const first = await linkFor(admin);
+    ok("el admin lo crea para el dueño del negocio", first.res.status === 200 && first.json?.email === targetEmail, JSON.stringify(first.json));
+    ok("el enlace va al subdominio del negocio", (first.json?.url ?? "").startsWith(`http://${intruderSlug}.localhost`) && first.res.headers.get("cache-control") === "no-store", first.json?.url);
+    const left = Date.parse(first.json?.expiresAt ?? "") - Date.now();
+    ok("y vence en una hora", left > 55 * 60000 && left <= 60 * 60000, first.json?.expiresAt);
+    const plain = await admin(hostFor("admin"), `/api/saas/businesses/${target.id}/password-link`, { method: "POST", body: "{}", headers: { "content-type": "text/plain" } });
+    ok("sin JSON no se crea (415): un formulario de otro sitio no llega", plain.res.status === 415, String(plain.res.status));
+    const [adminOrg] = await sql`select m.organization_id as id from member m join "user" u on u.id = m.user_id where lower(u.email) = lower(${adminEmail}) limit 1`;
+    if (adminOrg) {
+      const forAdmin = await admin(hostFor("admin"), `/api/saas/businesses/${adminOrg.id}/password-link`, { method: "POST", body: JSON.stringify({ email: adminEmail }) });
+      ok("no sirve para la cuenta de otro admin (403)", forAdmin.res.status === 403, String(forAdmin.res.status));
+    }
+    const stranger = await linkFor(admin, { email: `nadie-${stamp}@vocero.test` });
+    ok("un correo que no es de ese negocio: 404", stranger.res.status === 404, String(stranger.res.status));
+    const second = await linkFor(admin, { email: targetEmail });
+    ok("crear otro anula el anterior", (await resetWith(tokenOf(first.json?.url), "contrasena-vieja-1")).res.status === 400);
+    const used = await resetWith(tokenOf(second.json?.url), "contrasena-nueva-123");
+    ok("el cliente elige su contraseña nueva con el enlace", used.res.status === 200 && used.json?.status === true, JSON.stringify(used.json));
+    ok("el enlace no sirve dos veces", (await resetWith(tokenOf(second.json?.url), "otra-contrasena-123")).res.status === 400);
+    const session = await intruder(APP_HOST, "/api/auth/get-session");
+    ok("las sesiones abiertas de esa cuenta se cierran", !session.json?.user, JSON.stringify(session.json));
+    const signIn = (password) =>
+      client()(APP_HOST, "/api/auth/sign-in/email", { method: "POST", body: JSON.stringify({ email: targetEmail, password }) });
+    ok("entra con la nueva", (await signIn("contrasena-nueva-123")).res.status === 200);
+    ok("y ya no con la vieja", (await signIn("password-e2e-123")).res.status !== 200);
+    const audit = await sql`select detail from saas_admin_audit where action = 'password_link' and organization_id = ${target.id}`;
+    ok("queda en la bitácora del admin, sin el token", audit.length >= 2 && audit.every((a) => !a.detail.includes(tokenOf(second.json?.url)) && !a.detail.includes(tokenOf(first.json?.url))), JSON.stringify(audit));
   }
 
   console.log(`\n${failures === 0 ? "TODO VERDE" : "CON FALLOS"} — ${checks - failures}/${checks} checks`);

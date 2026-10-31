@@ -121,15 +121,16 @@ function createAuth() {
       enabled: true,
       requireEmailVerification: false,
       minPasswordLength: 8,
+      // Quien recupera el acceso porque alguien más entró no debe dejar esa
+      // sesión abierta. Siempre, no solo con correo: el enlace que crea el
+      // admin (server/agencia/enlace-contrasena.ts) sirve sin conector.
+      revokeSessionsOnPasswordReset: true,
       // "Olvidé mi contraseña" existe solo con el conector de correo
       // encendido (server/agencia/email.ts). Apagado, Better Auth contesta
       // RESET_PASSWORD_DISABLED y el login conserva su "Escríbenos".
       ...(isEmailConfigured()
         ? {
             resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
-            // Quien recupera el acceso porque alguien más entró no debe dejar
-            // esa sesión abierta.
-            revokeSessionsOnPasswordReset: true,
             // Sin `await`: tardar más cuando la cuenta existe delataría qué
             // correos tienen cuenta. Este proceso es un servidor Node
             // persistente, no una función que se congela al responder.
