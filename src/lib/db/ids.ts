@@ -48,6 +48,8 @@ const prefixes = {
   rawEvent: "rev",
   agentDecision: "dec",
   pushSubscription: "psub",
+  // Fork — avisos de cumplimiento de Meta (desautorizar / borrar datos).
+  metaSolicitud: "msol",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

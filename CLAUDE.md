@@ -21,7 +21,7 @@ La regla que hace posible seguir fusionando con upstream para siempre:
 | Lógica de servidor propia | `src/server/agencia/` |
 | Componentes propios | `src/components/agencia/` |
 | Migraciones propias | `drizzle/9xxx_*.sql` y `drizzle/meta/9xxx_snapshot.json`: el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` ya las nombra 9xxx solo; no renombres nada a mano (ver "Migraciones y snapshots"). |
-| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
+| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/solicitud-datos`, `/api/meta/*`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
 
 Antes de tocar un archivo de upstream, pregúntate si el cambio cabe en
 `agencia/`. Si no cabe, hazlo pequeño, coméntalo con el porqué, y considera
@@ -73,6 +73,11 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.
+- **Webhooks de cumplimiento de Meta** (`server/agencia/meta-cumplimiento.ts`,
+  `/api/meta/desautorizar`, `/api/meta/eliminar-datos`, `/solicitud-datos`):
+  `signed_request` verificado con `META_APP_SECRET`; desautorizar deja el
+  negocio en «reconectar», borrar datos se registra con código y lo cierra el
+  operador. Ver docs/atribucion-capi.md.
 - **`META_APP_SECRET` es obligatorio**: el webhook rechaza lo que no puede
   verificar y `/api/health` declara la instancia enferma sin él.
 - **Guard `ai_disabled` al enviar**: una respuesta cuya conversación se pausó
