@@ -81,7 +81,8 @@ export async function registrarAnuncioDeOrigen(input: {
     : insert.onConflictDoNothing({ target })
   ).returning({ id: schema.adAttribution.id });
 
-  // Solo la fila nueva baja imagen: una reentrega no dispara otra descarga.
+  // Solo la fila nueva (o la mejorada con un clic) baja imagen: una reentrega
+  // no dispara otra descarga.
   if (creadas[0] && a.sourceId && a.imageUrl) {
     const { organizationId, conversationId } = input;
     const sourceId = a.sourceId;
