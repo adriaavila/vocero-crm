@@ -465,7 +465,7 @@
     --overlay: rgba(15, 32, 40, 0.55);
     --knob: #ffffff;
 
-    /* Las tarjetas de REI Edificios son más redondas (16–24px) que las de
+    /* Las tarjetas de Rei Edificios son más redondas (16–24px) que las de
        allok; los controles chicos conservan su esquina. */
     --radius-sm: 8px;
     --radius: 12px;
@@ -481,12 +481,12 @@
     --font-sans: var(--font-grotesk);
     --font-serif: var(--font-instrument-serif);
     /* Horas, cifras y etiquetas en la grotesca (con números tabulares, ver
-       `.font-mono` del SaaS): REI no usa mono en la interfaz. El código sí
+       `.font-mono` del SaaS): Rei no usa mono en la interfaz. El código sí
        conserva Geist Mono (regla de `code, kbd, pre`). */
     --font-mono: var(--font-grotesk);
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-    /* Botones en píldora, como los de REI Edificios («Crear cuenta»,
+    /* Botones en píldora, como los de Rei Edificios («Crear cuenta»,
        «Registrar»); la presión es la respuesta táctil, igual que `.rei-press`. */
     --btn-radius: 9999px;
     --btn-lift: 0px;
@@ -1247,7 +1247,7 @@
   }
 
   /*
-    Rei · la voz de REI Edificios (rei-fm, `apps/buildings/src/app/globals.css`):
+    Rei · la voz de Rei Edificios (rei-fm, `apps/buildings/src/app/globals.css`):
     el ceja-título es grotesca en esmeralda con un filete delante (`.rei-eyebrow`),
     no mono gris. `:where()` deja la especificidad en la de una clase, así una
     utilidad del elemento (`hidden`, `text-brand`, `sr-only`) sigue mandando.
@@ -1274,7 +1274,7 @@
 }
 
 /*
-  Rei · títulos editoriales. En REI Edificios cada pantalla se nombra en
+  Rei · títulos editoriales. En Rei Edificios cada pantalla se nombra en
   Instrument Serif itálica ("Inicio", "Buen día."), y el CRM los decía en
   grotesca negra: era la diferencia que más se nota entre los dos productos.
   `.page-title` es el título de la barra de cada sección; `.display-title`, el
@@ -1306,7 +1306,7 @@
     font-size: 54px;
   }
 }
-/* El nombre del negocio en la barra, como el «rei» de REI Edificios. */
+/* El nombre del negocio en la barra, como el «rei» de Rei Edificios. */
 :root[data-brand="rei"] [data-brand-name] {
   font-family: var(--font-serif);
   font-style: italic;
