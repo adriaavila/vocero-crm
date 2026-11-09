@@ -63,10 +63,10 @@ describe("Juez — el traspaso es un hecho del transcript", () => {
       expect(String(chatJson.mock.calls[0]![1][1].content)).toContain("SISTEMA:");
     });
 
-    it("sin traspaso, un «debió escalar» sobre el pedido del cliente queda igual", async () => {
+    it("sin traspaso, el veredicto del juez queda igual", async () => {
       const data = {
         veredicto: "rojo",
-        hallazgos: [{ tipo: "debio_escalar", evidencia: "Prefiero tratar esto con una persona." }],
+        hallazgos: [{ tipo: "debio_escalar", evidencia: "Te paso con Ana, del equipo." }],
       };
       chatJson.mockResolvedValue({ ok: true, raw: "{}", data });
       const outcome = await judgeCase({ personaKey: "pide_humano", transcript, kbText: "", behaviorText: "" });

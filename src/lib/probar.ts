@@ -39,7 +39,7 @@ export function looksGood(score: number | null, redCount: number): boolean {
  */
 export function consejoDeResultado(score: number | null, redCount: number): string | null {
   if (score === null || looksGood(score, redCount)) return null;
-  const casos = redCount === 0 ? "" : ` con ${redCount} ${redCount === 1 ? "caso" : "casos"} para revisar`;
+  const casos = redCount === 0 ? "" : ` con ${redCount} ${redCount === 1 ? "caso grave" : "casos graves"}`;
   return `Sacó ${score}/100${casos}. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.`;
 }
 

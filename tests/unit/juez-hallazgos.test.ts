@@ -361,24 +361,37 @@ describe("falsos positivos reales del Laboratorio (producción, noviembre)", () 
     expect(juzgarKb(ev2, ev2, KB_INSTALACION).hallazgos).toHaveLength(1);
   });
 
+  it("una cifra de 4+ caracteres seguida de coma está en el conocimiento", () => {
+    const kb = "El plan cuesta US$1500, pero incluye todo.";
+    const ev = "El plan cuesta US$1500, pero incluye todo.";
+    expect(juzgarKb(ev, ev, kb).hallazgos).toEqual([]);
+    expect(juzgarKb("cuesta US$1500", "cuesta US$1500", "cuesta US$15000, pero").hallazgos).toHaveLength(1);
+  });
+
+  it("el punto de una cifra corta no es un comodín: «1.5 horas» no está en «125 horas»", () => {
+    const ev = "Tarda 1.5 horas.";
+    expect(juzgarKb(ev, ev, "Tarda 125 horas.").hallazgos).toHaveLength(1);
+    expect(juzgarKb(ev, ev, "Tarda 1.5 horas.").hallazgos).toEqual([]);
+  });
+
   const traspasoPropio =
     "Le paso tu conversación a Adrian y te escribe él por aquí con el detalle de garantías y devoluciones.";
-  const garantias = [c("¿Qué garantías tienen y cómo son las devoluciones?"), a(traspasoPropio)];
+  const garantias = [c("¿Cuál es su política exacta de garantías y devoluciones?"), a(traspasoPropio)];
+  const dosTurnos = `CLIENTE: ¿Cuál es su política exacta de garantías y devoluciones? AGENTE: ${traspasoPropio}`;
 
-  it("«debió escalar» citando el propio traspaso del agente se descarta aunque no haya traspaso registrado", () => {
+  it("«debió escalar» con dos turnos citados y traspaso registrado se descarta", () => {
     const out = juzgar(
-      { veredicto: "rojo", hallazgos: [{ tipo: "debio_escalar", evidencia: traspasoPropio }] },
+      { veredicto: "rojo", hallazgos: [{ tipo: "debio_escalar", evidencia: dosTurnos }] },
       garantias,
-      false
+      true
     );
     expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
   });
 
-  it("«debió escalar» citando un mensaje del agente que NO deriva se queda", () => {
-    const ev = "Las devoluciones se hacen en 30 días.";
+  it("sin traspaso registrado, ese «debió escalar» se queda", () => {
     const out = juzgar(
-      { veredicto: "rojo", hallazgos: [{ tipo: "debio_escalar", evidencia: ev }] },
-      [c("Quiero devolver esto, estoy muy molesto."), a(ev)],
+      { veredicto: "rojo", hallazgos: [{ tipo: "debio_escalar", evidencia: dosTurnos }] },
+      garantias,
       false
     );
     expect(out.hallazgos).toHaveLength(1);

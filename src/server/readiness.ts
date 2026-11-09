@@ -101,10 +101,17 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
 
   let simulationStatus: ReadinessStepStatus = "pending";
   if (latestRun?.finishedAt && latestRun.score !== null) {
-    // El dueño decide cuándo le gusta cómo responde su agente: basta con haber
-    // probado DESPUÉS del último cambio, sea cual sea el puntaje. El puntaje y
-    // los casos rojos se muestran como consejo (`looksGood` en `lib/probar`).
-    simulationStatus = latestRun.finishedAt < contentUpdatedAt ? "stale" : "complete";
+    // SaaS: el dueño decide cuándo le gusta cómo responde su agente; basta con
+    // haber probado DESPUÉS del último cambio, sea cual sea el puntaje (el
+    // puntaje y los casos rojos son consejo, `looksGood` en `lib/probar`).
+    // Instancias dedicadas: la regla de siempre, 80 y ningún caso rojo.
+    // Frescura por el INICIO de la corrida: una que seguía corriendo mientras
+    // el dueño editaba probó el contenido anterior.
+    simulationStatus = latestRun.startedAt < contentUpdatedAt
+      ? "stale"
+      : input.saasMode || looksGood(latestRun.score, input.redCount)
+        ? "complete"
+        : "pending";
   }
 
   let liveStatus: ReadinessStepStatus = input.liveTestAvailable ? "pending" : "unavailable";
@@ -175,7 +182,9 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
           : `${latestRun!.score}/100. Revisa los casos y actívalo cuando te guste cómo responde.`
         : simulationStatus === "stale"
           ? "El agente cambió desde la última evaluación. Vuelve a probarlo."
-          : "Pruébalo una vez antes de hablar con tus clientes.",
+          : latestRun?.finishedAt
+            ? "Necesitas 80/100 o más y cero casos rojos."
+            : "Pruébalo una vez antes de hablar con tus clientes.",
       href: "/lab",
     },
     {

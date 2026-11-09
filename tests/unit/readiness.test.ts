@@ -83,6 +83,8 @@ describe("readiness", () => {
     const flojo = evaluateReadiness(input({
       latestRun: { ...input().latestRun!, score: 50 },
       redCount: 1,
+      saasMode: true,
+      businessHoursConfigured: true,
     }));
     const step = flojo.steps.find((s) => s.id === "simulation")!;
     expect(step.status).toBe("complete");
@@ -92,10 +94,20 @@ describe("readiness", () => {
     expect(saasActivationBlockers(flojo)).toEqual([]);
   });
 
-  it("una prueba anterior al último cambio es vieja aunque haya sacado 100", () => {
+  it("instancia dedicada: la regla de siempre, 80 y ningún caso rojo", () => {
+    const run = { ...input().latestRun!, score: 50 };
+    const dedicada = evaluateReadiness(input({ latestRun: run, saasMode: false }));
+    expect(dedicada.steps.find((s) => s.id === "simulation")?.status).toBe("pending");
+    expect(evaluateReadiness(input({ redCount: 1, saasMode: false })).steps.find((s) => s.id === "simulation")?.status).toBe("pending");
+    expect(evaluateReadiness(input({ saasMode: false })).steps.find((s) => s.id === "simulation")?.status).toBe("complete");
+    expect(evaluateReadiness(input({ latestRun: run, saasMode: true })).steps.find((s) => s.id === "simulation")?.status).toBe("complete");
+  });
+
+  it("una corrida que empezó antes del último cambio es vieja aunque terminara después", () => {
     const vieja = evaluateReadiness(input({
-      latestRun: { ...input().latestRun!, score: 100, finishedAt: changedAt },
+      latestRun: { ...input().latestRun!, score: 100, startedAt: changedAt, finishedAt: liveAt },
       knowledgeUpdatedAt: runAt,
+      saasMode: true,
     }));
     expect(vieja.steps.find((s) => s.id === "simulation")?.status).toBe("stale");
   });

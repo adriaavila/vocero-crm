@@ -72,9 +72,9 @@ describe("qué corregir, en palabras llanas", () => {
 describe("consejoDeResultado", () => {
   it("dice el puntaje y los casos, y que activar es decisión del dueño", () => {
     expect(consejoDeResultado(67, 2)).toBe(
-      "Sacó 67/100 con 2 casos para revisar. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.",
+      "Sacó 67/100 con 2 casos graves. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.",
     );
-    expect(consejoDeResultado(50, 1)).toMatch(/con 1 caso para revisar\./);
+    expect(consejoDeResultado(50, 1)).toMatch(/con 1 caso grave\./);
     expect(consejoDeResultado(70, 0)).toMatch(/^Sacó 70\/100\. Puedes activarlo igual/);
     expect(consejoDeResultado(90, 1)).toMatch(/^Sacó 90\/100 con 1 caso/);
   });
