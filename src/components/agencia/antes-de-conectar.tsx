@@ -24,7 +24,7 @@ const ITEMS: { title: string; detail: string }[] = [
 
 export function AntesDeConectar() {
   return (
-    <div className="mb-4 rounded-lg border border-brand-soft bg-card p-3 sm:p-4">
+    <div className="rounded-lg border border-brand-soft bg-card p-3 sm:p-4">
       <p className="text-sm font-semibold">Antes de empezar, ten a mano:</p>
       <ul className="mt-2 space-y-2">
         {ITEMS.map((item) => (

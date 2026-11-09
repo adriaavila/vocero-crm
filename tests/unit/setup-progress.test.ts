@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateReadiness, type ReadinessResponse } from "@/server/readiness";
 import { deriveSetupProgress } from "@/server/agencia/setup-progress";
+import { SETUP_STEP_CTA, SETUP_STEP_ORDER } from "@/lib/setup-steps";
 
 const changedAt = new Date("2026-08-10T10:00:00Z");
 const runAt = new Date("2026-08-10T11:00:00Z");
@@ -36,6 +37,26 @@ function readiness(overrides: Record<string, unknown> = {}): ReadinessResponse {
 
 const doneKeys = (progress: ReturnType<typeof deriveSetupProgress>) =>
   progress.steps.filter((step) => step.done).map((step) => step.key);
+
+describe("SETUP_STEP_CTA", () => {
+  it("una sola frase por paso, en el orden compartido, para Tu negocio, Probar e Inicio", () => {
+    expect(SETUP_STEP_ORDER.map((key) => SETUP_STEP_CTA[key])).toEqual([
+      "Seguir: cuéntanos de tu negocio",
+      "Seguir: probar tu agente",
+      "Seguir: conectar tu WhatsApp",
+      "Seguir: activar tu agente",
+    ]);
+  });
+});
+
+describe("la puesta en marcha es solo para quien nunca activó", () => {
+  it("un agente apagado que ya activó antes no reabre la alta", () => {
+    const nuevo = deriveSetupProgress(readiness({ whatsappConnected: false }));
+    expect(nuevo.active).toBe(true);
+    const pausado = deriveSetupProgress({ ...readiness(), agentEnabled: false, everActivated: true });
+    expect(pausado.active).toBe(false);
+  });
+});
 
 describe("deriveSetupProgress", () => {
   it("son cuatro pasos, siempre en el mismo orden y con la cuenta fuera", () => {

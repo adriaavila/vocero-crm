@@ -88,7 +88,7 @@ describe("readiness", () => {
     }));
     const step = flojo.steps.find((s) => s.id === "simulation")!;
     expect(step.status).toBe("complete");
-    expect(step.detail).toMatch(/50\/100/);
+    expect(step.detail).toMatch(/50 de 100/);
     expect(step.detail).not.toMatch(/80/);
     expect(flojo.latestLab).toMatchObject({ score: 50, redCount: 1 });
     expect(saasActivationBlockers(flojo)).toEqual([]);

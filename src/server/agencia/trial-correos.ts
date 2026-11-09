@@ -3,7 +3,7 @@ import { brand, emailColors } from "@/lib/brand";
 import { getDb } from "@/lib/db";
 import { derivePlanState, planDate, TRIAL_ENDING_MS } from "@/lib/plan-estado";
 import { PLAN_CATALOG } from "@/lib/saas-plans";
-import { SETUP_STEP_CTA } from "@/lib/setup-steps";
+import type { SetupStepKey } from "@/lib/setup-steps";
 import { isAllokSaaSMode, resolvedRootDomain } from "@/lib/tenant-host";
 import { isSaaSSelfServe } from "@/server/auth/registration";
 import { sendEmail, isEmailConfigured, type EmailMessage } from "./email";
@@ -133,6 +133,19 @@ export function buildTrialEndedEmail(input: MailInput): EmailMessage {
   return { to: input.to, subject, text, html };
 }
 
+/**
+ * El botón del correo, con SU texto: se escribe «<texto>: <enlace>» y «Seguir:
+ * conectar tu WhatsApp: https://…» llevaría dos veces los dos puntos. No sigue
+ * a `SETUP_STEP_CTA` (la frase de los botones de la app); es el texto que este
+ * correo ya tenía.
+ */
+export const SETUP_MAIL_CTA: Record<SetupStepKey, string> = {
+  whatsapp: "Conectar WhatsApp",
+  negocio: "Seguir: cuéntanos de tu negocio",
+  probar: "Seguir: probar tu agente",
+  activar: "Seguir: activar tu agente",
+};
+
 type SetupMailInput = { to: string; baseUrl: string; progress: SetupProgress; daysLeft: number | null; second: boolean; brandName?: string };
 
 function helpLine(): string | null {
@@ -161,7 +174,7 @@ export function buildSetupNudgeEmail(input: SetupMailInput): EmailMessage {
   const list = input.progress.steps.map((step) => `${step.done ? "✓" : "○"} ${step.label}`);
   const action = `Lo que sigue: ${next.label}. Son unos minutos.`;
   const help = helpLine();
-  const text = ["Hola,", "", lead, "", ...list, "", action, "", `${SETUP_STEP_CTA[next.key]}: ${url}`, ...(help ? ["", help] : []), "", name].join("\n");
+  const text = ["Hola,", "", lead, "", ...list, "", action, "", `${SETUP_MAIL_CTA[next.key]}: ${url}`, ...(help ? ["", help] : []), "", name].join("\n");
   const html = layout(
     [
       escapeHtml(lead),
@@ -169,7 +182,7 @@ export function buildSetupNudgeEmail(input: SetupMailInput): EmailMessage {
       `Lo que sigue: <strong>${escapeHtml(next.label)}</strong>. Son unos minutos.`,
     ],
     url,
-    escapeHtml(SETUP_STEP_CTA[next.key]),
+    escapeHtml(SETUP_MAIL_CTA[next.key]),
     help ? escapeHtml(help) : escapeHtml(name),
   );
   return { to: input.to, subject, text, html };

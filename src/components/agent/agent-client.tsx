@@ -249,7 +249,10 @@ export function AgentClient({
     target?.focus({ preventScroll: true });
   }
 
-  const showProgress = progress?.active ?? false;
+  // La alta (sin interruptor, con el avance) es del SaaS y de quien nunca activó
+  // a su agente; una instancia dedicada, o un agente pausado después de atender,
+  // conserva la pantalla de siempre.
+  const showProgress = saasMode && (progress?.active ?? false);
   const hasAnyHours = hours.settings
     ? hours.settings.responseMode === "all_day" || Object.values(hours.settings.weeklyHours).some((d) => d?.length)
     : true;
@@ -260,19 +263,27 @@ export function AgentClient({
         <h2 className="page-title text-[17px] font-bold tracking-tight">Tu agente</h2>
         <div className="flex items-center gap-3">
           {saved && <span role="status" className="text-xs text-primary">Guardado ✓</span>}
-          <span className="text-sm text-muted-foreground">
-            {profile.enabled ? "Encendido" : "Apagado"}
-          </span>
-          <Switch
-            checked={profile.enabled}
-            label="Agente encendido"
-            disabled={!aiConfigured}
-            onCheckedChange={onSwitch}
-          />
+          {/* Con la puesta en marcha abierta el interruptor no tiene nada que
+              decir: encender lo cubre la tarjeta «Activar», que primero cuenta
+              qué va a pasar. Solo aparece con el agente ya encendido. */}
+          {!showProgress && (
+            <>
+              <span className="text-sm text-muted-foreground">
+                {profile.enabled ? "Encendido" : "Apagado"}
+              </span>
+              <Switch
+                checked={profile.enabled}
+                label="Agente encendido"
+                disabled={!aiConfigured}
+                onCheckedChange={onSwitch}
+              />
+            </>
+          )}
         </div>
       </header>
 
       <div className="max-w-3xl space-y-4 p-4 sm:space-y-6 sm:p-6">
+        {!(showProgress && !profile.enabled && !externalBrainAlwaysOn) && (
         <p className="text-sm text-muted-foreground">
           {(() => {
             // Un cerebro externo legado contesta con el interruptor apagado
@@ -289,6 +300,7 @@ export function AgentClient({
               : `${name} está encendido y responde en tu WhatsApp.`;
           })()}
         </p>
+        )}
 
         {progress && showProgress && <SetupProgressNav progress={progress} page="negocio" />}
 
@@ -313,6 +325,7 @@ export function AgentClient({
           entries={entries}
           escalationRules={profile.escalationRules}
           progress={progress}
+          saasMode={saasMode}
           hours={saasMode ? hours : null}
           hoursOpen={hoursOpen || (hours.loaded && !hasAnyHours)}
           onHoursOpenChange={setHoursOpen}

@@ -280,6 +280,9 @@ function Readiness({ readiness, prominent = false }: { readiness: ReadinessRespo
   if (!current) return null;
 
   if (!progress.active) {
+    // Pausado después de haber atendido: que esté apagado ya lo dice la tarjeta
+    // de estado (y «Activar» no es algo «por revisar»).
+    if (current.key === "activar") return null;
     return (
       <p className="mt-5 text-[13px] text-text-3">
         Por revisar:{" "}

@@ -22,6 +22,7 @@ import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
 import { getPrioridades } from "@/server/agencia/prioridades";
+import { getSetupProgress } from "@/server/agencia/setup-progress";
 import { orgVersion } from "@/server/events/bus";
 
 /**
@@ -117,6 +118,15 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   // tope de la prueba, cobro fallido) no «está respondiendo» aunque esté
   // encendido, y un cliente sin respuesta tiene que contar como espera.
   const billingActive = plan.agentAllowed;
+  const whatsapp: WhatsAppLink = creds[0] ? creds[0].status : "missing";
+  // Puesta en marcha (solo SaaS, solo el dueño): la barra lateral dice qué toca
+  // cuando falta WhatsApp o el agente está apagado. Se arranca YA, en paralelo
+  // con la cola de abajo, y solo en esos dos casos; es la misma lectura que
+  // pide Configuración en este render (`cache` de React).
+  const setupRead =
+    isAllokSaaSMode() && owner && (whatsapp === "missing" || !agent.on)
+      ? getSetupProgress(organizationId).catch(() => null)
+      : null;
   // Y el horario: en horas del equipo el agente no contesta, así que quien
   // escribe espera por una persona (la misma regla que `agentAnswersNow`).
   const agentLive = agent.on && billingActive && (await canAgentRespondNow(organizationId));
@@ -129,10 +139,14 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   // Un turno en cola es de una conversación que ya puede estar contada como
   // viva: se toma el mayor, no la suma, para no contar dos veces la misma.
   const working = Math.max(queue.live, jobs[0]?.n ?? 0);
-  const whatsapp: WhatsAppLink = creds[0] ? creds[0].status : "missing";
+  // Con alguien esperando, eso manda: el lateral no habla de la alta.
+  const progress = waiting === 0 ? await setupRead : null;
+  const current = progress?.active ? progress.steps.find((step) => step.key === progress.current) : null;
+  const setup = current ? { label: current.label, href: current.href } : null;
 
   return {
     ...systemState({ whatsapp, billingActive, plan: plan.kind, agentOn: agent.on, waiting, working, owner }),
+    setup,
     whatsapp: { status: whatsapp, phone: creds[0]?.phone ?? null },
     waiting,
     working,

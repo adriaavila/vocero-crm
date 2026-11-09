@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { WhatsappOnboardingPanel, type OnboardingPanelView } from "@/components/settings/whatsapp-onboarding-panel";
 import { AlertTriangle, ArrowRight, Copy, Info, Sparkles, ShieldCheck } from "lucide-react";
 import { AntesDeConectar } from "@/components/agencia/antes-de-conectar";
@@ -78,6 +79,7 @@ export function WhatsappWizard({
   /** Adonde escribe el dueño si su número ya está en otra cuenta (`helpUrl()`). */
   supportHref?: string | null;
 }) {
+  const router = useRouter();
   const [connection, setConnection] = useState<Connection | null>(null);
   const [evidence, setEvidence] = useState<ConnectionEvidence | null>(null);
   const [webhook, setWebhook] = useState<WebhookInfo | null>(null);
@@ -107,6 +109,13 @@ export function WhatsappWizard({
   useEffect(() => {
     void refetch();
   }, [refetch]);
+
+  // Conectar cambia lo que decide el layout de Configuración (las pestañas
+  // vuelven al terminar este paso): se vuelve a pedir al servidor, sin recargar.
+  const refetchAndRefresh = useCallback(async () => {
+    await refetch();
+    router.refresh();
+  }, [refetch, router]);
 
   // Que llegue un mensaje, o que WhatsApp entregue una respuesta, es justo la
   // prueba que esta pantalla muestra: se refresca sola, sin recargar. Una sola
@@ -190,7 +199,7 @@ export function WhatsappWizard({
           bridgeUrl={bridgeUrl}
           onShowConnectChange={setShowConnect}
           onViewChange={setView}
-          onChanged={() => void refetch()}
+          onChanged={() => void refetchAndRefresh()}
           brand={{ brandName, supportHref }}
         />
       )}
@@ -199,13 +208,13 @@ export function WhatsappWizard({
         <BridgeConnectCard
           bridgeUrl={bridgeUrl}
           title="Conecta tu WhatsApp"
-          description="Conectas con Meta, la empresa dueña de WhatsApp. Si ya usas WhatsApp Business en tu teléfono, lo sigues usando."
+          description="Conectas con Meta, la empresa dueña de WhatsApp."
           label="Conectar WhatsApp"
         />
       )}
       {!connection && !bridgeUrl && guidedAvailable && (
         <GuidedConnectCard
-          onRecovered={() => void refetch()}
+          onRecovered={() => void refetchAndRefresh()}
           connection={connection}
           guidedAvailable={guidedAvailable}
           brandName={brandName}
@@ -249,7 +258,7 @@ export function WhatsappWizard({
           notice={nameNotice(view?.nameStatus)}
           footer={
             shouldShowHandoverRecovery(guidedAvailable, connection) && !bridgeUrl ? (
-              <HandoverRecovery connected onDone={() => void refetch()} brandName={brandName} />
+              <HandoverRecovery connected onDone={() => void refetchAndRefresh()} brandName={brandName} />
             ) : null
           }
         />
@@ -275,7 +284,7 @@ export function WhatsappWizard({
           </p>
           <ConnectForm
             existing={connection}
-            onSaved={() => void refetch()}
+            onSaved={() => void refetchAndRefresh()}
             hasGuidedOption={hasGuidedOption}
           />
         </div>
@@ -326,9 +335,13 @@ function BridgeConnectCard({
         </div>
       </CardHeader>
       <CardContent>
-        <AntesDeConectar />
+        {/* El botón va primero: la lista de lo que hay que tener a mano lo
+            empujaba bajo el pliegue del teléfono. */}
         <ActionButton onAct={() => window.location.assign(bridgeUrl)} label={label} pending="Abriendo…" />
         <p className="mt-3 text-xs text-text-3">Se abre una ventana segura de Meta y vuelves aquí al terminar.</p>
+        <div className="mt-4">
+          <AntesDeConectar />
+        </div>
       </CardContent>
     </Card>
   );
@@ -388,9 +401,11 @@ function GuidedConnectCard({
         </div>
       </CardHeader>
       <CardContent>
-        <AntesDeConectar />
         <GuidedButton label="Conectar WhatsApp" />
         <p className="mt-3 text-xs text-text-3">Se abre una ventana segura de Meta y vuelves aquí al terminar.</p>
+        <div className="mt-4">
+          <AntesDeConectar />
+        </div>
         {shouldShowHandoverRecovery(guidedAvailable, connection) && (
           <HandoverRecovery connected={Boolean(connection)} onDone={onRecovered} brandName={brandName} />
         )}

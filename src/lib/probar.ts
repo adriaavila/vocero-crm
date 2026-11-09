@@ -1,6 +1,6 @@
 /**
  * «Probar»: el resultado de la simulación del Laboratorio en palabras del
- * dueño. La simulación no cambia; lo que cambia es que un 62/100 sin más no le
+ * dueño. La simulación no cambia; lo que cambia es que un 62 de 100 sin más no le
  * dice qué hacer. Aquí cada hallazgo del juez se vuelve «qué pasó» y «dónde se
  * arregla». Puro y sin servidor.
  */
@@ -34,13 +34,26 @@ export function looksGood(score: number | null, redCount: number): boolean {
 }
 
 /**
- * La línea honesta junto al camino a activar cuando el resultado no se ve
- * bien. null si se ve bien o no hay resultado.
+ * Lo que encontró la prueba, en una frase: «La prueba encontró 2 respuestas
+ * graves (67 de 100).» null si se ve bien o no hay resultado. Probar la usa tal
+ * cual y Activar le suma lo que se puede hacer (`consejoDeResultado`).
+ */
+export function resumenDeResultado(score: number | null, redCount: number): string | null {
+  if (score === null || looksGood(score, redCount)) return null;
+  return redCount === 0
+    ? `La prueba sacó ${score} de 100.`
+    : `La prueba encontró ${redCount} ${redCount === 1 ? "respuesta grave" : "respuestas graves"} (${score} de 100).`;
+}
+
+/**
+ * La línea honesta junto al botón de activar cuando el resultado no se ve
+ * bien. null si se ve bien o no hay resultado. Nunca bloquea: el dueño decide.
  */
 export function consejoDeResultado(score: number | null, redCount: number): string | null {
-  if (score === null || looksGood(score, redCount)) return null;
-  const casos = redCount === 0 ? "" : ` con ${redCount} ${redCount === 1 ? "caso grave" : "casos graves"}`;
-  return `Sacó ${score}/100${casos}. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.`;
+  const resumen = resumenDeResultado(score, redCount);
+  if (!resumen) return null;
+  const arreglar = redCount === 1 ? "corregirla" : redCount === 0 ? "mejorar las respuestas" : "corregirlas";
+  return `${resumen} Puedes activarlo igual o ${arreglar} primero.`;
 }
 
 export type Fix = {
@@ -100,13 +113,19 @@ export type ProbarKind = "sin_prueba" | "en_curso" | "no_termino" | "paso" | "vi
 export function probarKind(input: {
   latest: RunLite | null;
   cases: CaseLite[];
+  /**
+   * Los casos graves de la última corrida, tal como los cuenta la lista de
+   * corridas. Si viene, manda sobre `cases`: el detalle de los casos llega en
+   * una segunda lectura, y hasta entonces «no hay casos» no es «no hubo graves».
+   */
+  redCount?: number;
   current: boolean | null;
 }): ProbarKind {
   const { latest, cases, current } = input;
   if (!latest) return "sin_prueba";
   if (latest.status === "running") return "en_curso";
   if (latest.status === "failed" || latest.score === null) return "no_termino";
-  const reds = cases.filter((c) => c.veredicto === "rojo").length;
+  const reds = input.redCount ?? cases.filter((c) => c.veredicto === "rojo").length;
   // Vieja manda: lo que importa es haber probado después del último cambio.
   if (current === false) return "vieja";
   return looksGood(latest.score, reds) ? "paso" : "revisar";

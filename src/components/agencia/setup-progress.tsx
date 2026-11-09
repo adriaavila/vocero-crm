@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
 import type { SystemState } from "@/lib/estado";
 import type { SetupProgress, SetupStepKey } from "@/lib/setup-steps";
@@ -12,11 +13,12 @@ import { cn } from "@/lib/utils";
  * Cada paso es punto + palabra: listo es *all ok* (verde, «Listo»), el que toca
  * es un punto de tinta («Ahora») y los demás quedan quietos (gris,
  * «Pendiente»). El de ahora NO va en ámbar: el ámbar es «algo espera por una
- * persona» y aquí no hay nada roto. Sin cifras («paso 2 de 4» no dice nada que
- * el punto no diga, y era justo el contador que se desactualizaba).
+ * persona» y aquí no hay nada roto. Sin contadores escritos a mano (el «paso 2 de
+ * 6» que se desactualizaba): el «Paso 3 de 4» del teléfono se cuenta de la lista
+ * de pasos, así que no puede discrepar.
  *
  * En el teléfono es una sola fila: los cuatro puntos y el nombre del paso de
- * ahora. Cuatro celdas con rótulo empujaban la acción principal bajo el pliegue.
+ * ESTA pantalla (con un aro en su punto). Cuatro celdas con rótulo empujaban la acción principal bajo el pliegue.
  */
 
 type Kind = "done" | "current" | "later";
@@ -51,7 +53,13 @@ export function SetupProgressNav({
   if (!progress.active) return null;
   const kindOf = (step: SetupProgress["steps"][number]): Kind =>
     step.done ? "done" : step.key === progress.current ? "current" : "later";
-  const current = progress.steps.find((step) => step.key === progress.current);
+  // El rótulo del teléfono nombra el paso de ESTA pantalla (si no, «Conectar
+  // WhatsApp» decía «Tu negocio · Ahora» y parecía otra página). Sin pantalla
+  // propia (Inicio), el paso que toca.
+  const shown = progress.steps.find((step) => step.key === (page ?? progress.current));
+  const shownIndex = shown ? progress.steps.indexOf(shown) : -1;
+  // Un paso anterior que sigue abierto: el camino de vuelta a lo que falta primero.
+  const earlier = page ? progress.steps.slice(0, Math.max(shownIndex, 0)).find((step) => !step.done) : undefined;
 
   return (
     <nav aria-label="Pasos para activar tu agente" className={className}>
@@ -67,15 +75,18 @@ export function SetupProgressNav({
                 aria-current={page === step.key ? "page" : undefined}
                 className="flex h-11 w-9 items-center justify-center rounded-sm"
               >
-                <StepDot kind={kind} size={kind === "current" ? 12 : 10} />
+                {/* La pantalla en la que estás lleva un aro: no solo `aria-current`. */}
+                <span className={cn("flex items-center justify-center rounded-full", page === step.key && "ring-2 ring-foreground ring-offset-2 ring-offset-background")}>
+                  <StepDot kind={kind} size={kind === "current" ? 12 : 10} />
+                </span>
               </Link>
             </li>
           );
         })}
-        {current && (
+        {shown && (
           <li className="ml-2 min-w-0 text-[13.5px] leading-5">
-            <span className="font-semibold">{current.label}</span>
-            <span className="text-text-3"> · {WORD.current}</span>
+            <span className="font-semibold">{shown.label}</span>
+            <span className="text-text-3"> · Paso {shownIndex + 1} de {progress.steps.length}</span>
           </li>
         )}
       </ol>
@@ -109,6 +120,7 @@ export function SetupProgressNav({
                       className={cn(
                         "block text-[13.5px] font-semibold leading-5 group-hover:underline",
                         kind === "later" ? "text-text-3" : "text-foreground",
+                        page === step.key && "underline decoration-2 underline-offset-4",
                       )}
                     >
                       {step.label}
@@ -121,6 +133,15 @@ export function SetupProgressNav({
           );
         })}
       </ol>
+
+      {earlier && (
+        <Link
+          href={earlier.href}
+          className="mt-1 inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-foreground underline-offset-2 hover:underline"
+        >
+          Primero: {earlier.label} <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+        </Link>
+      )}
     </nav>
   );
 }
