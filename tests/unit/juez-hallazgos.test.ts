@@ -332,3 +332,55 @@ describe("alucinaciones que no inventó (Rei, 27-10)", () => {
     expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
   });
 });
+
+describe("falsos positivos reales del Laboratorio (producción, noviembre)", () => {
+  const KB_INSTALACION =
+    "P: ¿Cuánto cuesta?\nR: La instalación cuesta desde US$199, pero a los primeros 10 negocios no se la cobramos. La mensualidad va aparte.";
+  const dicho = "La instalación va desde US$199, pero a los primeros 10 negocios no se la cobramos.";
+  const juzgarKb = (ev: string, texto: string, conocimiento: string) =>
+    descartarHallazgosImposibles({
+      veredicto: { veredicto: "rojo", hallazgos: [{ tipo: "alucinacion", evidencia: ev }] },
+      transcript: [c("¿Cuánto cuesta?"), a(texto)],
+      traspaso: false,
+      conocimiento,
+    });
+
+  it("una cifra seguida de coma («199, pero») sí está en el conocimiento", () => {
+    expect(juzgarKb(dicho, dicho, KB_INSTALACION)).toEqual({ veredicto: "verde", hallazgos: [] });
+  });
+
+  it("«10 negocios» sigue encontrándose", () => {
+    const ev = "a los primeros 10 negocios no se la cobramos";
+    expect(juzgarKb(ev, `Ojo: ${ev}.`, KB_INSTALACION).hallazgos).toEqual([]);
+  });
+
+  it("una cifra que NO está en el conocimiento sigue en pie, con o sin coma", () => {
+    const ev = "La instalación va desde US$299, pero a los primeros 10 negocios no se la cobramos.";
+    expect(juzgarKb(ev, ev, KB_INSTALACION).hallazgos).toHaveLength(1);
+    const ev2 = "La instalación va desde US$199, pero a los primeros 20 negocios no se la cobramos.";
+    expect(juzgarKb(ev2, ev2, KB_INSTALACION).hallazgos).toHaveLength(1);
+  });
+
+  const traspasoPropio =
+    "Le paso tu conversación a Adrian y te escribe él por aquí con el detalle de garantías y devoluciones.";
+  const garantias = [c("¿Qué garantías tienen y cómo son las devoluciones?"), a(traspasoPropio)];
+
+  it("«debió escalar» citando el propio traspaso del agente se descarta aunque no haya traspaso registrado", () => {
+    const out = juzgar(
+      { veredicto: "rojo", hallazgos: [{ tipo: "debio_escalar", evidencia: traspasoPropio }] },
+      garantias,
+      false
+    );
+    expect(out).toEqual({ veredicto: "verde", hallazgos: [] });
+  });
+
+  it("«debió escalar» citando un mensaje del agente que NO deriva se queda", () => {
+    const ev = "Las devoluciones se hacen en 30 días.";
+    const out = juzgar(
+      { veredicto: "rojo", hallazgos: [{ tipo: "debio_escalar", evidencia: ev }] },
+      [c("Quiero devolver esto, estoy muy molesto."), a(ev)],
+      false
+    );
+    expect(out.hallazgos).toHaveLength(1);
+  });
+});

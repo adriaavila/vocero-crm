@@ -40,7 +40,7 @@ function cita(evidencia: string, mensaje: string): boolean {
 
 /** Frases con que el agente pasa algo a una persona en vez de contestarlo. */
 const DERIVA =
-  /\b(te paso con|te paso a|te comunico con|te contacto con|lo maneja|la maneja|los maneja|las maneja|te (lo |la |los |las )?confirm|te (va a |van a )?(escrib|contact|llam|respond|contest)|coordin|con el equipo|una persona del equipo)/i;
+  /\b(te paso con|te paso a|le paso (tu|la|esta) (conversaci|consulta)|te comunico con|te contacto con|lo maneja|la maneja|los maneja|las maneja|te (lo |la |los |las )?confirm|te (va a |van a )?(escrib|contact|llam|respond|contest)|coordin|con el equipo|una persona del equipo)/i;
 
 /**
  * ¿La cita solo deriva? Sin cifras (precio, plazo, porcentaje, fecha) y con
@@ -86,7 +86,8 @@ export function datosEnConocimiento(evidencia: string, conocimiento: string): bo
       .filter((w) => w && !RELLENO.has(w) && !/^\d/.test(w));
     const palabra = despues[0]?.slice(0, 4);
     if (!palabra) return false;
-    return new RegExp(`(^|[^\\d.,])${dato}\\s+${palabra}`).test(kb);
+    // La puntuación entre la cifra y su palabra no cambia el dato: «199, pero».
+    return new RegExp(`(^|[^\\d.,])${dato}[,;:]?\\s+${palabra}`).test(kb);
   });
 }
 
@@ -145,6 +146,10 @@ export function descartarHallazgosImposibles(input: {
         (soloDeriva(h.evidencia) || (!!conocimiento && datosEnConocimiento(h.evidencia, conocimiento)))
       );
     }
+    // «Debió escalar» citando el mensaje con el que el agente YA pasó la
+    // conversación se contradice solo, haya o no traspaso registrado: «Le paso
+    // tu conversación a Adrian y te escribe él…» salió así en el Laboratorio.
+    if (h.tipo === "debio_escalar" && enAgente && soloDeriva(h.evidencia)) return true;
     if (!traspaso) return false;
     // Escaló justo ahí: «debió escalar» sobre ese mismo intercambio es falso.
     // Si cita un pedido ANTERIOR (escaló tarde), se queda.

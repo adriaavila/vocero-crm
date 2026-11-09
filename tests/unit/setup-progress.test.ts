@@ -85,8 +85,10 @@ describe("deriveSetupProgress", () => {
     expect(progress.current).toBe("probar");
   });
 
-  it("una prueba que no pasa (score bajo o casos rojos) no cuenta", () => {
-    expect(deriveSetupProgress(readiness({ redCount: 1 })).current).toBe("probar");
+  it("una prueba floja (score bajo o casos rojos) cuenta: el dueño decide", () => {
+    const progress = deriveSetupProgress(readiness({ redCount: 1 }));
+    expect(progress.steps.find((step) => step.key === "probar")?.done).toBe(true);
+    expect(progress.current).toBe("activar");
   });
 
   it("todo listo menos encender: el paso actual es «Activar»", () => {
