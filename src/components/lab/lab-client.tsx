@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { LiveWhatsappTest } from "@/components/agencia/live-whatsapp-test";
 import { ProbarPanel } from "@/components/agencia/probar";
 import { ChatPrueba } from "@/components/agencia/chat-prueba";
-import { passes } from "@/lib/probar";
+import { looksGood } from "@/lib/probar";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 import { Button } from "@/components/ui/button";
@@ -341,18 +341,19 @@ function HistoryList({
 }
 
 /**
- * El color dice si la prueba PASÓ, no solo cuánto sacó: 80 o más y ningún caso
- * en rojo. Un 83 con un caso grave no es verde.
+ * El color dice si el resultado se ve bien, no solo cuánto sacó: 80 o más y
+ * ningún caso en rojo. Un 83 con un caso grave no es verde. Es un consejo: el
+ * dueño decide cuándo activar.
  */
 function ScoreBadge({ run, redCount }: { run: Run; redCount?: number }) {
   if (run.status === "running") return <Badge variant="secondary">En curso…</Badge>;
   if (run.status === "failed") return <Badge variant="destructive">Fallida</Badge>;
   const score = run.score ?? 0;
   const reds = redCount ?? run.redCount ?? 0;
-  const variant = passes(score, reds) ? "success" : score >= 50 ? "warning" : "destructive";
+  const variant = looksGood(score, reds) ? "success" : score >= 50 ? "warning" : "destructive";
   return (
     <Badge variant={variant}>
-      {score} de 100{!passes(score, reds) && reds > 0 ? " · caso grave" : ""}
+      {score} de 100{!looksGood(score, reds) && reds > 0 ? " · caso grave" : ""}
     </Badge>
   );
 }

@@ -6,6 +6,7 @@ import { scoped } from "@/lib/db/tenant";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { canAutomate, hasSaaSPlan } from "@/server/agencia/entitlements";
 import { describeAgentSchedule, type ScheduleDescription } from "@/server/agencia/horario-texto";
+import { consejoDeResultado } from "@/lib/probar";
 import { SETUP_STEP_ORDER, type SetupStepKey } from "@/lib/setup-steps";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 import { getBusinessHours, hasConfiguredBusinessHours } from "@/server/business-hours";
@@ -100,7 +101,7 @@ function readinessCopy(step: ReadinessStep): StepCopy {
         : {
             step: "probar",
             title: "Prueba tu agente",
-            detail: "Necesita pasar la prueba antes de hablar con tus clientes.",
+            detail: "Pruébalo una vez antes de hablar con tus clientes.",
             href: "/lab",
             cta: "Probar",
           };
@@ -262,6 +263,12 @@ export type ActivationSummary = {
   restrictions: string[];
   /** Cuántos datos del negocio tiene el agente para responder. */
   knowledgeCount: number;
+  /**
+   * La línea de consejo junto al camino a activar cuando la última prueba
+   * vigente no se ve bien. Nunca bloquea: el dueño decide. null si se ve bien
+   * o no hay prueba vigente.
+   */
+  testAdvice: string | null;
 };
 
 function publicBlocker(blocker: ActivationBlocker): PublicBlocker {
@@ -352,5 +359,9 @@ export async function getActivationSummary(
     handoffSuggested: isSuggestedHandoff(profiles[0]?.escalationRules),
     restrictions: restrictionsOf(profiles[0]),
     knowledgeCount: kb[0]?.n ?? 0,
+    testAdvice:
+      current.steps.find((step) => step.id === "simulation")?.status === "complete" && current.latestLab
+        ? consejoDeResultado(current.latestLab.score, current.latestLab.redCount)
+        : null,
   };
 }

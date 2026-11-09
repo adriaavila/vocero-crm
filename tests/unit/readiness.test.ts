@@ -70,8 +70,7 @@ describe("readiness", () => {
   });
 
   it.each([
-    ["score bajo", { latestRun: { ...input().latestRun!, score: 79 } }, "simulation", "pending"],
-    ["casos rojos", { redCount: 1 }, "simulation", "pending"],
+    ["sin ninguna prueba", { latestRun: null }, "simulation", "pending"],
     ["simulación vieja", { knowledgeUpdatedAt: liveAt }, "simulation", "stale"],
     ["prueba real vieja", { profile: { ...input().profile, lastLiveTestAt: changedAt } }, "live_test", "stale"],
   ])("detects %s", (_label, overrides, stepId, status) => {
@@ -80,9 +79,43 @@ describe("readiness", () => {
     expect(result.steps.find((step) => step.id === stepId)?.status).toBe(status);
   });
 
-  it("never accepts a live test when the current simulation failed", () => {
-    const result = evaluateReadiness(input({ redCount: 1 }));
-    expect(result.steps.find((step) => step.id === "live_test")?.status).toBe("stale");
+  it("el dueño decide: una prueba terminada después del último cambio cuenta, sea cual sea el puntaje", () => {
+    const flojo = evaluateReadiness(input({
+      latestRun: { ...input().latestRun!, score: 50 },
+      redCount: 1,
+      saasMode: true,
+      businessHoursConfigured: true,
+    }));
+    const step = flojo.steps.find((s) => s.id === "simulation")!;
+    expect(step.status).toBe("complete");
+    expect(step.detail).toMatch(/50\/100/);
+    expect(step.detail).not.toMatch(/80/);
+    expect(flojo.latestLab).toMatchObject({ score: 50, redCount: 1 });
+    expect(saasActivationBlockers(flojo)).toEqual([]);
+  });
+
+  it("instancia dedicada: la regla de siempre, 80 y ningún caso rojo", () => {
+    const run = { ...input().latestRun!, score: 50 };
+    const dedicada = evaluateReadiness(input({ latestRun: run, saasMode: false }));
+    expect(dedicada.steps.find((s) => s.id === "simulation")?.status).toBe("pending");
+    expect(evaluateReadiness(input({ redCount: 1, saasMode: false })).steps.find((s) => s.id === "simulation")?.status).toBe("pending");
+    expect(evaluateReadiness(input({ saasMode: false })).steps.find((s) => s.id === "simulation")?.status).toBe("complete");
+    expect(evaluateReadiness(input({ latestRun: run, saasMode: true })).steps.find((s) => s.id === "simulation")?.status).toBe("complete");
+  });
+
+  it("una corrida que empezó antes del último cambio es vieja aunque terminara después", () => {
+    const vieja = evaluateReadiness(input({
+      latestRun: { ...input().latestRun!, score: 100, startedAt: changedAt, finishedAt: liveAt },
+      knowledgeUpdatedAt: runAt,
+      saasMode: true,
+    }));
+    expect(vieja.steps.find((s) => s.id === "simulation")?.status).toBe("stale");
+  });
+
+  it("sin prueba, el paso pide probar una vez y no menciona un puntaje mínimo", () => {
+    const sin = evaluateReadiness(input({ latestRun: null })).steps.find((s) => s.id === "simulation")!;
+    expect(sin.status).toBe("pending");
+    expect(sin.detail).not.toMatch(/\d/);
   });
 
   it("exposes the critical SaaS steps that must be complete before activation", () => {

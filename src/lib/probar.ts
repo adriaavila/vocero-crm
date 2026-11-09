@@ -5,7 +5,8 @@
  * arregla». Puro y sin servidor.
  */
 
-export const PASS_SCORE = 80;
+/** Desde aquí un puntaje «se ve bien». Es un consejo: nunca bloquea activar. */
+export const GOOD_SCORE = 80;
 
 export type Hallazgo = {
   tipo: "alucinacion" | "fuera_de_kb" | "debio_escalar" | "tono";
@@ -23,9 +24,23 @@ export type CaseLite = {
 
 export type RunLite = { status: "running" | "done" | "failed"; score: number | null };
 
-/** La regla de la puesta en marcha: 80 o más y ningún caso en rojo. */
-export function passes(score: number | null, redCount: number): boolean {
-  return score !== null && score >= PASS_SCORE && redCount === 0;
+/**
+ * ¿El resultado se ve bien? 80 o más y ningún caso en rojo. Solo colorea y
+ * aconseja: activar lo decide el dueño, basta con haber probado (ver
+ * `server/readiness.ts`).
+ */
+export function looksGood(score: number | null, redCount: number): boolean {
+  return score !== null && score >= GOOD_SCORE && redCount === 0;
+}
+
+/**
+ * La línea honesta junto al camino a activar cuando el resultado no se ve
+ * bien. null si se ve bien o no hay resultado.
+ */
+export function consejoDeResultado(score: number | null, redCount: number): string | null {
+  if (score === null || looksGood(score, redCount)) return null;
+  const casos = redCount === 0 ? "" : ` con ${redCount} ${redCount === 1 ? "caso grave" : "casos graves"}`;
+  return `Sacó ${score}/100${casos}. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.`;
 }
 
 export type Fix = {
@@ -75,7 +90,7 @@ export function casesToFix(cases: CaseLite[]): CaseToFix[] {
     }));
 }
 
-export type ProbarKind = "sin_prueba" | "en_curso" | "no_termino" | "paso" | "vieja" | "no_paso";
+export type ProbarKind = "sin_prueba" | "en_curso" | "no_termino" | "paso" | "vieja" | "revisar";
 
 /**
  * En qué punto está la prueba.
@@ -92,6 +107,7 @@ export function probarKind(input: {
   if (latest.status === "running") return "en_curso";
   if (latest.status === "failed" || latest.score === null) return "no_termino";
   const reds = cases.filter((c) => c.veredicto === "rojo").length;
-  if (!passes(latest.score, reds)) return "no_paso";
-  return current === false ? "vieja" : "paso";
+  // Vieja manda: lo que importa es haber probado después del último cambio.
+  if (current === false) return "vieja";
+  return looksGood(latest.score, reds) ? "paso" : "revisar";
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { casesToFix, fixFor, passes, probarKind, type CaseLite } from "@/lib/probar";
+import { casesToFix, consejoDeResultado, fixFor, looksGood, probarKind, type CaseLite } from "@/lib/probar";
 
 const kase = (id: string, veredicto: CaseLite["veredicto"], hallazgos: CaseLite["hallazgos"] = []): CaseLite => ({
   id,
@@ -11,10 +11,10 @@ const kase = (id: string, veredicto: CaseLite["veredicto"], hallazgos: CaseLite[
 
 describe("probar: pasa o no pasa", () => {
   it("80 o más y ningún caso rojo", () => {
-    expect(passes(80, 0)).toBe(true);
-    expect(passes(79, 0)).toBe(false);
-    expect(passes(95, 1)).toBe(false);
-    expect(passes(null, 0)).toBe(false);
+    expect(looksGood(80, 0)).toBe(true);
+    expect(looksGood(79, 0)).toBe(false);
+    expect(looksGood(95, 1)).toBe(false);
+    expect(looksGood(null, 0)).toBe(false);
   });
 });
 
@@ -31,10 +31,12 @@ describe("probarKind", () => {
     expect(probarKind({ latest: done, cases: [kase("a", "verde")], current: false })).toBe("vieja"));
   it("mientras no se sabe si es vigente, no se dice que esté vieja", () =>
     expect(probarKind({ latest: done, cases: [kase("a", "verde")], current: null })).toBe("paso"));
-  it("un caso rojo no pasa aunque el puntaje sea alto", () =>
-    expect(probarKind({ latest: done, cases: [kase("a", "rojo")], current: true })).toBe("no_paso"));
-  it("un puntaje bajo no pasa", () =>
-    expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: true })).toBe("no_paso"));
+  it("un caso rojo pide revisar aunque el puntaje sea alto", () =>
+    expect(probarKind({ latest: done, cases: [kase("a", "rojo")], current: true })).toBe("revisar"));
+  it("un puntaje bajo pide revisar", () =>
+    expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: true })).toBe("revisar"));
+  it("una prueba floja pero anterior al último cambio es vieja", () =>
+    expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: false })).toBe("vieja"));
 });
 
 describe("qué corregir, en palabras llanas", () => {
@@ -65,4 +67,20 @@ describe("qué corregir, en palabras llanas", () => {
     });
     expect(fix.suggestion).toEqual({ pregunta: "¿Hacen envíos?", respuesta: "Sí, en el este." });
   });
+});
+
+describe("consejoDeResultado", () => {
+  it("dice el puntaje y los casos, y que activar es decisión del dueño", () => {
+    expect(consejoDeResultado(67, 2)).toBe(
+      "Sacó 67/100 con 2 casos graves. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.",
+    );
+    expect(consejoDeResultado(50, 1)).toMatch(/con 1 caso grave\./);
+    expect(consejoDeResultado(70, 0)).toMatch(/^Sacó 70\/100\. Puedes activarlo igual/);
+    expect(consejoDeResultado(90, 1)).toMatch(/^Sacó 90\/100 con 1 caso/);
+  });
+  it("no aconseja cuando se ve bien ni sin resultado", () => {
+    expect(consejoDeResultado(85, 0)).toBeNull();
+    expect(consejoDeResultado(null, 0)).toBeNull();
+  });
+  it("sin em dashes", () => expect(consejoDeResultado(40, 3)).not.toMatch(/—/));
 });

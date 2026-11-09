@@ -38,9 +38,18 @@ function cita(evidencia: string, mensaje: string): boolean {
   return e.length > 0 && normalizar(mensaje).includes(e);
 }
 
+/**
+ * El juez a veces cita dos turnos en una sola cadena («CLIENTE: … AGENTE: …»):
+ * cada pieza es una cita por separado.
+ */
+function piezas(evidencia: string): string[] {
+  const partes = evidencia.split(/(?=\b(?:cliente|agente)\s*:)/i).filter((p) => p.trim());
+  return partes.length > 0 ? partes : [evidencia];
+}
+
 /** Frases con que el agente pasa algo a una persona en vez de contestarlo. */
 const DERIVA =
-  /\b(te paso con|te paso a|te comunico con|te contacto con|lo maneja|la maneja|los maneja|las maneja|te (lo |la |los |las )?confirm|te (va a |van a )?(escrib|contact|llam|respond|contest)|coordin|con el equipo|una persona del equipo)/i;
+  /\b(te paso con|te paso a|le paso (tu|la|esta) (conversaci|consulta)|te comunico con|te contacto con|lo maneja|la maneja|los maneja|las maneja|te (lo |la |los |las )?confirm|te (va a |van a )?(escrib|contact|llam|respond|contest)|coordin|con el equipo|una persona del equipo)/i;
 
 /**
  * ¿La cita solo deriva? Sin cifras (precio, plazo, porcentaje, fecha) y con
@@ -77,7 +86,7 @@ export function datosEnConocimiento(evidencia: string, conocimiento: string): bo
   if (datos.length === 0) return false;
   return datos.every((m) => {
     const dato = m[0];
-    const suelto = new RegExp(`(^|[^\\d.,a-z])${dato.replace(/[.]/g, "\\.")}($|[^\\d,a-z]|\\.(?!\\d))`);
+    const suelto = new RegExp(`(^|[^\\d.,a-z])${dato.replace(/[.]/g, "\\.")}($|[^\\d,.a-z]|[.,](?!\\d))`);
     if (dato.length >= 4 || /[a-z]$/.test(dato)) return suelto.test(kb);
     // La palabra que sigue a la cifra corta, saltando «y», «de»…
     const despues = ev
@@ -86,7 +95,8 @@ export function datosEnConocimiento(evidencia: string, conocimiento: string): bo
       .filter((w) => w && !RELLENO.has(w) && !/^\d/.test(w));
     const palabra = despues[0]?.slice(0, 4);
     if (!palabra) return false;
-    return new RegExp(`(^|[^\\d.,])${dato}\\s+${palabra}`).test(kb);
+    // La puntuación entre la cifra y su palabra no cambia el dato: «199, pero».
+    return new RegExp(`(^|[^\\d.,])${dato.replace(/[.]/g, "\\.")}[,;:]?\\s+${palabra}`).test(kb);
   });
 }
 
@@ -107,8 +117,9 @@ export function descartarHallazgosImposibles(input: {
   const cierre = desde >= 0 ? transcript.slice(desde) : [];
 
   const desmentido = (h: Hallazgo): boolean => {
-    const enAgente = delAgente.some((t) => cita(h.evidencia, t.text));
-    const soloDelCliente = !enAgente && delCliente.some((t) => cita(h.evidencia, t.text));
+    const partes = piezas(h.evidencia);
+    const enAgente = delAgente.some((t) => partes.some((p) => cita(p, t.text)));
+    const soloDelCliente = !enAgente && delCliente.some((t) => partes.some((p) => cita(p, t.text)));
     // El tono es el del agente: una cita que solo dijo el cliente no lo prueba.
     if (h.tipo === "tono") return soloDelCliente;
     // Salirse del conocimiento también es cosa del agente: la pregunta del
@@ -136,7 +147,7 @@ export function descartarHallazgosImposibles(input: {
       if (soloDelCliente) {
         return (
           traspaso &&
-          cierre.some((t) => t.role === "cliente" && cita(h.evidencia, t.text)) &&
+          cierre.some((t) => t.role === "cliente" && partes.some((p) => cita(p, t.text))) &&
           cierre.every((t) => t.role === "cliente" || soloDeriva(t.text))
         );
       }
@@ -149,7 +160,7 @@ export function descartarHallazgosImposibles(input: {
     // Escaló justo ahí: «debió escalar» sobre ese mismo intercambio es falso.
     // Si cita un pedido ANTERIOR (escaló tarde), se queda.
     if (h.tipo === "debio_escalar") {
-      return cierre.some((t) => cita(h.evidencia, t.text));
+      return partes.every((p) => cierre.some((t) => cita(p, t.text)));
     }
     return false;
   };

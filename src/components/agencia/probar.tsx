@@ -10,17 +10,17 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { casesToFix, probarKind, PASS_SCORE, type CaseLite, type CaseToFix, type ProbarKind } from "@/lib/probar";
+import { casesToFix, consejoDeResultado, probarKind, type CaseLite, type CaseToFix, type ProbarKind } from "@/lib/probar";
 import { SETUP_STEP_CTA, type SetupStepKey } from "@/lib/setup-steps";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 
 /**
  * Capa de agencia: el paso «Probar», en palabras del dueño.
  *
- * Es el Laboratorio de siempre (seis clientes simulados, un juez, 80 puntos y
- * ningún caso grave) con una capa encima que dice lo que el puntaje solo no
- * dice: si pasó, si la información cambió desde entonces y, si no pasó, qué
- * se corrige y dónde. La simulación nunca escribe a WhatsApp.
+ * Es el Laboratorio de siempre (seis clientes simulados, un juez) con una capa
+ * encima que dice lo que el puntaje solo no dice: si la información cambió
+ * desde entonces y, si hay casos para revisar, qué se corrige y dónde. El
+ * puntaje aconseja, no bloquea: el dueño decide cuándo activar. La simulación nunca escribe a WhatsApp.
  */
 
 type Run = { id: string; status: "running" | "done" | "failed"; score: number | null };
@@ -80,7 +80,7 @@ export function ProbarPanel({
     cases,
     current: probarDone,
   });
-  const toFix = kind === "no_paso" ? casesToFix(cases) : [];
+  const toFix = kind === "revisar" ? casesToFix(cases) : [];
   const busy = running || launching;
 
   return (
@@ -109,7 +109,7 @@ export function ProbarPanel({
           )}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {kind === "paso" && next ? (
+            {(kind === "paso" || kind === "revisar") && next ? (
               <Link href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
                 {next.key === "whatsapp" ? "Seguir: conectar tu WhatsApp" : SETUP_STEP_CTA[next.key]}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -117,7 +117,7 @@ export function ProbarPanel({
             ) : (
               <Button
                 type="button"
-                variant={kind === "paso" ? "outline" : "default"}
+                variant={kind === "paso" || kind === "revisar" ? "outline" : "default"}
                 className="min-h-11 w-full sm:w-auto"
                 disabled={busy}
                 onClick={onLaunch}
@@ -145,9 +145,9 @@ const TITLE: Record<ProbarKind, string> = {
   sin_prueba: "Prueba tu agente antes de activarlo",
   en_curso: "Probando tu agente…",
   no_termino: "La prueba no pudo terminar",
-  paso: "Tu agente pasó la prueba",
+  paso: "Tu agente salió bien de la prueba",
   vieja: "Vuelve a probar tu agente",
-  no_paso: "Tu agente todavía no pasa la prueba",
+  revisar: "Ya probaste tu agente",
 };
 
 /** `next`: el paso que falta después de probar (null con el agente ya activo). */
@@ -167,19 +167,17 @@ const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[], next: 
             : ""
     }`,
   vieja: (score) =>
-    `Pasó con ${score} de 100, pero cambiaste tu información después de esa prueba. Vuelve a probar para asegurarte de que sigue contestando bien.`,
-  no_paso: (score, toFix) => {
-    const graves = toFix.filter((item) => item.red).length;
-    return `Sacó ${score} de 100${graves > 0 ? ` y ${graves === 1 ? "tuvo 1 caso grave" : `tuvo ${graves} casos graves`}` : ""}. Necesita ${PASS_SCORE} o más y ningún caso grave. Esto es lo que hay que corregir; cuando lo hagas, vuelve a probar.`;
-  },
+    `Sacó ${score} de 100, pero cambiaste tu información después de esa prueba. Vuelve a probar para asegurarte de que sigue contestando bien.`,
+  revisar: (score, toFix) =>
+    `${consejoDeResultado(score, toFix.filter((item) => item.red).length) ?? ""} Si quieres mejorarlo, esto es lo que puedes corregir y volver a probar.`.trim(),
 };
 
 function Verdict({ kind, score }: { kind: ProbarKind; score: number | null }) {
   const view =
     kind === "paso"
       ? { state: "activo" as const, word: score !== null ? `${score} de 100` : "Aprobado" }
-      : kind === "no_paso" || kind === "vieja" || kind === "no_termino"
-        ? { state: "atencion" as const, word: kind === "no_paso" && score !== null ? `${score} de 100` : kind === "vieja" ? "Por repetir" : "Sin resultado" }
+      : kind === "revisar" || kind === "vieja" || kind === "no_termino"
+        ? { state: "atencion" as const, word: kind === "revisar" && score !== null ? `${score} de 100` : kind === "vieja" ? "Por repetir" : "Sin resultado" }
         : kind === "en_curso"
           ? { state: "atendiendo" as const, word: "En curso" }
           : { state: "pausado" as const, word: "Sin probar" };

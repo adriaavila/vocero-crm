@@ -9,6 +9,7 @@ import { pasoAgenda, type PasoAgenda } from "@/server/agencia/readiness-agenda";
 import { businessHoursFromProfile, hasConfiguredBusinessHours } from "@/server/business-hours";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
+import { looksGood } from "@/lib/probar";
 
 export type ReadinessStepId =
   | "whatsapp"
@@ -100,9 +101,15 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
 
   let simulationStatus: ReadinessStepStatus = "pending";
   if (latestRun?.finishedAt && latestRun.score !== null) {
-    simulationStatus = latestRun.finishedAt < contentUpdatedAt
+    // SaaS: el dueño decide cuándo le gusta cómo responde su agente; basta con
+    // haber probado DESPUÉS del último cambio, sea cual sea el puntaje (el
+    // puntaje y los casos rojos son consejo, `looksGood` en `lib/probar`).
+    // Instancias dedicadas: la regla de siempre, 80 y ningún caso rojo.
+    // Frescura por el INICIO de la corrida: una que seguía corriendo mientras
+    // el dueño editaba probó el contenido anterior.
+    simulationStatus = latestRun.startedAt < contentUpdatedAt
       ? "stale"
-      : latestRun.score >= 80 && input.redCount === 0
+      : input.saasMode || looksGood(latestRun.score, input.redCount)
         ? "complete"
         : "pending";
   }
@@ -170,10 +177,14 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
       status: simulationStatus,
       label: "Prueba tu agente",
       detail: simulationStatus === "complete"
-        ? `${latestRun!.score}/100 y sin hallazgos críticos.`
+        ? looksGood(latestRun!.score, input.redCount)
+          ? `${latestRun!.score}/100 y sin hallazgos críticos.`
+          : `${latestRun!.score}/100. Revisa los casos y actívalo cuando te guste cómo responde.`
         : simulationStatus === "stale"
           ? "El agente cambió desde la última evaluación. Vuelve a probarlo."
-          : "Necesitas 80/100 o más y cero casos rojos.",
+          : latestRun?.finishedAt
+            ? "Necesitas 80/100 o más y cero casos rojos."
+            : "Pruébalo una vez antes de hablar con tus clientes.",
       href: "/lab",
     },
     {

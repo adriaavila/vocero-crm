@@ -333,6 +333,10 @@ export function ActivarSection({
               </div>
             )}
 
+            {!enabled && activation.testAdvice && (
+              <p className="max-w-2xl text-sm leading-6 text-text-2">{activation.testAdvice}</p>
+            )}
+
             {!enabled && gate.kind === "ready" && blockers.length === 0 && (
               <p className="text-sm text-text-2">Todo está listo. Esto es lo que va a pasar cuando actives:</p>
             )}
