@@ -199,7 +199,7 @@ export function WhatsappWizard({
         <BridgeConnectCard
           bridgeUrl={bridgeUrl}
           title="Conecta tu WhatsApp"
-          description="Conectas con Meta, la empresa dueña de WhatsApp. Si ya usas WhatsApp Business en tu teléfono, lo sigues usando."
+          description="Conectas con Meta, la empresa dueña de WhatsApp."
           label="Conectar WhatsApp"
         />
       )}
@@ -326,9 +326,13 @@ function BridgeConnectCard({
         </div>
       </CardHeader>
       <CardContent>
-        <AntesDeConectar />
+        {/* El botón va primero: la lista de lo que hay que tener a mano lo
+            empujaba bajo el pliegue del teléfono. */}
         <ActionButton onAct={() => window.location.assign(bridgeUrl)} label={label} pending="Abriendo…" />
         <p className="mt-3 text-xs text-text-3">Se abre una ventana segura de Meta y vuelves aquí al terminar.</p>
+        <div className="mt-4">
+          <AntesDeConectar />
+        </div>
       </CardContent>
     </Card>
   );
@@ -388,9 +392,11 @@ function GuidedConnectCard({
         </div>
       </CardHeader>
       <CardContent>
-        <AntesDeConectar />
         <GuidedButton label="Conectar WhatsApp" />
         <p className="mt-3 text-xs text-text-3">Se abre una ventana segura de Meta y vuelves aquí al terminar.</p>
+        <div className="mt-4">
+          <AntesDeConectar />
+        </div>
         {shouldShowHandoverRecovery(guidedAvailable, connection) && (
           <HandoverRecovery connected={Boolean(connection)} onDone={onRecovered} brandName={brandName} />
         )}

@@ -178,12 +178,12 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
       label: "Prueba tu agente",
       detail: simulationStatus === "complete"
         ? looksGood(latestRun!.score, input.redCount)
-          ? `${latestRun!.score}/100 y sin hallazgos críticos.`
-          : `${latestRun!.score}/100. Revisa los casos y actívalo cuando te guste cómo responde.`
+          ? `${latestRun!.score} de 100 y sin problemas graves.`
+          : `${latestRun!.score} de 100. Revisa los casos y actívalo cuando te guste cómo responde.`
         : simulationStatus === "stale"
           ? "El agente cambió desde la última evaluación. Vuelve a probarlo."
           : latestRun?.finishedAt
-            ? "Necesitas 80/100 o más y cero casos rojos."
+            ? "Necesitas 80 de 100 o más y cero casos rojos."
             : "Pruébalo una vez antes de hablar con tus clientes.",
       href: "/lab",
     },

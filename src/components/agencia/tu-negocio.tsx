@@ -32,6 +32,7 @@ import {
   type MensajeChat,
 } from "@/lib/chat-exportado";
 import { textosDelZip } from "@/lib/zip-texto";
+import { SETUP_STEP_CTA } from "@/lib/setup-steps";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 
 /**
@@ -324,9 +325,14 @@ export function TuNegocio({
     await onChanged();
   }
 
-  const next = progress?.steps.find((step) => !step.done && step.key !== "whatsapp" && step.key !== "negocio");
+  // El siguiente paso es el primero sin hacer en el orden compartido
+  // (`lib/setup-steps`), el mismo que usan Probar e Inicio.
+  const next = progress?.steps.find((step) => !step.done && step.key !== "negocio");
   const negocioDone = progress?.steps.find((step) => step.key === "negocio")?.done ?? false;
   const busy = status === "saving";
+  // Guardado y sin cambios: lo que toca es seguir, y «Guardar» no tiene nada
+  // que guardar. Vuelve en cuanto algo cambia.
+  const showNext = negocioDone && !dirty && !busy && Boolean(next);
 
   return (
     <Card id="negocio" className="scroll-mt-4">
@@ -616,15 +622,22 @@ export function TuNegocio({
         )}
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={!dirty || busy} onClick={() => void save()}>
-            {busy ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Guardando…
-              </>
-            ) : (
-              "Guardar mi negocio"
-            )}
-          </Button>
+          {showNext && next ? (
+            <Link href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
+              {SETUP_STEP_CTA[next.key]}
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          ) : (
+            <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={!dirty || busy} onClick={() => void save()}>
+              {busy ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" /> Guardando…
+                </>
+              ) : (
+                "Guardar mi negocio"
+              )}
+            </Button>
+          )}
           <span role="status" className="min-h-5 text-sm text-text-2">
             {status === "saved" && !dirty && (
               <span className="inline-flex items-center gap-1.5">
@@ -634,14 +647,6 @@ export function TuNegocio({
           </span>
         </div>
 
-        {negocioDone && !dirty && next && (
-          <div className="border-t border-border pt-4">
-            <Link href={next.href} className={buttonVariants({ variant: "outline", className: "min-h-11 w-full sm:w-auto" })}>
-              Seguir: {next.key === "probar" ? "probar tu agente" : "activar tu agente"}
-              <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          </div>
-        )}
       </CardContent>
     </Card>
   );
@@ -712,8 +717,8 @@ function LlenarPorMi({
       </summary>
       <div className="space-y-3 px-4 pb-4">
         <p className="text-sm leading-relaxed text-text-2">
-          Pega el enlace de tu página web, o el texto de tu perfil o tu lista de precios. Lo ordenamos en los campos de abajo
-          y tú lo revisas antes de guardar.
+          Pega el enlace de tu web o el texto de tu lista de precios. Si solo tienes Instagram, pega el texto de tu bio: su
+          enlace no se puede leer. Lo ordenamos abajo y tú lo revisas antes de guardar.
         </p>
         <Label htmlFor="negocio-fuente" className="sr-only">
           Tu web o lo que dirías de tu negocio
@@ -723,7 +728,7 @@ function LlenarPorMi({
           rows={3}
           maxLength={8000}
           className="resize-y break-words bg-background"
-          placeholder="Ej. miclinica.com  ·  o: Somos una clínica dental en Polanco. Limpieza $600, blanqueamiento $2,500…"
+          placeholder="Tu web (miclinica.com) o el texto de tu bio"
           value={fuente}
           disabled={disabled || loading}
           aria-invalid={error ? true : undefined}

@@ -73,9 +73,10 @@ export function LiveWhatsappTest() {
     await refetch();
   }
 
-  // Instancia sin teléfono de pruebas: la tarjeta no aparece en vez de
-  // ofrecer un botón que no puede funcionar.
-  if (live && !live.configured) return null;
+  // Sin leer todavía (así no parpadea para quien no es operador) o instancia
+  // sin teléfono de pruebas: la tarjeta no aparece en vez de ofrecer un botón
+  // que no puede funcionar.
+  if (!live || !live.configured) return null;
 
   return (
     <Card>

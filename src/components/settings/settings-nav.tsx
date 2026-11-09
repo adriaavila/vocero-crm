@@ -23,20 +23,45 @@ const MESSENGER_TAB: Tab = { href: "/settings/messenger", label: "Messenger" };
 const BILLING_TAB: Tab = { href: "/settings/billing", label: "Facturación" };
 const TEAM_TAB: Tab = { href: "/settings/team", label: "Equipo" };
 
+/**
+ * Quien está en el paso «Conectar WhatsApp» de la puesta en marcha ve solo ese
+ * paso: sin el título «Configuración» ni la fila de pestañas, que en el
+ * teléfono empujaban el botón de conectar bajo el pliegue. Con el paso hecho
+ * (o fuera de la puesta en marcha) todo vuelve.
+ */
+function useFocusedWhatsapp(setupWhatsapp: boolean): boolean {
+  const pathname = usePathname();
+  return setupWhatsapp && pathname.startsWith("/settings/whatsapp");
+}
+
+export function SettingsHeader({ setupWhatsapp = false }: { setupWhatsapp?: boolean }) {
+  if (useFocusedWhatsapp(setupWhatsapp)) return null;
+  return (
+    <header className="border-b px-4 py-3 sm:px-6 sm:py-4">
+      <h2 className="page-title text-[17px] font-bold tracking-tight">Configuración</h2>
+    </header>
+  );
+}
+
 export function SettingsNav({
   agenda = false,
   atribucion = false,
   messenger = false,
   saas = false,
   saasPro = false,
+  setupWhatsapp = false,
 }: {
   agenda?: boolean;
   atribucion?: boolean;
   messenger?: boolean;
   saas?: boolean;
   saasPro?: boolean;
+  /** El paso «Conectar WhatsApp» de la puesta en marcha sigue abierto. */
+  setupWhatsapp?: boolean;
 }) {
   const pathname = usePathname();
+  const focused = useFocusedWhatsapp(setupWhatsapp);
+  if (focused) return null;
   // Qué pestañas existen lo decide el servidor y baja por prop: este es un
   // componente de cliente y no puede leer variables de entorno.
   // Messenger va junto a WhatsApp: son las dos conexiones de mensajería.

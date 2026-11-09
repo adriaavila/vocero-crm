@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Loader2, Moon, SunMoon } from "lucide-react";
+import { AlertTriangle, ArrowRight, ChevronRight, Loader2, Moon, SunMoon } from "lucide-react";
 import { StateDot } from "@/components/agencia/allok/mark";
 import type { GateState } from "@/components/agencia/activation-gate";
 import { allDayDetail, type HoursController, type HoursSettings } from "@/components/agencia/horario-respuesta";
@@ -25,7 +25,7 @@ import type { ActivationSummary } from "@/server/agencia/activacion";
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1 py-3 sm:grid-cols-[9rem_1fr] sm:gap-4">
+    <div className="grid gap-1 py-2.5 sm:grid-cols-[9rem_1fr] sm:gap-4 sm:py-3">
       <dt className="kicker pt-0.5">{label}</dt>
       <dd className="min-w-0 break-words text-sm leading-6">{children}</dd>
     </div>
@@ -76,8 +76,19 @@ function ModoRespuesta({ hours, onChange }: { hours: HoursController; onChange?:
     },
   ];
 
+  const selectedTitle = options.find((option) => option.mode === current)?.title ?? "";
+
   return (
-    <div className="space-y-2">
+    // Plegado: elegida la opción, ocupa una línea. En el teléfono las dos
+    // opciones abiertas empujaban el botón de activar bajo el pliegue.
+    <details className="group space-y-2">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0 font-medium">{selectedTitle}</span>
+        <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-brand-text">
+          Cambiar
+          <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+        </span>
+      </summary>
       <div role="radiogroup" aria-label="Cuándo responde tu agente" className="grid gap-2">
         {options.map(({ mode, icon: Icon, title, detail, locked }) => {
           const selected = current === mode;
@@ -113,7 +124,7 @@ function ModoRespuesta({ hours, onChange }: { hours: HoursController; onChange?:
           {error}
         </p>
       )}
-    </div>
+    </details>
   );
 }
 
@@ -167,6 +178,11 @@ function Summary({
         )}
       </Row>
       <Row label="Qué hará">
+        <details className="group">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-md font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+            Ver qué hará tu agente
+            <ChevronRight className="h-4 w-4 shrink-0 text-text-3 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden="true" />
+          </summary>
         <ul className="list-disc space-y-1 pl-4 marker:text-text-3">
           <li>
             Responde con lo que escribiste en «Tu negocio»
@@ -187,8 +203,9 @@ function Summary({
           {restrictions.map((restriction) => (
             <li key={restriction}>{restriction}</li>
           ))}
-          <li>Puedes pausarlo cuando quieras, desde aquí o desde el interruptor de arriba.</li>
+          <li>Puedes pausarlo cuando quieras, desde esta misma tarjeta.</li>
         </ul>
+        </details>
       </Row>
     </dl>
   );
@@ -218,6 +235,7 @@ export function ActivarSection({
   const [error, setError] = useState<string | null>(null);
   const [justActivated, setJustActivated] = useState(false);
   const pauseButton = useRef<HTMLButtonElement>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
 
   async function activate() {
     setBusy("activar");
@@ -242,8 +260,16 @@ export function ActivarSection({
     if (enabled && justActivated) pauseButton.current?.focus();
   }, [enabled, justActivated]);
 
+  // Si el servidor no dejó activar, el foco pasa al motivo: el botón que se
+  // oprimió sigue ahí, pero lo que hay que leer es el aviso (y quien usa lector
+  // de pantalla lo oye donde está el foco, no en <body>).
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
+
   const activation = gate.kind === "blocked" || gate.kind === "ready" ? gate.activation : null;
   const blockers = activation?.blockers ?? [];
+  const advice = !enabled && gate.kind === "ready" ? (activation?.testAdvice ?? null) : null;
 
   return (
     <Card id="activar" tabIndex={-1} className="scroll-mt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -307,7 +333,12 @@ export function ActivarSection({
                   {blockers.map((blocker) => (
                     <li
                       key={`${blocker.code}-${blocker.title}`}
-                      className="flex flex-col gap-2 rounded-md border border-warning-soft bg-warning-tint p-3 sm:flex-row sm:items-center sm:justify-between"
+                      // Lo que falta para activar es «el paso que toca»: va en tinta. El
+                      // ámbar es «algo está roto o espera por una persona», y solo
+                      // aplica a un agente que ya está activo.
+                      className={`flex flex-col gap-2 rounded-md border p-3 sm:flex-row sm:items-center sm:justify-between ${
+                        enabled ? "border-warning-soft bg-warning-tint" : "border-border-strong bg-subtle"
+                      }`}
                     >
                       <div className="min-w-0">
                         <p className="break-words text-sm font-semibold">{blocker.title}</p>
@@ -333,12 +364,10 @@ export function ActivarSection({
               </div>
             )}
 
-            {!enabled && activation.testAdvice && (
-              <p className="max-w-2xl text-sm leading-6 text-text-2">{activation.testAdvice}</p>
-            )}
-
             {!enabled && gate.kind === "ready" && blockers.length === 0 && (
-              <p className="text-sm text-text-2">Todo está listo. Esto es lo que va a pasar cuando actives:</p>
+              <p className="text-sm text-text-2">
+                {advice ? "Lo demás está listo" : "Todo está listo"}. Esto es lo que va a pasar cuando actives:
+              </p>
             )}
             {!enabled && gate.kind === "ready" && (
               <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} />
@@ -347,9 +376,30 @@ export function ActivarSection({
         )}
 
         {error && (
-          <p role="alert" className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text">
+          <p
+            ref={errorRef}
+            tabIndex={-1}
+            role="alert"
+            className="rounded-md border border-danger-soft bg-danger-tint px-3 py-2 text-sm text-danger-text outline-none"
+          >
             {error}
           </p>
+        )}
+
+        {/* Lo que dijo la prueba, pegado al botón que lo decide: solo cuando se
+            puede activar (con algo por arreglar, lo que falta ya habla) y nunca
+            bloquea. */}
+        {advice && (
+          <div className="space-y-1 rounded-md border border-border-strong bg-subtle p-3">
+            <p className="max-w-2xl text-sm leading-6">{advice}</p>
+            <Link
+              href="/lab"
+              className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-brand-text hover:underline"
+            >
+              Ver qué falló
+              <ArrowRight className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </div>
         )}
 
         {/* Pausar nunca depende de la lectura: frenar al agente tiene que poder hacerse siempre. */}

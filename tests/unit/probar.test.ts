@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { casesToFix, consejoDeResultado, fixFor, looksGood, probarKind, type CaseLite } from "@/lib/probar";
+import { casesToFix, consejoDeResultado, fixFor, looksGood, probarKind, resumenDeResultado, type CaseLite } from "@/lib/probar";
 
 const kase = (id: string, veredicto: CaseLite["veredicto"], hallazgos: CaseLite["hallazgos"] = []): CaseLite => ({
   id,
@@ -35,6 +35,12 @@ describe("probarKind", () => {
     expect(probarKind({ latest: done, cases: [kase("a", "rojo")], current: true })).toBe("revisar"));
   it("un puntaje bajo pide revisar", () =>
     expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: true })).toBe("revisar"));
+  it("el veredicto sale de redCount aunque los casos no hayan llegado (no hay «salió bien» falso)", () => {
+    expect(probarKind({ latest: done, cases: [], redCount: 2, current: true })).toBe("revisar");
+    expect(probarKind({ latest: done, cases: [], redCount: 0, current: true })).toBe("paso");
+    // redCount manda sobre los casos: sin él, se cuentan los casos.
+    expect(probarKind({ latest: done, cases: [kase("a", "rojo")], redCount: 0, current: true })).toBe("paso");
+  });
   it("una prueba floja pero anterior al último cambio es vieja", () =>
     expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: false })).toBe("vieja"));
 });
@@ -70,13 +76,20 @@ describe("qué corregir, en palabras llanas", () => {
 });
 
 describe("consejoDeResultado", () => {
-  it("dice el puntaje y los casos, y que activar es decisión del dueño", () => {
+  it("dice las respuestas graves y el puntaje, y que activar es decisión del dueño", () => {
     expect(consejoDeResultado(67, 2)).toBe(
-      "Sacó 67/100 con 2 casos graves. Puedes activarlo igual: tú decides cuándo te gusta cómo responde.",
+      "La prueba encontró 2 respuestas graves (67 de 100). Puedes activarlo igual o corregirlas primero.",
     );
-    expect(consejoDeResultado(50, 1)).toMatch(/con 1 caso grave\./);
-    expect(consejoDeResultado(70, 0)).toMatch(/^Sacó 70\/100\. Puedes activarlo igual/);
-    expect(consejoDeResultado(90, 1)).toMatch(/^Sacó 90\/100 con 1 caso/);
+    expect(consejoDeResultado(83, 1)).toBe(
+      "La prueba encontró 1 respuesta grave (83 de 100). Puedes activarlo igual o corregirla primero.",
+    );
+  });
+  it("sin casos graves pero con puntaje bajo, habla del puntaje", () => {
+    expect(consejoDeResultado(70, 0)).toBe("La prueba sacó 70 de 100. Puedes activarlo igual o mejorar las respuestas primero.");
+  });
+  it("nunca escribe «/100»", () => {
+    expect(consejoDeResultado(40, 3)).not.toMatch(/\/100/);
+    expect(resumenDeResultado(40, 3)).not.toMatch(/\/100/);
   });
   it("no aconseja cuando se ve bien ni sin resultado", () => {
     expect(consejoDeResultado(85, 0)).toBeNull();

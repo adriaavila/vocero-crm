@@ -106,7 +106,9 @@ itálicas de adorno.
   de conversaciones de una noche cualquiera en el código de color. Es la
   promesa, no un dato: no lleva cifras.
 - **Puesta en marcha** (`setup-progress.tsx`, `lib/setup-steps.ts`): cuatro
-  pasos, **Conectar WhatsApp · Tu negocio · Probar · Activar**, derivados de la
+  pasos, **Tu negocio · Probar · Conectar WhatsApp · Activar** (primero el valor,
+  después Meta; el orden sale de `SETUP_STEP_ORDER` y el «Seguir: …» de
+  `SETUP_STEP_CTA`, igual en toda pantalla), derivados de la
   preparación del servidor y dibujados igual en WhatsApp, Tu agente, Probar e
   Inicio. Cada paso es punto + palabra: listo es *all ok* (verde, «Listo»), el
   que toca es **un punto de tinta** («Ahora») y el resto *pausado* (gris,
@@ -125,7 +127,9 @@ itálicas de adorno.
   cerrado. Solo entra lo que el dueño escribió; un guardado que falla conserva
   el texto y dice por qué.
 - **Activar** (`activar.tsx`): antes del botón, el número, cuándo responde (y
-  quién atiende ahora) y qué hará el agente. Si falta algo, la lista del
+  quién atiende ahora) y qué hará el agente (cuándo responde, elegido, ocupa una línea; qué hará, plegado).
+  Lo que dijo la prueba va pegado al botón y solo cuando se puede activar: con
+  algo por arreglar habla lo que falta y la prueba calla. Si falta algo, la lista del
   servidor con un enlace para arreglar cada cosa; si no se pudo saber qué
   falta, error con reintentar y **ningún** botón de activar. Pausar es siempre
   inmediato.
@@ -184,7 +188,9 @@ allok»):
 
 - **Sí**: tokens por nombre, nunca hex en un componente; estado = punto + palabra;
   una acción principal por pantalla; español, segunda persona, `allok` en minúscula.
-- **No**: el ámbar para «el paso que toca» (el ámbar es *atención*: algo que
+- **No**: dos colores para lo mismo (un caso grave de la prueba es rojo en
+  «Probar», en el historial y en el reporte), un «/100» (siempre «X de 100»),
+  el ámbar para «el paso que toca» (el ámbar es *atención*: algo que
   espera por una persona o está roto; un paso de la puesta en marcha que
   simplemente toca va en tinta), colores de adorno, degradados, emoji en la interfaz, un verde que no
   signifique «todo bien», un número inventado, un movimiento que no diga nada,

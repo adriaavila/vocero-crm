@@ -9,8 +9,9 @@ import { useSetup } from "@/components/agencia/activation-gate";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { casesToFix, consejoDeResultado, probarKind, type CaseLite, type CaseToFix, type ProbarKind } from "@/lib/probar";
+import { casesToFix, probarKind, resumenDeResultado, type CaseLite, type CaseToFix, type ProbarKind } from "@/lib/probar";
 import { SETUP_STEP_CTA, type SetupStepKey } from "@/lib/setup-steps";
 import type { SetupProgress } from "@/server/agencia/setup-progress";
 
@@ -23,7 +24,8 @@ import type { SetupProgress } from "@/server/agencia/setup-progress";
  * puntaje aconseja, no bloquea: el dueño decide cuándo activar. La simulación nunca escribe a WhatsApp.
  */
 
-type Run = { id: string; status: "running" | "done" | "failed"; score: number | null };
+/** `redCount`: casos graves de la corrida, que la lista de corridas ya trae. */
+type Run = { id: string; status: "running" | "done" | "failed"; score: number | null; redCount?: number };
 
 export function ProbarPanel({
   runs,
@@ -46,7 +48,9 @@ export function ProbarPanel({
 }) {
   const { progress, reload } = useSetup(initialProgress);
   const latest = runs[0] ?? null;
-  const [cases, setCases] = useState<CaseLite[]>([]);
+  // null = el detalle todavía no llegó. El veredicto NO espera por él (sale de
+  // `redCount`, que ya viene con la lista de corridas): solo la lista de casos.
+  const [cases, setCases] = useState<CaseLite[] | null>(null);
 
   // El detalle de la última corrida terminada: de ahí salen los casos a corregir.
   const latestId = latest?.status === "done" ? latest.id : null;
@@ -56,12 +60,15 @@ export function ProbarPanel({
       return;
     }
     let live = true;
+    setCases(null);
     void fetch(`/api/lab/runs/${latestId}`)
       .then((response) => (response.ok ? response.json() : null))
       .then((data: { cases?: CaseLite[] } | null) => {
         if (live) setCases(data?.cases ?? []);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (live) setCases([]);
+      });
     void reload();
     return () => {
       live = false;
@@ -75,12 +82,15 @@ export function ProbarPanel({
   // Activar, donde lo primero era «Conecta tu WhatsApp».
   const agentOn = progress ? !progress.active : false;
   const next = agentOn ? null : (progress?.steps.find((step) => !step.done && step.key !== "probar") ?? null);
+  const reds = latest?.redCount ?? (cases ?? []).filter((c) => c.veredicto === "rojo").length;
   const kind = probarKind({
     latest: latest ? { status: latest.status, score: latest.score } : null,
-    cases,
+    cases: cases ?? [],
+    redCount: reds,
     current: probarDone,
   });
-  const toFix = kind === "revisar" ? casesToFix(cases) : [];
+  const toFix = kind === "revisar" ? casesToFix(cases ?? []) : [];
+  const loadingCases = kind === "revisar" && cases === null;
   const busy = running || launching;
 
   return (
@@ -90,15 +100,22 @@ export function ProbarPanel({
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle id="probar-title">{TITLE[kind]}</CardTitle>
-            <Verdict kind={kind} score={latest?.score ?? null} />
+            <Verdict kind={kind} score={latest?.score ?? null} reds={reds} />
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="max-w-2xl text-sm leading-6 text-text-2" role="status">
             {kind === "en_curso" && runProgress
               ? `Seis clientes simulados están conversando con tu agente (${runProgress.done} de ${runProgress.total}).`
-              : BODY[kind](latest?.score ?? null, toFix, next?.key ?? null)}
+              : BODY[kind](latest?.score ?? null, reds, next?.key ?? null)}
           </p>
+
+          {loadingCases && (
+            <div aria-busy="true" aria-label="Cargando lo que puedes corregir" className="space-y-3">
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          )}
 
           {toFix.length > 0 && (
             <ul className="space-y-3">
@@ -111,7 +128,7 @@ export function ProbarPanel({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             {(kind === "paso" || kind === "revisar") && next ? (
               <Link href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
-                {next.key === "whatsapp" ? "Seguir: conectar tu WhatsApp" : SETUP_STEP_CTA[next.key]}
+                {SETUP_STEP_CTA[next.key]}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             ) : (
@@ -151,12 +168,12 @@ const TITLE: Record<ProbarKind, string> = {
 };
 
 /** `next`: el paso que falta después de probar (null con el agente ya activo). */
-const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[], next: SetupStepKey | null) => string> = {
+const BODY: Record<ProbarKind, (score: number | null, reds: number, next: SetupStepKey | null) => string> = {
   sin_prueba: () =>
     "Seis clientes simulados le escriben con casos reales: precios, dudas, reclamos. Un revisor califica cada respuesta, y así ves cómo contesta antes de que hable con tus clientes de verdad.",
   en_curso: () => "Seis clientes simulados están conversando con tu agente.",
   no_termino: () => "Hubo un problema al correr la prueba. Vuelve a intentarlo en un momento.",
-  paso: (score, _toFix, next) =>
+  paso: (score, _reds, next) =>
     `Sacó ${score} de 100 y no tuvo problemas graves.${
       next === "whatsapp"
         ? " Ahora conecta tu WhatsApp para que les conteste a tus clientes."
@@ -168,11 +185,12 @@ const BODY: Record<ProbarKind, (score: number | null, toFix: CaseToFix[], next: 
     }`,
   vieja: (score) =>
     `Sacó ${score} de 100, pero cambiaste tu información después de esa prueba. Vuelve a probar para asegurarte de que sigue contestando bien.`,
-  revisar: (score, toFix) =>
-    `${consejoDeResultado(score, toFix.filter((item) => item.red).length) ?? ""} Si quieres mejorarlo, esto es lo que puedes corregir y volver a probar.`.trim(),
+  revisar: (score, reds) =>
+    `${resumenDeResultado(score, reds) ?? ""} Puedes activarlo igual: tú decides si ya te gusta cómo responde. Si quieres mejorarlo, esto es lo que puedes corregir y volver a probar.`.trim(),
 };
 
-function Verdict({ kind, score }: { kind: ProbarKind; score: number | null }) {
+function Verdict({ kind, score, reds }: { kind: ProbarKind; score: number | null; reds: number }) {
+  const grave = kind === "revisar" && reds > 0;
   const view =
     kind === "paso"
       ? { state: "activo" as const, word: score !== null ? `${score} de 100` : "Aprobado" }
@@ -183,17 +201,22 @@ function Verdict({ kind, score }: { kind: ProbarKind; score: number | null }) {
           : { state: "pausado" as const, word: "Sin probar" };
   return (
     <span className="inline-flex items-center gap-2 text-sm font-medium">
-      <StateDot state={view.state} size={8} decorative />
+      {grave ? <GraveDot /> : <StateDot state={view.state} size={8} decorative />}
       {view.word}
     </span>
   );
+}
+
+/** El punto de un caso grave: rojo, el mismo color con que el reporte marca el caso. El rojo no es un estado, es un fallo. */
+function GraveDot() {
+  return <span aria-hidden="true" className="inline-block h-2 w-2 shrink-0 rounded-full bg-destructive" />;
 }
 
 function CaseFix({ item, onApplied }: { item: CaseToFix; onApplied: () => void }) {
   return (
     <li className="rounded-md border border-border p-3">
       <p className="flex items-center gap-2 text-sm font-semibold">
-        <StateDot state={item.red ? "atencion" : "pausado"} size={8} decorative />
+        {item.red ? <GraveDot /> : <StateDot state="pausado" size={8} decorative />}
         <span className="break-words">{item.label}</span>
         <span className="text-xs font-normal text-text-3">{item.red ? "Grave" : "A mejorar"}</span>
       </p>
@@ -207,7 +230,7 @@ function CaseFix({ item, onApplied }: { item: CaseToFix; onApplied: () => void }
             ) : (
               <Link
                 href={h.fix.to.href}
-                className="mt-1 inline-flex min-h-11 items-center text-sm font-medium text-foreground underline-offset-2 hover:underline"
+                className={buttonVariants({ variant: "outline", size: "sm", className: "mt-1 min-h-11" })}
               >
                 {h.fix.to.label}
               </Link>

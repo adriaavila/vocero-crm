@@ -88,7 +88,7 @@ export function deriveSetupProgress(readiness: ReadinessResponse): SetupProgress
 
 /** Lo que dice el botón que lleva al paso que toca. */
 export const SETUP_STEP_CTA: Record<SetupStepKey, string> = {
-  whatsapp: "Conectar WhatsApp",
+  whatsapp: "Seguir: conectar tu WhatsApp",
   negocio: "Seguir: cuéntanos de tu negocio",
   probar: "Seguir: probar tu agente",
   activar: "Seguir: activar tu agente",

@@ -185,7 +185,7 @@ export function LabClient({ initialProgress = null }: { initialProgress?: SetupP
         disabled={false}
         hasRuns={runs.length > 0}
       />
-      {error && <p role="alert" className="px-4 pt-3 text-sm text-destructive sm:px-6">{error}</p>}
+      {error && <p role="alert" className="px-4 pt-3 text-sm text-destructive-text sm:px-6">{error}</p>}
 
       {/* Capa de agencia: el resultado en palabras del dueño y qué corregir.
           Vive en components/agencia/ para que la próxima fusión con upstream
@@ -313,7 +313,7 @@ function HistoryList({
             {run.delta !== null && run.delta !== 0 && (
               <span
                 className={`flex items-center gap-0.5 text-xs font-medium ${
-                  run.delta > 0 ? "text-success" : "text-destructive"
+                  run.delta > 0 ? "text-success-text" : "text-destructive-text"
                 }`}
               >
                 {run.delta > 0 ? (
@@ -350,10 +350,11 @@ function ScoreBadge({ run, redCount }: { run: Run; redCount?: number }) {
   if (run.status === "failed") return <Badge variant="destructive">Fallida</Badge>;
   const score = run.score ?? 0;
   const reds = redCount ?? run.redCount ?? 0;
-  const variant = looksGood(score, reds) ? "success" : score >= 50 ? "warning" : "destructive";
+  // Un caso grave es rojo aquí igual que en «Probar»: el ámbar queda para «a mejorar».
+  const variant = looksGood(score, reds) ? "success" : reds === 0 && score >= 50 ? "warning" : "destructive";
   return (
     <Badge variant={variant}>
-      {score} de 100{!looksGood(score, reds) && reds > 0 ? " · caso grave" : ""}
+      {score} de 100{!looksGood(score, reds) && reds > 0 ? ` · ${reds} ${reds === 1 ? "caso grave" : "casos graves"}` : ""}
     </Badge>
   );
 }
@@ -375,7 +376,7 @@ function Report({
             <ScoreBadge run={run} redCount={cases.filter((c) => c.veredicto === "rojo").length} />
           </div>
           {run.status === "failed" && (
-            <p className="text-sm text-destructive">
+            <p className="text-sm text-destructive-text">
               La corrida falló: {run.error ?? "error desconocido"}. Vuelve a
               intentarlo.
             </p>
@@ -395,8 +396,12 @@ function Report({
             </div>
             {cases.some((c) => c.status === "judge_failed") && (
               <p className="mt-3 text-xs text-warning-text">
-                {cases.filter((c) => c.status === "judge_failed").length} caso(s) sin
-                veredicto (el juez no respondió válido); excluidos del score.
+                {(() => {
+                  const n = cases.filter((c) => c.status === "judge_failed").length;
+                  return n === 1
+                    ? "1 caso sin veredicto (el juez no respondió válido); excluido del puntaje."
+                    : `${n} casos sin veredicto (el juez no respondió válido); excluidos del puntaje.`;
+                })()}
               </p>
             )}
           </CardContent>
@@ -415,32 +420,32 @@ function CaseCard({ testCase, onApplied }: { testCase: Case; onApplied: () => vo
   const c = testCase;
   const icon =
     c.veredicto === "verde" ? (
-      <CheckCircle2 className="h-4 w-4 text-success" />
+      <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
     ) : c.veredicto === "amarillo" ? (
-      <AlertTriangle className="h-4 w-4 text-warning-text" />
+      <AlertTriangle className="h-4 w-4 shrink-0 text-warning-text" />
     ) : c.veredicto === "rojo" ? (
-      <XCircle className="h-4 w-4 text-destructive" />
+      <XCircle className="h-4 w-4 shrink-0 text-destructive" />
     ) : (
-      <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+      <AlertTriangle className="h-4 w-4 shrink-0 text-muted-foreground" />
     );
 
   return (
     <Card>
       <CardHeader className="pb-3">
         <button
-          className="flex min-h-11 w-full items-center justify-between"
+          className="flex min-h-11 w-full items-center justify-between gap-3 text-left"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          <span className="flex items-center gap-2 text-sm font-semibold">
+          <span className="flex items-center gap-2 text-left text-sm font-semibold">
             {icon}
             {c.personaLabel}
             {c.status === "judge_failed" && (
               <Badge variant="secondary">sin veredicto</Badge>
             )}
           </span>
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            {c.hallazgos.length > 0 && `${c.hallazgos.length} hallazgo(s)`}
+          <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs text-muted-foreground">
+            {c.hallazgos.length > 0 && `${c.hallazgos.length} ${c.hallazgos.length === 1 ? "hallazgo" : "hallazgos"}`}
             {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </span>
         </button>

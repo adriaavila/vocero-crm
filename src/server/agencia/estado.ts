@@ -22,6 +22,7 @@ import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { coverage, minuteInTz, nextDay, weekdayInTz, type Span } from "@/lib/cobertura";
 import { dayIsoInTz, zonedWallClockToUtc } from "@/lib/time/slots";
 import { getPrioridades } from "@/server/agencia/prioridades";
+import { getSetupProgress } from "@/server/agencia/setup-progress";
 import { orgVersion } from "@/server/events/bus";
 
 /**
@@ -131,8 +132,21 @@ export async function getSystemState(organizationId: string, owner: boolean): Pr
   const working = Math.max(queue.live, jobs[0]?.n ?? 0);
   const whatsapp: WhatsAppLink = creds[0] ? creds[0].status : "missing";
 
+  // Puesta en marcha abierta: la barra lateral dice qué toca, no «falta WhatsApp».
+  // Solo se lee con el agente apagado y para el dueño (es quien puede hacer los pasos).
+  const setup =
+    owner && !agent.on
+      ? await getSetupProgress(organizationId)
+          .then((progress) => {
+            const step = progress.active ? progress.steps.find((s) => s.key === progress.current) : null;
+            return step ? { label: step.label, href: step.href } : null;
+          })
+          .catch(() => null)
+      : null;
+
   return {
     ...systemState({ whatsapp, billingActive, plan: plan.kind, agentOn: agent.on, waiting, working, owner }),
+    setup,
     whatsapp: { status: whatsapp, phone: creds[0]?.phone ?? null },
     waiting,
     working,
