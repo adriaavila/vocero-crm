@@ -49,6 +49,15 @@ describe("SETUP_STEP_CTA", () => {
   });
 });
 
+describe("la puesta en marcha es solo para quien nunca activó", () => {
+  it("un agente apagado que ya activó antes no reabre la alta", () => {
+    const nuevo = deriveSetupProgress(readiness({ whatsappConnected: false }));
+    expect(nuevo.active).toBe(true);
+    const pausado = deriveSetupProgress({ ...readiness(), agentEnabled: false, everActivated: true });
+    expect(pausado.active).toBe(false);
+  });
+});
+
 describe("deriveSetupProgress", () => {
   it("son cuatro pasos, siempre en el mismo orden y con la cuenta fuera", () => {
     const progress = deriveSetupProgress(readiness());

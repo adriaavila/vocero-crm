@@ -6,6 +6,7 @@ import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { activationBlockers, activationError } from "@/server/agencia/activacion";
 import { profileContentChanged } from "@/server/agencia/contenido-perfil";
 import { encenderConversacionesEnEspera } from "@/server/agencia/ia-inicial";
+import { markActivated } from "@/server/agencia/activado";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +82,14 @@ export const PUT = withOwner(async (session, req: Request) => {
     .where(scoped(schema.agentProfile.organizationId, session.organizationId))
     .returning();
   if (!updated[0]) return apiError(404, "not_found", "Perfil no encontrado");
+
+  // La primera activación que pasa queda anotada: a partir de ahí pausar no
+  // vuelve a abrir la puesta en marcha (`lib/activado`). Sin romper la respuesta.
+  if (activating && updated[0].enabled) {
+    await markActivated(session.organizationId).catch((error) => {
+      console.error("[agent/profile] no se pudo anotar la activación", error);
+    });
+  }
 
   // Capa de agencia: encender el agente también despierta las conversaciones
   // que nacieron mientras estaba apagado. Sin esto, el dueño enciende el

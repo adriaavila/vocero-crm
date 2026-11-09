@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -74,6 +74,12 @@ export function LabClient({ initialProgress = null }: { initialProgress?: SetupP
   // dibujaba el estado de primera vez por un segundo (y dejaba lanzar otra prueba).
   const [runsLoaded, setRunsLoaded] = useState(false);
   const [runsFailed, setRunsFailed] = useState(false);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  // Si no pudo lanzar la prueba, el foco pasa al aviso (el botón que se oprimió
+  // volvió a su sitio y quien usa lector de pantalla no oiría nada).
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   const refetchRuns = useCallback(async () => {
     const res = await fetch("/api/lab/runs").catch(() => null);
@@ -185,7 +191,11 @@ export function LabClient({ initialProgress = null }: { initialProgress?: SetupP
         disabled={false}
         hasRuns={runs.length > 0}
       />
-      {error && <p role="alert" className="px-4 pt-3 text-sm text-destructive-text sm:px-6">{error}</p>}
+      {error && (
+        <p ref={errorRef} tabIndex={-1} role="alert" className="px-4 pt-3 text-sm text-destructive-text outline-none sm:px-6">
+          {error}
+        </p>
+      )}
 
       {/* Capa de agencia: el resultado en palabras del dueño y qué corregir.
           Vive en components/agencia/ para que la próxima fusión con upstream

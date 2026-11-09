@@ -104,6 +104,7 @@ export function TuNegocio({
   entries,
   escalationRules,
   progress,
+  saasMode = false,
   hours,
   hoursOpen,
   onHoursOpenChange,
@@ -115,6 +116,8 @@ export function TuNegocio({
   entries: KbEntry[];
   escalationRules: string | null;
   progress: SetupProgress | null;
+  /** Instancia SaaS: ahí Conectar WhatsApp es un paso más de la alta. */
+  saasMode?: boolean;
   /** El horario de respuesta (solo SaaS): se edita aquí y se guarda con el mismo botón. */
   hours: HoursController | null;
   hoursOpen: boolean;
@@ -327,12 +330,26 @@ export function TuNegocio({
 
   // El siguiente paso es el primero sin hacer en el orden compartido
   // (`lib/setup-steps`), el mismo que usan Probar e Inicio.
-  const next = progress?.steps.find((step) => !step.done && step.key !== "negocio");
+  // Fuera del SaaS WhatsApp no es un paso de la alta (se conecta aparte). Y solo
+  // quien NUNCA activó a su agente tiene un «siguiente»: un dueño con el agente
+  // activo (o pausado después de atender) y una prueba vieja o un token vencido
+  // no recibe un «Seguir: …» principal.
+  const next = progress?.active
+    ? progress.steps.find((step) => !step.done && step.key !== "negocio" && (saasMode || step.key !== "whatsapp"))
+    : undefined;
   const negocioDone = progress?.steps.find((step) => step.key === "negocio")?.done ?? false;
   const busy = status === "saving";
   // Guardado y sin cambios: lo que toca es seguir, y «Guardar» no tiene nada
   // que guardar. Vuelve en cuanto algo cambia.
   const showNext = negocioDone && !dirty && !busy && Boolean(next);
+  // «Guardar» solo cuando hay algo que guardar (o se está guardando); en una
+  // alta sin nada escrito sigue ahí, quieto, para que se vea la acción.
+  const showSave = dirty || busy || !negocioDone;
+  const nextLink = useRef<HTMLAnchorElement>(null);
+  // Tras guardar, el foco pasa a «Seguir»: «Guardar» desapareció con el foco encima.
+  useEffect(() => {
+    if (status === "saved" && showNext) nextLink.current?.focus();
+  }, [status, showNext]);
 
   return (
     <Card id="negocio" className="scroll-mt-4">
@@ -623,11 +640,11 @@ export function TuNegocio({
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           {showNext && next ? (
-            <Link href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
+            <Link ref={nextLink} href={next.href} className={buttonVariants({ className: "min-h-11 w-full sm:w-auto" })}>
               {SETUP_STEP_CTA[next.key]}
               <ArrowRight className="h-4 w-4" aria-hidden="true" />
             </Link>
-          ) : (
+          ) : showSave ? (
             <Button type="button" className="min-h-11 w-full sm:w-auto" disabled={!dirty || busy} onClick={() => void save()}>
               {busy ? (
                 <>
@@ -637,7 +654,7 @@ export function TuNegocio({
                 "Guardar mi negocio"
               )}
             </Button>
-          )}
+          ) : null}
           <span role="status" className="min-h-5 text-sm text-text-2">
             {status === "saved" && !dirty && (
               <span className="inline-flex items-center gap-1.5">

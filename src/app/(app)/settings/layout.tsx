@@ -18,12 +18,14 @@ export default async function SettingsLayout({
   const session = await requireSession();
   const saas = isAllokSaaSMode();
   const saasPro = saas && await hasSaaSPlan(session.organizationId, "pro");
-  // Puesta en marcha en «Conectar WhatsApp»: esa pantalla se ve sin la fila de
-  // pestañas (ver `SettingsNav`). Solo la hace el dueño, y solo en el SaaS.
+  // El dueño en el paso «Conectar WhatsApp» de una alta que nunca se activó ve
+  // esa pantalla sin la fila de pestañas, y SOLO esa (ver `SettingsNav`): desde
+  // cualquier otro paso Configuración es la de siempre y Facturación está a un
+  // toque. La misma lectura la hace la página de WhatsApp (`cache` de React).
   const setupWhatsapp =
     saas && session.role === "owner"
       ? await getSetupProgress(session.organizationId)
-          .then((progress) => progress.active && progress.steps.some((step) => step.key === "whatsapp" && !step.done))
+          .then((progress) => progress.active && progress.current === "whatsapp")
           .catch(() => false)
       : false;
   return (

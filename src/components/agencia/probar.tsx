@@ -46,7 +46,7 @@ export function ProbarPanel({
   onApplied: () => void;
   initialProgress?: SetupProgress | null;
 }) {
-  const { progress, reload } = useSetup(initialProgress);
+  const { progress, gate, reload } = useSetup(initialProgress);
   const latest = runs[0] ?? null;
   // null = el detalle todavía no llegó. El veredicto NO espera por él (sale de
   // `redCount`, que ya viene con la lista de corridas): solo la lista de casos.
@@ -107,7 +107,7 @@ export function ProbarPanel({
           <p className="max-w-2xl text-sm leading-6 text-text-2" role="status">
             {kind === "en_curso" && runProgress
               ? `Seis clientes simulados están conversando con tu agente (${runProgress.done} de ${runProgress.total}).`
-              : BODY[kind](latest?.score ?? null, reds, next?.key ?? null)}
+              : BODY[kind](latest?.score ?? null, reds, next?.key ?? null, gate.kind === "ready")}
           </p>
 
           {loadingCases && (
@@ -168,7 +168,7 @@ const TITLE: Record<ProbarKind, string> = {
 };
 
 /** `next`: el paso que falta después de probar (null con el agente ya activo). */
-const BODY: Record<ProbarKind, (score: number | null, reds: number, next: SetupStepKey | null) => string> = {
+const BODY: Record<ProbarKind, (score: number | null, reds: number, next: SetupStepKey | null, canActivate: boolean) => string> = {
   sin_prueba: () =>
     "Seis clientes simulados le escriben con casos reales: precios, dudas, reclamos. Un revisor califica cada respuesta, y así ves cómo contesta antes de que hable con tus clientes de verdad.",
   en_curso: () => "Seis clientes simulados están conversando con tu agente.",
@@ -185,8 +185,10 @@ const BODY: Record<ProbarKind, (score: number | null, reds: number, next: SetupS
     }`,
   vieja: (score) =>
     `Sacó ${score} de 100, pero cambiaste tu información después de esa prueba. Vuelve a probar para asegurarte de que sigue contestando bien.`,
-  revisar: (score, reds) =>
-    `${resumenDeResultado(score, reds) ?? ""} Puedes activarlo igual: tú decides si ya te gusta cómo responde. Si quieres mejorarlo, esto es lo que puedes corregir y volver a probar.`.trim(),
+  // «Puedes activarlo igual» solo cuando Activar de verdad deja (la misma lectura,
+  // `gate`): con WhatsApp sin conectar sería prometer lo que todavía no se puede.
+  revisar: (score, reds, _next, canActivate) =>
+    `${resumenDeResultado(score, reds) ?? ""}${canActivate ? " Puedes activarlo igual: tú decides si ya te gusta cómo responde." : ""} Si quieres mejorarlo, esto es lo que puedes corregir y volver a probar.`.trim(),
 };
 
 function Verdict({ kind, score, reds }: { kind: ProbarKind; score: number | null; reds: number }) {
@@ -218,7 +220,7 @@ function CaseFix({ item, onApplied }: { item: CaseToFix; onApplied: () => void }
       <p className="flex items-center gap-2 text-sm font-semibold">
         {item.red ? <GraveDot /> : <StateDot state="pausado" size={8} decorative />}
         <span className="break-words">{item.label}</span>
-        <span className="text-xs font-normal text-text-3">{item.red ? "Grave" : "A mejorar"}</span>
+        <span className="whitespace-nowrap text-xs font-normal text-text-3">{item.red ? "Grave" : "A mejorar"}</span>
       </p>
       <ul className="mt-2 space-y-3">
         {item.hallazgos.map((h) => (

@@ -249,7 +249,10 @@ export function AgentClient({
     target?.focus({ preventScroll: true });
   }
 
-  const showProgress = progress?.active ?? false;
+  // La alta (sin interruptor, con el avance) es del SaaS y de quien nunca activó
+  // a su agente; una instancia dedicada, o un agente pausado después de atender,
+  // conserva la pantalla de siempre.
+  const showProgress = saasMode && (progress?.active ?? false);
   const hasAnyHours = hours.settings
     ? hours.settings.responseMode === "all_day" || Object.values(hours.settings.weeklyHours).some((d) => d?.length)
     : true;
@@ -322,6 +325,7 @@ export function AgentClient({
           entries={entries}
           escalationRules={profile.escalationRules}
           progress={progress}
+          saasMode={saasMode}
           hours={saasMode ? hours : null}
           hoursOpen={hoursOpen || (hours.loaded && !hasAnyHours)}
           onHoursOpenChange={setHoursOpen}

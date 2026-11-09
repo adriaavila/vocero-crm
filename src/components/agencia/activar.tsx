@@ -132,8 +132,11 @@ function Summary({
   activation,
   hours,
   onScheduleChange,
+  showNow,
 }: {
   activation: ActivationSummary;
+  /** «Ahora mismo responde tu agente»: solo es cierto con el agente encendido. */
+  showNow: boolean;
   hours?: HoursController | null;
   onScheduleChange?: () => void;
 }) {
@@ -156,9 +159,11 @@ function Summary({
           <div className="space-y-2">
             {/* Con la elección a la vista, la regla escrita sobra: la dice la opción marcada. */}
             {choosing && hours ? <ModoRespuesta hours={hours} onChange={onScheduleChange} /> : <p>{schedule.rule}</p>}
-            <p className="text-text-2">
-              {schedule.now} <span className="text-text-3">({schedule.timezone})</span>
-            </p>
+            {showNow && (
+              <p className="text-text-2">
+                {schedule.now} <span className="text-text-3">({schedule.timezone})</span>
+              </p>
+            )}
             {choosing && hours?.settings?.responseMode === "outside_hours" && (
               // Un ancla de esta misma pantalla: abre el horario dentro de «Más ajustes».
               <a
@@ -318,7 +323,7 @@ export function ActivarSection({
 
         {activation && (
           <>
-            {enabled && <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} />}
+            {enabled && <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} showNow />}
 
             {blockers.length > 0 && (
               <div className="space-y-2">
@@ -370,7 +375,7 @@ export function ActivarSection({
               </p>
             )}
             {!enabled && gate.kind === "ready" && (
-              <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} />
+              <Summary activation={activation} hours={hours} onScheduleChange={onScheduleChange} showNow={false} />
             )}
           </>
         )}

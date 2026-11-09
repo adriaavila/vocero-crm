@@ -10,6 +10,7 @@ import { businessHoursFromProfile, hasConfiguredBusinessHours } from "@/server/b
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 import { looksGood } from "@/lib/probar";
+import { hasEverActivated } from "@/server/agencia/activado";
 
 export type ReadinessStepId =
   | "whatsapp"
@@ -32,6 +33,8 @@ export type ReadinessStep = {
 export type ReadinessResponse = {
   overall: "ready" | "needs_attention";
   agentEnabled: boolean;
+  /** Ya encendió al agente alguna vez (ver `lib/activado`): la puesta en marcha es solo para quien no. */
+  everActivated: boolean;
   steps: ReadinessStep[];
   latestLab: { score: number; redCount: number; finishedAt: string } | null;
   optional: { brandingCustomized: boolean; teamMemberCount: number };
@@ -81,6 +84,8 @@ type Input = {
   saasMode?: boolean;
   /** Capa de agencia: el paso de la agenda, o null si esta instancia no agenda. */
   agendaStep: PasoAgenda | null;
+  /** Ya encendió al agente alguna vez; sin dato, solo cuenta que esté encendido ahora. */
+  everActivated?: boolean;
 };
 
 export function evaluateReadiness(input: Input): ReadinessResponse {
@@ -183,7 +188,7 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
         : simulationStatus === "stale"
           ? "El agente cambió desde la última evaluación. Vuelve a probarlo."
           : latestRun?.finishedAt
-            ? "Necesitas 80 de 100 o más y cero casos rojos."
+            ? "Necesitas 80 de 100 o más y cero casos graves."
             : "Pruébalo una vez antes de hablar con tus clientes.",
       href: "/lab",
     },
@@ -215,6 +220,7 @@ export function evaluateReadiness(input: Input): ReadinessResponse {
   return {
     overall: blockingSteps.length === 0 ? "ready" : "needs_attention",
     agentEnabled: profile.enabled,
+    everActivated: profile.enabled || Boolean(input.everActivated),
     steps,
     latestLab: latestRun?.finishedAt && latestRun.score !== null
       ? { score: latestRun.score, redCount: input.redCount, finishedAt: latestRun.finishedAt.toISOString() }
@@ -268,5 +274,6 @@ export async function getReadiness(organizationId: string): Promise<ReadinessRes
     businessHoursConfigured: hasConfiguredBusinessHours(businessHours),
     saasMode: isAllokSaaSMode(),
     agendaStep: await pasoAgenda(organizationId),
+    everActivated: await hasEverActivated(organizationId, profile.enabled),
   });
 }

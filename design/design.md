@@ -113,9 +113,13 @@ itálicas de adorno.
   Inicio. Cada paso es punto + palabra: listo es *all ok* (verde, «Listo»), el
   que toca es **un punto de tinta** («Ahora») y el resto *pausado* (gris,
   «Pendiente»). En el teléfono es una fila: los cuatro puntos y el nombre del
-  paso de ahora. Crear la cuenta pasa antes y no es un paso. **Sin contadores
-  escritos a mano** («paso 2 de 6»): el avance sale del servidor o no se dice.
-  Con el agente activo no se dibuja: el dueño que vuelve ve su operación.
+  paso de ESTA pantalla con su «Paso 3 de 4» (contado de la lista, no escrito),
+  y un aro en su punto; si queda un paso anterior abierto, «Primero: Tu negocio».
+  Crear la cuenta pasa antes y no es un paso. **Sin contadores escritos a
+  mano** («paso 2 de 6»): el avance sale del servidor o no se dice. Solo existe
+  para quien **nunca** activó a su agente (`metadata.allok.activatedAt`, ver
+  `lib/activado`): con el agente activo, o pausado después de atender, no se
+  dibuja, no se esconde el interruptor y el lateral dice «Pausado».
 - **Tarjeta del número** (`whatsapp-conexion.tsx`): el número y tres hechos por
   separado, cada uno con su evidencia: vinculado, *recibimos mensajes* y
   *enviamos respuestas* (última respuesta que WhatsApp entregó), o «Por

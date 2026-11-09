@@ -47,10 +47,11 @@ export type SetupProgress = {
   /** El primer paso sin terminar; null cuando los cuatro están listos. */
   current: SetupStepKey | null;
   /**
-   * La puesta en marcha sigue abierta: el agente todavía no está activo. Con
-   * el agente activo ya no es una configuración sino mantenimiento, y las
-   * pantallas no dibujan el avance (un dueño que vuelve ve su operación, no un
-   * asistente de alta).
+   * La puesta en marcha sigue abierta: el agente no está activo Y nunca lo
+   * estuvo. Con el agente activo, o pausado después de haber atendido, ya no es
+   * una configuración sino mantenimiento, y las pantallas no dibujan el avance
+   * (un dueño que vuelve ve su operación, no un asistente de alta). «Nunca lo
+   * estuvo» sale de `readiness.everActivated` (ver `lib/activado`).
    */
   active: boolean;
 };
@@ -81,7 +82,7 @@ export function deriveSetupProgress(readiness: ReadinessResponse): SetupProgress
   return {
     steps,
     current: steps.find((step) => !step.done)?.key ?? null,
-    active: !done.activar,
+    active: !done.activar && !readiness.everActivated,
   };
 }
 
