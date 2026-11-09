@@ -81,6 +81,8 @@ export function ProbarPanel({
   // siempre conectar WhatsApp): antes decía «Ya puedes activarlo» y llevaba a
   // Activar, donde lo primero era «Conecta tu WhatsApp».
   const agentOn = progress ? !progress.active : false;
+  // «Puedes activarlo igual» es para quien aún no lo activó, no para un agente ya encendido.
+  const activarDone = progress?.steps.find((step) => step.key === "activar")?.done ?? false;
   const next = agentOn ? null : (progress?.steps.find((step) => !step.done && step.key !== "probar") ?? null);
   const reds = latest?.redCount ?? (cases ?? []).filter((c) => c.veredicto === "rojo").length;
   const kind = probarKind({
@@ -107,7 +109,7 @@ export function ProbarPanel({
           <p className="max-w-2xl text-sm leading-6 text-text-2" role="status">
             {kind === "en_curso" && runProgress
               ? `Seis clientes simulados están conversando con tu agente (${runProgress.done} de ${runProgress.total}).`
-              : BODY[kind](latest?.score ?? null, reds, next?.key ?? null, gate.kind === "ready")}
+              : BODY[kind](latest?.score ?? null, reds, next?.key ?? null, gate.kind === "ready" && !activarDone)}
           </p>
 
           {loadingCases && (

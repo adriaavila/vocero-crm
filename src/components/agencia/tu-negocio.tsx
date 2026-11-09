@@ -342,9 +342,9 @@ export function TuNegocio({
   // Guardado y sin cambios: lo que toca es seguir, y «Guardar» no tiene nada
   // que guardar. Vuelve en cuanto algo cambia.
   const showNext = negocioDone && !dirty && !busy && Boolean(next);
-  // «Guardar» solo cuando hay algo que guardar (o se está guardando); en una
-  // alta sin nada escrito sigue ahí, quieto, para que se vea la acción.
-  const showSave = dirty || busy || !negocioDone;
+  // «Guardar» se esconde SOLO cuando «Seguir» lo reemplaza; en cualquier otro
+  // caso (alta sin nada escrito, dueño activo, instancia dedicada) sigue ahí.
+  const showSave = dirty || busy || !negocioDone || !next;
   const nextLink = useRef<HTMLAnchorElement>(null);
   // Tras guardar, el foco pasa a «Seguir»: «Guardar» desapareció con el foco encima.
   useEffect(() => {

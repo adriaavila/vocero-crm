@@ -1,25 +1,33 @@
 import { and, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
-import { activatedAtFromMetadata, everActivatedFrom } from "@/lib/activado";
+import { DEMO_WAMID_LIKE, resolveEverActivated } from "@/lib/activado";
 import { getOrganizationForBillingLocked } from "@/server/saas/billing";
 
 /** ¿El negocio ya encendió alguna vez a su agente? Ver `lib/activado`. */
 export async function hasEverActivated(organizationId: string, enabled: boolean): Promise<boolean> {
-  if (enabled) return true;
   const db = getDb();
   const [org] = await db
-    .select({ metadata: schema.organization.metadata })
+    .select({ metadata: schema.organization.metadata, createdAt: schema.organization.createdAt })
     .from(schema.organization)
     .where(eq(schema.organization.id, organizationId))
     .limit(1);
-  if (activatedAtFromMetadata(org?.metadata)) return true;
-  const real = await db.execute(sql`
-    select 1 from message m
-    join conversation c on c.id = m.conversation_id
-    where m.organization_id = ${organizationId}
-      and m.direction = 'out' and m.ai_generated = true and c.is_test = false
-    limit 1`);
-  return everActivatedFrom({ enabled, metadata: org?.metadata, hasRealAiOutbound: real.length > 0 });
+  return resolveEverActivated({
+    enabled,
+    metadata: org?.metadata,
+    createdAt: org?.createdAt,
+    hasRealAiOutbound: async () => {
+      const real = await db.execute(sql`
+        select 1 from message m
+        join conversation c on c.id = m.conversation_id
+        where m.organization_id = ${organizationId}
+          and m.direction = 'out' and m.ai_generated = true and c.is_test = false
+          and (m.wa_message_id is null or m.wa_message_id not like ${DEMO_WAMID_LIKE})
+        limit 1`);
+      return real.length > 0;
+    },
+    mark: () => markActivated(organizationId),
+    onMarkError: (error) => console.error("[activado] no se pudo anotar la activación", error),
+  });
 }
 
 /**
