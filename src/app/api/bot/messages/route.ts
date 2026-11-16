@@ -8,6 +8,8 @@ import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { SendError, sendText } from "@/server/inbox/send";
 import { persistTestOutbound } from "@/server/ai/pipeline";
 
+import { tarjetasTrasRespuestaEnFondo } from "@/server/agencia/sala-agente";
+
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
@@ -100,6 +102,11 @@ export async function POST(req: Request) {
       dispatchId: body.data.dispatchId,
       seq: body.data.seq,
     });
+    // Fork — si Nea nombró una o dos casas, va su tarjeta detrás (foto,
+    // precio, «Quiero visitar»). Un reintento duplicado no la repite.
+    if (!result.duplicate) {
+      tarjetasTrasRespuestaEnFondo({ organizationId, conversationId: conv.id, texto: body.data.text });
+    }
     return Response.json(
       result.duplicate
         ? { messageId: result.messageId, duplicate: true }
