@@ -21,6 +21,8 @@ const bodySchema = z.object({
   responseMode: z.enum(["outside_hours", "all_day"]),
   // Fork — pausa que vence: 0 = nunca, null = default (12 h).
   handoffResumeHours: z.number().int().min(0).max(168).nullable().optional(),
+  // Fork — respaldo: minutos dentro del horario; null o 0 = apagado.
+  backupMinutes: z.number().int().min(0).max(60).nullable().optional(),
 });
 
 export const GET = withOwner(async (session) => {
@@ -40,6 +42,14 @@ export const PUT = withOwner(async (session, request: Request) => {
     !(await hasSaaSPlan(session.organizationId, "pro"))
   ) {
     return apiError(402, "pro_required", "La atención todo el día está disponible en Completo.");
+  }
+  if (
+    isAllokSaaSMode() &&
+    body.data.responseMode === "outside_hours" &&
+    (body.data.backupMinutes ?? 0) > 0 &&
+    !(await hasSaaSPlan(session.organizationId, "pro"))
+  ) {
+    return apiError(402, "pro_required", "El respaldo dentro de tu horario está disponible en Completo.");
   }
 
   try {

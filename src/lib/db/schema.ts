@@ -867,6 +867,13 @@ export const agentProfile = pgTable(
      */
     handoffResumeHours: integer("handoff_resume_hours"),
     /**
+     * Fork — respaldo: en «Cuando no atiendes tú», minutos que el agente le
+     * da al equipo DENTRO de su horario antes de contestar a un cliente que
+     * nadie atendió. NULL o 0 = apagado (el cliente espera al equipo). Ver
+     * `respaldoPermite` en `server/business-hours.ts`.
+     */
+    backupMinutes: integer("backup_minutes"),
+    /**
      * Fork — seguimiento: horas de silencio del cliente (tras la última
      * respuesta del agente) antes de que el agente le escriba UNA vez para
      * retomar. NULL o 0 = apagado. Ver `server/agencia/seguimiento.ts`.
