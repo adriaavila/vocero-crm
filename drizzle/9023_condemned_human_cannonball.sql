@@ -1,0 +1,1 @@
+ALTER TABLE "agent_profile" ADD COLUMN "backup_minutes" integer;

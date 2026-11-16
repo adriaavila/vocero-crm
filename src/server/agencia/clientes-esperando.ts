@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { canAgentRespondNow } from "@/server/business-hours";
+import { canAgentRespondNow, esperaDelCliente, respaldoDelNegocio, respaldoPermite } from "@/server/business-hours";
 
 /**
  * Fork — nadie se queda esperando cuando termina el horario del equipo.
@@ -25,6 +25,9 @@ import { canAgentRespondNow } from "@/server/business-hours";
  *    `CONVERSACION_HUMANA`, el agente no se mete en esa charla (lo mismo que
  *    decide la pausa manual al vencer: contestar un «ok, gracias» horas
  *    después sería peor que callar).
+ *
+ * Con respaldo (`backupMinutes`, ver `respaldoPermite`) el mismo barrido
+ * también le pide el turno DENTRO del horario a quien ya esperó esos minutos.
  *
  * Cada mensaje se intenta una sola vez por proceso (`intentados`): si el
  * turno no llega a decidir (sin modelo configurado, cupo de prueba agotado),
@@ -110,6 +113,7 @@ export async function barrerClientesEsperando(
   if (candidatos.length === 0) return 0;
   const vistos = intentados();
   const abierto = new Map<string, boolean>();
+  const respaldos = new Map<string, Awaited<ReturnType<typeof respaldoDelNegocio>>>();
   let total = 0;
   for (const c of candidatos) {
     const llave = `${c.conversationId}:${c.lastInboundAt.getTime()}`;
@@ -119,7 +123,20 @@ export async function barrerClientesEsperando(
       puede = await canAgentRespondNow(c.organizationId, now);
       abierto.set(c.organizationId, puede);
     }
-    if (!puede) continue;
+    // Respaldo: el turno del negocio está cerrado para el agente, pero este
+    // cliente pudo esperar ya lo que el dueño eligió. Se mira chat por chat.
+    // No se marca como intentado si todavía no toca: el barrido vuelve a
+    // mirarlo el minuto siguiente.
+    if (!puede) {
+      let respaldo = respaldos.get(c.organizationId);
+      if (respaldo === undefined) {
+        respaldo = await respaldoDelNegocio(c.organizationId);
+        respaldos.set(c.organizationId, respaldo);
+      }
+      if (!respaldo) continue;
+      const espera = await esperaDelCliente(c.organizationId, c.conversationId);
+      if (!respaldoPermite(respaldo.settings, respaldo.pro, espera, now)) continue;
+    }
     if (vistos.size >= MAX_INTENTADOS) vistos.clear();
     vistos.add(llave);
     await schedule(c.conversationId, c.organizationId);
