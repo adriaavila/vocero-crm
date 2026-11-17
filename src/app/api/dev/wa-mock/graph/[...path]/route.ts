@@ -33,6 +33,13 @@ const CAPI_EVENT_NAMES = new Set([
   "ReviewProvided",
 ]);
 
+/** La app de Meta "dueña" del token en el mock (la que queda suscrita). */
+const MOCK_APP = {
+  id: "mock-app",
+  name: "App de prueba Vocero",
+  link: "https://www.facebook.com/games/?app_id=mock-app",
+};
+
 function bearerToken(req: Request): string {
   const h = req.headers.get("authorization") ?? "";
   return h.startsWith("Bearer ") ? h.slice(7) : "";
@@ -137,25 +144,6 @@ export async function GET(req: Request, ctx: Params) {
     });
   }
 
-  // Fork — Embedded Signup en la app: GET {wabaId}/subscribed_apps → relee el
-  // override que dejó el POST de abajo (o vacío si nunca se llamó).
-  if (path.length === 2 && path[1] === "subscribed_apps") {
-    const state = getWaMockState();
-    const override = state.subscribedApps[path[0]!];
-    return Response.json({
-      data: override
-        ? [
-            {
-              id: process.env.META_APP_ID ?? "app-id-de-mentira",
-              name: "mock-app",
-              override_callback_uri: override.overrideCallbackUri,
-              subscribed_fields: ["messages"],
-            },
-          ]
-        : [],
-    });
-  }
-
   // GET {wabaId}/message_templates → lista para el sync
   if (path.length === 2 && path[1] === "message_templates") {
     const state = getWaMockState();
@@ -168,6 +156,24 @@ export async function GET(req: Request, ctx: Params) {
         status: t.status,
         components: t.components ?? [{ type: "BODY", text: t.body }],
       })),
+    });
+  }
+
+  // GET {wabaId}/subscribed_apps → la app suscrita y, si lo hay, su override
+  // de callback. Misma forma que Meta; sin suscripción, `data` vacío.
+  if (path.length === 2 && path[1] === "subscribed_apps") {
+    const sub = getWaMockState().wabaSubscriptions[path[0]!];
+    return Response.json({
+      data: sub
+        ? [
+            {
+              whatsapp_business_api_data: MOCK_APP,
+              ...(sub.overrideCallbackUri
+                ? { override_callback_uri: sub.overrideCallbackUri }
+                : {}),
+            },
+          ]
+        : [],
     });
   }
 
@@ -406,19 +412,18 @@ export async function POST(req: Request, ctx: Params) {
     return Response.json({ id: tpl.id, status: "PENDING", category: tpl.category });
   }
 
-  // POST {wabaId}/subscribed_apps → suscripción (con o sin override). Fork:
-  // con `override_callback_uri` se guarda para que el GET de arriba lo relea
-  // (verificación de Embedded Signup); sin él es la suscripción simple de
-  // siempre (modo directo, `connect.ts`) y no toca lo ya guardado.
+  // POST {wabaId}/subscribed_apps → suscribe la app. Como en Meta, el override
+  // de callback se fija mandándolo en el cuerpo y un POST SIN él lo BORRA
+  // ("Delete WABA alternate callback"): un CRM que re-suscribe a ciegas
+  // desconecta aquí al cerebro externo igual que en producción.
   if (path.length === 2 && path[1] === "subscribed_apps") {
-    const overrideCallbackUri = typeof body.override_callback_uri === "string" ? body.override_callback_uri : null;
-    if (overrideCallbackUri) {
-      const state = getWaMockState();
-      state.subscribedApps[path[0]!] = {
-        overrideCallbackUri,
-        verifyToken: typeof body.verify_token === "string" ? body.verify_token : "",
-      };
-    }
+    const uri =
+      typeof body.override_callback_uri === "string"
+        ? body.override_callback_uri.trim()
+        : "";
+    getWaMockState().wabaSubscriptions[path[0]!] = {
+      overrideCallbackUri: uri || null,
+    };
     return Response.json({ success: true });
   }
 
