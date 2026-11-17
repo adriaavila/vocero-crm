@@ -45,9 +45,6 @@ export type CapiMockEvent = {
   at: string;
 };
 
-/** Fork — Embedded Signup en la app: override de webhook guardado por WABA. */
-export type MockSubscribedApp = { overrideCallbackUri: string; verifyToken: string };
-
 /**
  * Fork — Embedded Signup en la app: cada `POST {phone}/smb_app_data`. Meta no
  * tiene un GET para releer esto, así que el self-test lo verifica por aquí
@@ -61,30 +58,46 @@ export type MockSmbAppDataRequest = {
   at: string;
 };
 
+/**
+ * La suscripción de la app a una WABA (`{WABA}/subscribed_apps`), con su
+ * override de callback si alguien lo configuró. Existe para que el self-test
+ * pueda comprobar que guardar la conexión NO borra el override de un cerebro
+ * externo: en Meta, un POST sin cuerpo lo elimina, y el mock hace lo mismo.
+ * El alta guiada del fork (Embedded Signup) relee aquí el override que fijó.
+ */
+export type MockWabaSubscription = {
+  overrideCallbackUri: string | null;
+};
+
 type WaMockState = {
   outbox: OutboxEntry[];
   templates: MockTemplate[];
   capiEvents: CapiMockEvent[];
+  /** Por WABA ID. Sin entrada = la app no está suscrita a esa WABA. */
+  wabaSubscriptions: Record<string, MockWabaSubscription>;
   counter: number;
   // Fork — Embedded Signup en la app.
-  subscribedApps: Record<string, MockSubscribedApp>;
   registeredPhones: Set<string>;
   smbAppDataRequests: MockSmbAppDataRequest[];
 };
 
 const globalForMock = globalThis as unknown as { __waMockState?: WaMockState };
 
+function freshState(counter = 0): WaMockState {
+  return {
+    outbox: [],
+    templates: [],
+    capiEvents: [],
+    wabaSubscriptions: {},
+    counter,
+    registeredPhones: new Set(),
+    smbAppDataRequests: [],
+  };
+}
+
 export function getWaMockState(): WaMockState {
   if (!globalForMock.__waMockState) {
-    globalForMock.__waMockState = {
-      outbox: [],
-      templates: [],
-      capiEvents: [],
-      counter: 0,
-      subscribedApps: {},
-      registeredPhones: new Set(),
-      smbAppDataRequests: [],
-    };
+    globalForMock.__waMockState = freshState();
   }
   return globalForMock.__waMockState;
 }
@@ -95,16 +108,7 @@ export function resetWaMockState(): void {
   // el segundo `_reset` volvía a emitir `…out.<sello>.1`, que ya existía, y el
   // envío moría con un 500 por el UNIQUE de `wa_message_id`. Se leía como un
   // fallo del producto y no lo era.
-  const counter = globalForMock.__waMockState?.counter ?? 0;
-  globalForMock.__waMockState = {
-    outbox: [],
-    templates: [],
-    capiEvents: [],
-    counter,
-    subscribedApps: {},
-    registeredPhones: new Set(),
-    smbAppDataRequests: [],
-  };
+  globalForMock.__waMockState = freshState(globalForMock.__waMockState?.counter ?? 0);
 }
 
 export function nextN(): number {
