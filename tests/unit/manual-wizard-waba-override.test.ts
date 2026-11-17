@@ -66,6 +66,26 @@ describe("asistente manual sobre una WABA que ya tiene override", () => {
     expect(apps.map((app) => app.override_callback_uri)).toEqual([OVERRIDE]);
   });
 
+  it("si Meta no responde a la consulta, tampoco se toca el override", async () => {
+    const { fijarOverride, subscribeAppToWaba, listSubscribedApps } = await modules();
+    await fijarOverride("WABA-1");
+    const mock = globalThis.fetch;
+    let caida = true; // solo la primera llamada (el GET previo) se pierde
+    vi.stubGlobal("fetch", (...args: Parameters<typeof fetch>) => {
+      if (caida) {
+        caida = false;
+        return Promise.reject(new Error("red caída"));
+      }
+      return mock(...args);
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await subscribeAppToWaba("WABA-1", TOKEN);
+
+    const apps = await listSubscribedApps("WABA-1", TOKEN);
+    expect(apps.map((app) => app.override_callback_uri)).toEqual([OVERRIDE]);
+  });
+
   it("sin override, guardar sigue suscribiendo la app (modo directo)", async () => {
     const { subscribeAppToWaba, listSubscribedApps } = await modules();
     expect(await listSubscribedApps("WABA-2", TOKEN)).toEqual([]);

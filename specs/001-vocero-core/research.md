@@ -72,7 +72,8 @@ Authorization: Bearer {token con whatsapp_business_management}
   **Solo si la WABA no tiene ya un override**: antes se consulta
   `GET {WABA_ID}/subscribed_apps` y, si alguna app trae `override_callback_uri`,
   no se re-suscribe (ese POST sin campos lo borraría y desconectaría al backend
-  de la agencia o al cerebro externo). Si la consulta falla, se suscribe igual.
+  de la agencia o al cerebro externo). Si la consulta falla, tampoco se
+  suscribe (fork): sin leer no se sabe si hay un override que borrar.
 
 ## DV-VC-05 — Cifrado de credenciales: AES-256-GCM
 

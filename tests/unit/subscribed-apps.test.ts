@@ -133,20 +133,34 @@ describe("subscribeAppToWaba — sin override (modo directo)", () => {
 });
 
 describe("subscribeAppToWaba — la consulta falla", () => {
-  it("se conserva el POST best-effort de siempre", async () => {
-    graphRequest
-      .mockRejectedValueOnce(
-        new MetaApiError("(#200) Permissions error", { status: 403, code: 200 })
-      )
-      .mockResolvedValueOnce({ success: true });
+  // Fork: upstream conserva aquí el POST best-effort. Sin poder leer no se
+  // sabe si hay un override, y ese POST lo borraría.
+  it("NO re-suscribe: sin leer no se sabe si hay un override", async () => {
+    graphRequest.mockRejectedValueOnce(
+      new MetaApiError("No se pudo contactar la API de Meta", { status: 0 })
+    );
 
-    await expect(subscribeAppToWaba(WABA, TOKEN)).resolves.toBe("subscribed");
-    expect(posts()).toHaveLength(1);
+    await expect(subscribeAppToWaba(WABA, TOKEN)).resolves.toBe("failed");
+    expect(calls()).toHaveLength(1);
+    expect(posts()).toHaveLength(0);
   });
 
-  it("si también falla la suscripción, lo registra y NO lanza (guardar sigue)", async () => {
+  it("tampoco con un error de permisos; lo registra y NO lanza (guardar sigue)", async () => {
+    graphRequest.mockRejectedValueOnce(
+      new MetaApiError("(#200) Permissions error", { status: 403, code: 200 })
+    );
+
+    await expect(subscribeAppToWaba(WABA, TOKEN)).resolves.toBe("failed");
+    expect(posts()).toHaveLength(0);
+    expect(warn).toHaveBeenCalled();
+    expect(consoleText()).not.toContain(TOKEN);
+  });
+});
+
+describe("subscribeAppToWaba — la suscripción falla", () => {
+  it("lo registra y NO lanza (guardar sigue)", async () => {
     graphRequest
-      .mockRejectedValueOnce(new MetaApiError("No se pudo contactar la API de Meta", { status: 0 }))
+      .mockResolvedValueOnce({ data: [] })
       .mockRejectedValueOnce(new MetaApiError("No se pudo contactar la API de Meta", { status: 0 }));
 
     await expect(subscribeAppToWaba(WABA, TOKEN)).resolves.toBe("failed");

@@ -82,8 +82,12 @@ export type SubscribeOutcome = "subscribed" | "override_kept" | "failed";
  * cada "Guardar" —o al rotar el token— lo desconectaba en silencio. Por eso
  * primero se consulta y, si alguna app tiene override, se respeta.
  *
- * Best-effort de punta a punta: si la consulta falla se suscribe como antes, y
- * si la suscripción falla se registra y sigue. Jamás lanza.
+ * Best-effort de punta a punta: si la consulta o la suscripción fallan, se
+ * registra y sigue. Jamás lanza.
+ *
+ * Fork: si la consulta falla NO se suscribe (upstream sí lo hace). Sin poder
+ * leer no se sabe si hay un override, y perder un webhook que ya funciona es
+ * peor que tener que guardar otra vez cuando Meta responda.
  */
 export async function subscribeAppToWaba(
   wabaId: string,
@@ -109,9 +113,10 @@ export async function subscribeAppToWaba(
     }
   } catch (err) {
     console.warn(
-      "[connect] no se pudo consultar subscribed_apps; se suscribe igual (best-effort):",
+      "[connect] no se pudo consultar subscribed_apps; no se re-suscribe (podría borrar un override):",
       err instanceof Error ? err.message : err
     );
+    return "failed";
   }
 
   try {
