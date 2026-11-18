@@ -50,6 +50,12 @@ const prefixes = {
   pushSubscription: "psub",
   // Fork — avisos de cumplimiento de Meta (desautorizar / borrar datos).
   metaSolicitud: "msol",
+  // Fork — vertical restaurante: menú y pedidos.
+  menuCategory: "mcat",
+  menuItem: "mit",
+  menuExtra: "mex",
+  customerOrder: "ord",
+  customerOrderItem: "oit",
 } as const;
 
 export type IdKind = keyof typeof prefixes;

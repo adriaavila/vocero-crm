@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-const bodySchema = z.object({ vertical: z.enum(["inmobiliario"]).nullable() }).strict();
+const bodySchema = z.object({ vertical: z.enum(["inmobiliario", "restaurante"]).nullable() }).strict();
 
 /**
  * Fork (agencia): enciende o apaga el módulo vertical de un negocio desde el

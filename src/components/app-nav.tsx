@@ -29,6 +29,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandLogo } from "@/components/brand-mark";
 // Capa de agencia: la cabecera del SaaS (all ● k + estado + número).
 import { AllokNavHead } from "@/components/agencia/allok/nav-head";
+// Fork — vertical restaurante: Pedidos y Menú.
+import { RESTAURANTE_NAV } from "@/components/agencia/restaurante/nav";
 import {
   Tooltip,
   TooltipContent,
@@ -124,10 +126,13 @@ export function buildAllokNav(
   realty: boolean = false,
   // Se conserva por compatibilidad de llamada: ya no se usa (la pantalla de
   // pruebas se llama igual en todas partes: «Probar tu agente»).
-  _productLabel = "allok"
+  _productLabel = "allok",
+  // Fork — vertical restaurante: Pedidos y Menú, después de Conversaciones.
+  restaurante = false
 ): NavItem[] {
+  const base = allokNavItems();
   return [
-    ...allokNavItems(),
+    ...(pro && restaurante ? [...base.slice(0, 2), ...RESTAURANTE_NAV, ...base.slice(2)] : base),
     ...(pro
       ? ALLOK_PRO_NAV.filter(
           (item) =>
@@ -174,6 +179,7 @@ export function AppNav({
   commit,
   agenda = false,
   realty = false,
+  restaurante = false,
   saasMode = false,
   allokBrand = false,
   productLabel = "allok",
@@ -203,6 +209,8 @@ export function AppNav({
    * Rei pueden diferir.
    */
   realty?: boolean;
+  /** Fork — vertical restaurante: ¿esta organización tiene menú y pedidos? */
+  restaurante?: boolean;
   saasMode?: boolean;
   /** El diseño allok (barra de tinta, all ● k con el estado). Solo la marca allok. */
   allokBrand?: boolean;
@@ -251,7 +259,7 @@ export function AppNav({
   // sección aparte.
   const esPropietario = role === "owner";
   const sourceNav = saasMode
-    ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda, realty, productLabel)
+    ? buildAllokNav(planMeetsTier(saasPlan, "pro"), agenda, realty, productLabel, restaurante)
     : NAV;
   // Legacy (sin saasMode): Citas y Propiedades se insertan a mano en el mismo
   // lugar (justo después de Bandeja) en vez de vivir en `ALLOK_PRO_NAV`, que
@@ -259,6 +267,7 @@ export function AppNav({
   const legacyExtras = [
     ...(agenda ? [AGENDA_ITEM] : []),
     ...(realty ? [PROPERTIES_ITEM] : []),
+    ...(restaurante ? RESTAURANTE_NAV : []),
   ];
   const items = (legacyExtras.length > 0 && !saasMode
     ? [...sourceNav.slice(0, 2), ...legacyExtras, ...sourceNav.slice(2)]

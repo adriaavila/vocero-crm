@@ -8,6 +8,8 @@
  * empleado aprende de su jefe en vez de volver a pasar la misma pregunta.
  */
 
+import { esAvisoDePedido } from "@/lib/restaurante/pedido";
+
 export type HiloItem = {
   id: string;
   direction: "in" | "out";
@@ -42,6 +44,8 @@ export function momentosParaEnsenar(hilo: HiloItem[]): Map<string, Momento> {
   for (let i = 0; i < hilo.length; i++) {
     const m = hilo[i]!;
     if (!esPersona(m) || !esTexto(m)) continue;
+    // Vertical restaurante: un aviso de estado del pedido no lo redactó nadie.
+    if (esAvisoDePedido(m.text!)) continue;
     const answer = m.text!.trim();
     if (answer.length < RESPUESTA_MIN) continue;
     // Hacia atrás se saltan los mensajes del agente (el "te paso con alguien"
