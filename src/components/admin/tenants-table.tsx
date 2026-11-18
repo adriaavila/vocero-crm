@@ -77,8 +77,8 @@ export function AdminTenantsTable({
   const [support, setSupport] = useState<Record<string, "retry" | "reset" | null>>({});
   const [verticalPending, setVerticalPending] = useState<Record<string, boolean>>({});
 
-  async function toggleRealty(tenant: SaaSTenantStatus) {
-    const vertical = tenant.vertical === "inmobiliario" ? null : "inmobiliario";
+  async function toggleVertical(tenant: SaaSTenantStatus, cual: "inmobiliario" | "restaurante") {
+    const vertical = tenant.vertical === cual ? null : cual;
     setVerticalPending((state) => ({ ...state, [tenant.id]: true }));
     setError((state) => ({ ...state, [tenant.id]: "" }));
     const response = await fetch(`/api/saas/businesses/${tenant.id}/vertical`, {
@@ -88,7 +88,7 @@ export function AdminTenantsTable({
     }).catch(() => null);
     setVerticalPending((state) => ({ ...state, [tenant.id]: false }));
     if (!response?.ok) {
-      setError((state) => ({ ...state, [tenant.id]: "No se pudo cambiar el catálogo de propiedades." }));
+      setError((state) => ({ ...state, [tenant.id]: "No se pudo cambiar el módulo del negocio." }));
       return;
     }
     setTenants((list) => list.map((t) => (t.id === tenant.id ? { ...t, vertical } : t)));
@@ -217,6 +217,7 @@ export function AdminTenantsTable({
             </span>
             <span>{tenant.members} usuario{tenant.members === 1 ? "" : "s"}</span>
             {tenant.vertical === "inmobiliario" && <span>Inmobiliaria</span>}
+            {tenant.vertical === "restaurante" && <span>Restaurante</span>}
             {tenant.onboarding && (
               <span className={tenant.onboarding.status === "error" ? "text-warning-text" : undefined}>
                 Alta: {ONBOARDING_LABEL[tenant.onboarding.status]}
@@ -294,9 +295,18 @@ export function AdminTenantsTable({
               variant="ghost"
               aria-pressed={tenant.vertical === "inmobiliario"}
               disabled={verticalPending[tenant.id]}
-              onClick={() => void toggleRealty(tenant)}
+              onClick={() => void toggleVertical(tenant, "inmobiliario")}
             >
               {tenant.vertical === "inmobiliario" ? "Apagar catálogo de propiedades" : "Encender catálogo de propiedades"}
+            </Button>
+            <Button
+              className="h-11"
+              variant="ghost"
+              aria-pressed={tenant.vertical === "restaurante"}
+              disabled={verticalPending[tenant.id]}
+              onClick={() => void toggleVertical(tenant, "restaurante")}
+            >
+              {tenant.vertical === "restaurante" ? "Apagar menú y pedidos" : "Encender menú y pedidos"}
             </Button>
           </div>
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { prepareOrderAction } from "@/server/agencia/restaurante/accion";
 
 /**
  * Acción tipada del agente: exactamente UNA por turno (FR-021).
@@ -50,13 +51,20 @@ const agendaActions = [
 export const AgentAction = z.discriminatedUnion("action", [
   ...baseActions,
   ...agendaActions,
+  // Fork — vertical restaurante: armar un pedido (`server/agencia/restaurante`).
+  prepareOrderAction,
 ]);
 
-/** El esquema que se le exige al modelo en ESTE turno. */
-export function agentActionSchema(agenda: boolean) {
-  return agenda
-    ? AgentAction
-    : z.discriminatedUnion("action", [...baseActions]);
+/**
+ * El esquema que se le exige al modelo en ESTE turno. `pedidos` (fork): solo
+ * un negocio con menú puede nombrar `prepare_order`.
+ */
+export function agentActionSchema(agenda: boolean, pedidos = false) {
+  return z.discriminatedUnion("action", [
+    ...baseActions,
+    ...(agenda ? agendaActions : []),
+    ...(pedidos ? [prepareOrderAction] : []),
+  ]);
 }
 
 export type AgentActionType = z.infer<typeof AgentAction>;
@@ -80,7 +88,8 @@ export function degradeAction(action: AgentActionType): AgentActionType {
   if (
     action.action === "move_stage" ||
     action.action === "offer_slots" ||
-    action.action === "book_slot"
+    action.action === "book_slot" ||
+    action.action === "prepare_order"
   ) {
     return action.reply
       ? { action: "reply", text: action.reply }

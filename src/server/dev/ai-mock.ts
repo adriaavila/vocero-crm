@@ -154,6 +154,14 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ action: "reply", text: `Tengo «${primera[1]}» en ${primera[2]}.` });
   }
 
+  // Menú de un restaurante (sistema aparte): si el cliente pide, arma el
+  // pedido con los productos del menú que nombró. «pizza» imita a un modelo
+  // que pide algo que NO está en el menú: el servidor tiene que rechazarlo.
+  if (memoria.includes("MENÚ DEL NEGOCIO") && /quiero|me das|mándame|mandame|para llevar|pedido/.test(text)) {
+    const pedido = pedidoMock(memoria, lastUser);
+    if (pedido) return JSON.stringify(pedido);
+  }
+
   const eco = lastUser.slice(0, 80);
   return JSON.stringify({
     action: "reply",
@@ -205,5 +213,43 @@ function borradorChatsMock(source: string) {
     zona: negocio.filter((t) => /calle|av\.|avenida|zona|colonia|envi/i.test(t)).join(" "),
     preguntas,
     tono: `${/usted/i.test(negocio.join(" ")) ? "Habla de usted" : "Tutea"}, mensajes cortos${usaEmojis ? ", usa emojis" : ""}.`,
+  };
+}
+
+const NUMEROS: Record<string, number> = { un: 1, una: 1, uno: 1, unas: 1, unos: 1, dos: 2, tres: 3, cuatro: 4 };
+
+function sinAcentos(t: string): string {
+  return t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/** Lo que haría un modelo con el menú delante: nombres y cantidades, sin precios. */
+function pedidoMock(memoria: string, texto: string) {
+  const dicho = sinAcentos(texto);
+  const items: { name: string; quantity: number; extras?: string[] }[] = [];
+  for (const linea of memoria.split("\n")) {
+    const m = linea.match(/^- (.+?) · /);
+    if (!m) continue;
+    const nombre = m[1]!;
+    const clave = sinAcentos(nombre).replace(/ \d+ ?ml$/, "");
+    const pos = dicho.indexOf(clave);
+    if (pos < 0) continue;
+    const antes = dicho.slice(0, pos).trim().split(/[ ,]+/).pop() ?? "";
+    const quantity = Number(antes) || NUMEROS[antes] || 1;
+    const extras = [...(linea.match(/extras: ([^·]+)/)?.[1] ?? "").split(",")]
+      .map((e) => e.replace(/\+.*$/, "").trim())
+      .filter((e) => e && dicho.includes(sinAcentos(e)));
+    items.push({ name: nombre, quantity, ...(extras.length ? { extras } : {}) });
+  }
+  if (dicho.includes("pizza")) items.push({ name: "Pizza hawaiana", quantity: 1 });
+  if (items.length === 0) return null;
+  const envio = /envio|domicilio|delivery/.test(dicho);
+  const retiro = /retir|paso a buscar|recog/.test(dicho);
+  const address = texto.match(/(?:envío|envio|domicilio) a (?:la |el )?(.+?)(?:\.|$)/i)?.[1];
+  return {
+    action: "prepare_order",
+    items,
+    ...(envio ? { mode: "envio" } : retiro ? { mode: "retiro" } : {}),
+    ...(envio && address ? { address } : {}),
+    reply: "Listo, te lo dejé armado:",
   };
 }

@@ -17,9 +17,9 @@ import { getDb, schema } from "@/lib/db";
  * Ver la enmienda de `.specify/memory/constitution.md` (Principio VIII).
  */
 
-export type Vertical = "inmobiliario";
+export type Vertical = "inmobiliario" | "restaurante";
 
-const VERTICALS: readonly Vertical[] = ["inmobiliario"];
+const VERTICALS: readonly Vertical[] = ["inmobiliario", "restaurante"];
 
 function isVertical(value: unknown): value is Vertical {
   return typeof value === "string" && (VERTICALS as readonly string[]).includes(value);
@@ -98,6 +98,11 @@ export async function getOrgVertical(
 /** true si esta organización tiene el vertical inmobiliario activo. */
 export async function isRealtyOrg(organizationId: string): Promise<boolean> {
   return (await getOrgVertical(organizationId)) === "inmobiliario";
+}
+
+/** true si esta organización tiene el vertical restaurante (menú y pedidos). */
+export async function isRestauranteOrg(organizationId: string): Promise<boolean> {
+  return (await getOrgVertical(organizationId)) === "restaurante";
 }
 
 /**

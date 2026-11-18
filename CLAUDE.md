@@ -21,7 +21,7 @@ La regla que hace posible seguir fusionando con upstream para siempre:
 | Lógica de servidor propia | `src/server/agencia/` |
 | Componentes propios | `src/components/agencia/` |
 | Migraciones propias | `drizzle/9xxx_*.sql` y `drizzle/meta/9xxx_snapshot.json`: el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` ya las nombra 9xxx solo; no renombres nada a mano (ver "Migraciones y snapshots"). |
-| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/solicitud-datos`, `/api/meta/*`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
+| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/pedidos`, `/menu`, `/api/restaurante/*`, `/solicitud-datos`, `/api/meta/*`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
 
 Antes de tocar un archivo de upstream, pregúntate si el cambio cabe en
 `agencia/`. Si no cabe, hazlo pequeño, coméntalo con el porqué, y considera
@@ -106,6 +106,11 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 - **La agenda ve el Google Calendar del dueño**
   (`server/agencia/agenda-externa.ts`): los eventos se espejan como bloqueos.
 - **La ficha mueve el embudo** (`server/agencia/ficha-pipeline.ts`).
+- **Vertical restaurante** (`organization.metadata.vertical = "restaurante"`,
+  `server/agencia/restaurante/`, `lib/restaurante/pedido.ts`): menú, pedidos
+  y la acción `prepare_order`. El agente nombra productos y el servidor pone
+  los precios del menú; todo pedido nace «por confirmar» y solo una persona
+  lo pasa a cocina. Ver [docs/vertical-restaurante.md](docs/vertical-restaurante.md).
 - **Controles de piloto**: mensajes de activación, allowlist de números,
   proveedor de IA por organización, prueba real por WhatsApp (WAHA).
 

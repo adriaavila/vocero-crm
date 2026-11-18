@@ -37,6 +37,7 @@ const ACTION_LABEL: Record<string, string> = {
   update_lead: "Actualizó el lead",
   offer_slots: "Ofreció horarios",
   book_slot: "Agendó una cita",
+  prepare_order: "Armó un pedido",
   reschedule: "Reagendó la cita",
   cancel_booking: "Canceló la cita",
   follow_up: "Le escribió para retomar",

@@ -246,6 +246,13 @@
       "when": 1793459250755,
       "tag": "9022_salty_praxagora",
       "breakpoints": true
+    },
+    {
+      "idx": 9023,
+      "version": "7",
+      "when": 1794968426291,
+      "tag": "9023_red_ultimatum",
+      "breakpoints": true
     }
   ]
 }

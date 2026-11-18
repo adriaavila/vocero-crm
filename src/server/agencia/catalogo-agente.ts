@@ -9,6 +9,7 @@ import {
   PROPERTY_KIND_LABELS,
   derivedTitle,
 } from "@/lib/realty/catalog";
+import { menuParaPrompt } from "@/server/agencia/restaurante/menu";
 import { isRealtyOrg } from "@/server/agencia/vertical";
 import { listProperties } from "@/server/realty/properties";
 import type { CatalogProperty } from "@/server/lab/personas";
@@ -74,6 +75,9 @@ function descripcion(texto: string | null | undefined): string {
 /** El bloque para el prompt del agente (y el juez), o `null` si no aplica. */
 export async function catalogoParaPrompt(organizationId: string): Promise<string | null> {
   try {
+    // Un restaurante no tiene propiedades: su catálogo es el menú.
+    const menu = await menuParaPrompt(organizationId);
+    if (menu) return menu;
     if (!(await isRealtyOrg(organizationId))) return null;
     const { properties } = await listProperties(organizationId, {
       status: "disponible",

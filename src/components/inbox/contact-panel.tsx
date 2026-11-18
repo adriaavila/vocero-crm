@@ -17,6 +17,8 @@ import { ContactAvatar } from "@/components/avatar";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { FichaPanel } from "@/components/ficha-panel";
+// Fork — vertical restaurante: el pedido de esta conversación.
+import { PedidoPanel } from "@/components/agencia/restaurante/pedido-panel";
 
 const HANDOFF_LABELS: Record<string, string> = {
   cliente: "El cliente pidió un humano",
@@ -212,6 +214,12 @@ export function ContactPanel({
       </header>
 
       <div className="flex-1 overflow-y-auto">
+        {/* Fork — vertical restaurante: el pedido va primero; sin el vertical no pinta nada. */}
+        <PedidoPanel
+          conversationId={conversation.id}
+          contactName={conversation.contact.name}
+          refreshKey={refreshKey}
+        />
         {/* Contacto */}
         <section className="border-b p-4">
           <div className="flex items-center gap-3">

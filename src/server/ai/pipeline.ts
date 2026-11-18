@@ -4,6 +4,7 @@ import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { memoriaParaPrompt } from "@/server/agencia/memoria-cliente";
+import { tomaPedidos, turnoDePedido } from "@/server/agencia/restaurante/turno";
 import { catalogoParaPrompt } from "@/server/agencia/catalogo-agente";
 import { historialParaAgente } from "@/server/agencia/oir-y-ver";
 import { getEnv, isNeaBrain } from "@/lib/env";
@@ -347,6 +348,8 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
   // Fork — las propiedades disponibles de una inmobiliaria
   // (`server/agencia/catalogo-agente`); sin vertical, null.
   const catalogo = await catalogoParaPrompt(organizationId);
+  // Fork — un restaurante: el modelo puede armar pedidos (`agencia/restaurante`).
+  const pedidos = await tomaPedidos(organizationId);
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     ...(catalogo ? [{ role: "system" as const, content: catalogo }] : []),
@@ -358,7 +361,7 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
   ];
 
   const llmStartedAt = Date.now();
-  const result = await chatJson(agentActionSchema(agenda), messages, {
+  const result = await chatJson(agentActionSchema(agenda, pedidos), messages, {
     provider: profile.aiProvider,
     credentials: aiConfig.providers,
   });
@@ -395,7 +398,7 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
   const usada = usaProhibida(textoDe(action) ?? "", prohibidas);
   if (usada) {
     const otra = await chatJson(
-      agentActionSchema(agenda),
+      agentActionSchema(agenda, pedidos),
       [
         ...messages,
         { role: "assistant", content: JSON.stringify(result.data) },
@@ -458,6 +461,33 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
         action = degradeAction(action);
       }
     }
+  }
+
+  // Fork — vertical restaurante: el servidor arma el pedido con los precios
+  // del menú y escribe la respuesta. Un fallo degrada el turno, no lo tumba.
+  if (action.action === "prepare_order") {
+    const turn = pedidos
+      ? await turnoDePedido({
+          organizationId,
+          conversationId,
+          contactId: conversation.contactId,
+          isTest: conversation.isTest,
+          action,
+        }).catch((err) => {
+          console.error(`[agente] no se pudo armar el pedido: ${err}`);
+          return null;
+        })
+      : null;
+    if (turn) {
+      const replyId = await deliverReply(conversation, turn.text);
+      await decide({
+        action: "prepare_order",
+        steps: [{ tool: "prepare_order", summary: turn.summary, ok: turn.ok }],
+        replyMessageIds: replyId ? [replyId] : [],
+      });
+      return;
+    }
+    action = degradeAction(action);
   }
 
   if (action.action === "move_stage") {

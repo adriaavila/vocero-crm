@@ -33,6 +33,7 @@ export function AppShell({
   commit,
   agenda = false,
   realty = false,
+  restaurante = false,
   saasMode = false,
   saasPlan = null,
   systemState = null,
@@ -50,6 +51,8 @@ export function AppShell({
   agenda?: boolean;
   /** Vertical inmobiliario (parte 1) — ¿esta ORGANIZACIÓN lo tiene activo? */
   realty?: boolean;
+  /** Fork — vertical restaurante (menú y pedidos), por organización. */
+  restaurante?: boolean;
   /** La navegación Allok reduce el CRM a las cuatro acciones principales. */
   saasMode?: boolean;
   saasPlan?: SaaSPlan | null;
@@ -125,6 +128,7 @@ export function AppShell({
         theme={theme}
         agenda={agenda}
         realty={realty}
+        restaurante={restaurante}
         saasMode={saasMode}
         allokBrand={allokBrand}
         productLabel={productLabel}

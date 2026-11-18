@@ -8,7 +8,7 @@ import { AppShell } from "@/components/app-shell";
 import { ToastProvider } from "@/components/ui/toast-provider";
 import { resolveBuildCommit } from "@/lib/version";
 import { agendaEnabled } from "@/server/agenda/flag";
-import { isRealtyOrg } from "@/server/agencia/vertical";
+import { getOrgVertical } from "@/server/agencia/vertical";
 import { brand } from "@/lib/brand";
 import { isAllokBrand, isAllokSaaSMode, isKnownAllokHost, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveOrganizationIdForHost } from "@/server/auth/on-signup";
@@ -36,7 +36,7 @@ export default async function AppLayout({
   if (!session) redirect("/login");
   const allokBrand = isAllokBrand() && brand().id === "allok";
   const branding = await getBranding(session.organizationId);
-  const [billing, systemState, realty] = await Promise.all([
+  const [billing, systemState, vertical] = await Promise.all([
     saasMode ? getOrganizationBilling(session.organizationId) : null,
     // El estado de la operación: lo leen Inicio y el embudo del SaaS (también
     // en Rei) y el punto de all ● k donde va la marca allok. Rei usa el estado
@@ -45,7 +45,7 @@ export default async function AppLayout({
       ? getSystemState(session.organizationId, session.role === "owner")
       : null,
     // Vertical inmobiliario (parte 1): por ORGANIZACIÓN, no de instancia.
-    isRealtyOrg(session.organizationId),
+    getOrgVertical(session.organizationId),
   ]);
   const authSession = await getAuthSession();
   const theme = normalizeThemePreference(
@@ -64,7 +64,9 @@ export default async function AppLayout({
       // prop, igual que los canales de la Bandeja. El nav es un componente de
       // cliente: no puede —ni debe— leer variables de entorno.
       agenda={agendaEnabled()}
-      realty={realty}
+      realty={vertical === "inmobiliario"}
+      // Fork — vertical restaurante: Pedidos y Menú en el menú lateral.
+      restaurante={vertical === "restaurante"}
       saasMode={saasMode}
       saasPlan={billing?.status === "active" || billing?.status === "trialing" ? billing.plan : null}
       systemState={systemState}

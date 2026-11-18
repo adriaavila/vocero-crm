@@ -1846,3 +1846,142 @@ export const metaSolicitud = pgTable(
   },
   (t) => [uniqueIndex("meta_solicitud_codigo_uq").on(t.codigo)]
 );
+
+/* ============================================================
+ * Fork — vertical restaurante (`organization.metadata.vertical`).
+ * Mismo criterio que el inmobiliario: las tablas existen siempre y lo que
+ * decide si el módulo existe para un negocio es su vertical.
+ * ============================================================ */
+
+/** Categoría del menú («Hamburguesas», «Bebidas»). */
+export const menuCategory = pgTable(
+  "menu_category",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("menu_category_org_idx").on(t.organizationId, t.position)]
+);
+
+/**
+ * Producto del menú. El precio va en CENTAVOS de la moneda del negocio
+ * (Ajustes → Marca): es la única fuente de precios de un pedido, el agente
+ * nunca escribe uno.
+ */
+export const menuItem = pgTable(
+  "menu_item",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    categoryId: text("category_id").references(() => menuCategory.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    description: text("description"),
+    priceCents: integer("price_cents").notNull(),
+    /** Apagado a mano: no se ofrece hasta que alguien lo vuelva a encender. */
+    available: boolean("available").notNull().default(true),
+    /** «Agotado por hoy»: no se ofrece hasta esta hora; después vuelve solo. */
+    soldOutUntil: timestamp("sold_out_until"),
+    /** Extras del producto: `{ id, name, priceCents, active }`. */
+    extras: jsonb("extras")
+      .$type<{ id: string; name: string; priceCents: number; active: boolean }[]>()
+      .notNull()
+      .default([]),
+    position: integer("position").notNull().default(0),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("menu_item_org_idx").on(t.organizationId, t.archivedAt, t.position)]
+);
+
+/**
+ * Pedido de un cliente. Nace «por_confirmar» lo arme el agente o una
+ * persona; solo una persona lo pasa a cocina. `number` es el consecutivo del
+ * negocio (el #1042 que se le dice al cliente). allok REGISTRA el pago, no
+ * cobra: `payment_status` lo marca una persona.
+ */
+export const customerOrder = pgTable(
+  "customer_order",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    number: integer("number").notNull(),
+    conversationId: text("conversation_id").references(() => conversation.id, {
+      onDelete: "set null",
+    }),
+    contactId: text("contact_id").references(() => contact.id, {
+      onDelete: "set null",
+    }),
+    status: text("status", {
+      enum: ["por_confirmar", "en_cocina", "listo", "en_camino", "entregado", "cancelado"],
+    })
+      .notNull()
+      .default("por_confirmar"),
+    /** Sin modalidad todavía = el cliente no dijo si es envío o retiro. */
+    mode: text("mode", { enum: ["envio", "retiro"] }),
+    address: text("address"),
+    notes: text("notes"),
+    subtotalCents: integer("subtotal_cents").notNull().default(0),
+    deliveryFeeCents: integer("delivery_fee_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull().default(0),
+    paymentStatus: text("payment_status", { enum: ["pendiente", "cobrado"] })
+      .notNull()
+      .default("pendiente"),
+    paymentMethod: text("payment_method", { enum: ["qr", "efectivo", "otro"] }),
+    createdBy: text("created_by", { enum: ["agente", "persona"] }).notNull(),
+    createdByUserId: text("created_by_user_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    /** Pedido de una conversación de prueba: no cuenta ni sale a WhatsApp. */
+    isTest: boolean("is_test").notNull().default(false),
+    confirmedAt: timestamp("confirmed_at"),
+    deliveredAt: timestamp("delivered_at"),
+    cancelledAt: timestamp("cancelled_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("customer_order_org_number_uq").on(t.organizationId, t.number),
+    index("customer_order_org_status_idx").on(t.organizationId, t.status, t.createdAt),
+    index("customer_order_conversation_idx").on(t.conversationId),
+  ]
+);
+
+/** Línea de un pedido: FOTO del producto y su precio al momento de pedir. */
+export const customerOrderItem = pgTable(
+  "customer_order_item",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => customerOrder.id, { onDelete: "cascade" }),
+    menuItemId: text("menu_item_id").references(() => menuItem.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    quantity: integer("quantity").notNull(),
+    unitPriceCents: integer("unit_price_cents").notNull(),
+    extras: jsonb("extras")
+      .$type<{ name: string; priceCents: number }[]>()
+      .notNull()
+      .default([]),
+    note: text("note"),
+    lineTotalCents: integer("line_total_cents").notNull(),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [index("customer_order_item_order_idx").on(t.orderId, t.position)]
+);
