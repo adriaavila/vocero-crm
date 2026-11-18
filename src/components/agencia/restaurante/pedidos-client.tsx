@@ -249,13 +249,13 @@ function Tarjeta({
       ) : (
         <div className="flex items-center gap-2">
           {paso && paso !== "por_confirmar" && paso !== "cancelado" && (
-            <Button className="h-11 flex-1" variant="outline" disabled={ocupado} onClick={() => onMover(p, paso)}>
+            <Button className="h-11 min-w-0 flex-1 px-3" variant="outline" disabled={ocupado} onClick={() => onMover(p, paso)}>
               {PASO_LABEL[paso]}
             </Button>
           )}
           <Link
             href={conversacion}
-            className="inline-flex min-h-11 items-center px-1 text-[12px] font-medium text-text-2 hover:text-foreground"
+            className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap px-1 text-[12px] font-medium text-text-2 hover:text-foreground"
           >
             Ver chat
           </Link>

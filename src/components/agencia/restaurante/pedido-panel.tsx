@@ -248,7 +248,7 @@ export function PedidoPanel({
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between gap-2 text-[12px]">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[12px]">
         {pedido.paymentStatus === "cobrado" ? (
           <>
             <span data-state="activo" className="inline-flex items-center gap-1.5 text-[var(--st-ink,var(--text-2))]">
@@ -266,7 +266,7 @@ export function PedidoPanel({
           </>
         ) : (
           <>
-            <span className="text-text-3">Pago pendiente</span>
+            <span className="whitespace-nowrap text-text-3">Pago pendiente</span>
             <span className="flex gap-1.5">
               {(["qr", "efectivo"] as const).map((m) => (
                 <button
@@ -276,7 +276,7 @@ export function PedidoPanel({
                   onClick={() =>
                     void accion(`/api/restaurante/pedidos/${pedido.id}/pago`, "POST", { status: "cobrado", method: m })
                   }
-                  className="rounded-full border px-2.5 py-1 text-text-2 hover:border-border-strong max-sm:min-h-9"
+                  className="whitespace-nowrap rounded-full border px-2.5 py-1 text-text-2 hover:border-border-strong max-sm:min-h-9"
                 >
                   {m === "qr" ? "Cobré por QR" : "Cobré en efectivo"}
                 </button>
