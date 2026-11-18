@@ -1,0 +1,4 @@
+interface:
+  display_name: "WhatsApp SaaS Infra"
+  short_description: "Build Meta WhatsApp SaaS infrastructure"
+  default_prompt: "Use $whatsapp-saas-meta-infra to implement Embedded Signup, webhooks, tokens, and Supabase for a WhatsApp SaaS."

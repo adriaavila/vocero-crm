@@ -38,6 +38,8 @@ Use this skill to convert a WhatsApp SaaS into an approval-ready Meta App Review
 Treat these as non-negotiable for approval work:
 
 - the business connects its own account,
+- the onboarded number is registered and operational, not stuck `PENDING`
+  (the app must call `POST /{phone_number_id}/register` after onboarding),
 - the app reads the connected phone number and templates,
 - the app sends an approved template,
 - the recipient device shows the delivered message.
