@@ -31,10 +31,19 @@ export type HoursSettings = {
   responseMode: "outside_hours" | "all_day";
   /** Fork — pausa que vence: null = 12 h (default), 0 = nunca. */
   handoffResumeHours: number | null;
+  /** Fork — respaldo: minutos dentro del horario antes de contestar; null = apagado. */
+  backupMinutes: number | null;
 };
 
 const DEFAULT_RESUME_HOURS = 12;
 const RESUME_CHOICES = [1, 2, 4, 8, 12, 24, 48, 0];
+/** 0 = apagado. 5 es lo recomendado: le da al equipo su oportunidad y el cliente no se enfría. */
+const BACKUP_CHOICES = [0, 3, 5, 10, 15, 30];
+
+function backupLabel(minutes: number, brandName: string): string {
+  if (minutes === 0) return "Espera a tu equipo";
+  return `Contesta ${brandName} a los ${minutes} minutos${minutes === 5 ? " (recomendado)" : ""}`;
+}
 
 /** Completa la oración del rótulo: «Si respondes desde el teléfono, la IA retoma el chat…». */
 function resumeLabel(hours: number): string {
@@ -80,6 +89,7 @@ export function hoursSignature(s: HoursSettings): string {
     s.timezone,
     s.responseMode,
     s.handoffResumeHours ?? null,
+    s.backupMinutes ?? null,
   ]);
 }
 
@@ -88,7 +98,8 @@ export function hoursSummary(s: HoursSettings): string {
   if (s.responseMode === "all_day") return `Tu agente responde todo el día · Hora de ${timezoneLabel(s.timezone)}`;
   const team = describeTeamHours(s);
   if (!team) return "Todavía sin horario";
-  return `Atiendes tú ${team} · Hora de ${timezoneLabel(s.timezone)}`;
+  const respaldo = s.backupMinutes ? ` · si no contestas en ${s.backupMinutes} min, contesta tu agente` : "";
+  return `Atiendes tú ${team}${respaldo} · Hora de ${timezoneLabel(s.timezone)}`;
 }
 
 /** Lo que promete «Todo el día», igual en las dos pantallas donde se elige (Tu negocio y Activar). */
@@ -350,6 +361,39 @@ export function HorarioRespuesta({
             </div>
             <p className="mt-2 text-xs leading-5 text-text-3">
               Un cierre a las 00:00 termina al comenzar el día siguiente. Usa <strong className="font-semibold text-text-2">24 h</strong> para mantener ese día siempre abierto.
+            </p>
+          </div>
+        )}
+
+        {current.responseMode === "outside_hours" && (
+          <div className="space-y-1.5">
+            <Label htmlFor="backup-minutes" className="flex items-center gap-2">
+              Si en tu horario nadie le contesta a un cliente
+              {!canUseAllDay && <Badge variant="secondary">Plan Completo</Badge>}
+            </Label>
+            <Select
+              value={String(canUseAllDay ? (current.backupMinutes ?? 0) : 0)}
+              onValueChange={(value) => setSettings({ ...current, backupMinutes: Number(value) || null })}
+              disabled={disabled || !canUseAllDay}
+            >
+              <SelectTrigger id="backup-minutes" className="w-full max-sm:h-11">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[
+                  ...BACKUP_CHOICES,
+                  ...(current.backupMinutes && !BACKUP_CHOICES.includes(current.backupMinutes) ? [current.backupMinutes] : []),
+                ]
+                  .sort((a, b) => a - b)
+                  .map((minutes) => (
+                    <SelectItem key={minutes} value={String(minutes)}>
+                      {backupLabel(minutes, brandName)}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs leading-5 text-text-3">
+              Tu equipo sigue primero. {brandName} solo contesta a quien lleva esos minutos sin respuesta, y no se mete en un chat que ya estás llevando tú.
             </p>
           </div>
         )}

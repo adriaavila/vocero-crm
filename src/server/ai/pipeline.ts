@@ -50,7 +50,7 @@ import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
-import { canAgentRespondNow, getBusinessHours } from "@/server/business-hours";
+import { canAgentAnswerConversation, getBusinessHours } from "@/server/business-hours";
 import { despedidaTraspaso } from "@/server/agencia/horario-texto";
 import {
   inboundSinceLastReply,
@@ -249,7 +249,7 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
   // El toggle global aplica a conversaciones reales; el Laboratorio evalúa el
   // comportamiento configurado aunque el agente aún no esté encendido.
   if (!conversation.isTest && !profile.enabled) return;
-  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) return;
+  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentAnswerConversation(organizationId, conversation.id))) return;
 
   const history = await db
     .select()
@@ -522,7 +522,7 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
  *  - existe la conversación y el perfil del agente;
  *  - `profile.enabled` para conversaciones reales (el Laboratorio evalúa
  *    igual aunque el agente aún no esté encendido);
- *  - el horario de negocio en SaaS (`canAgentRespondNow`);
+ *  - el horario de negocio en SaaS, con su respaldo (`canAgentAnswerConversation`);
  *  - handoff activo o IA apagada en la conversación — EXCEPTO cuando el
  *    perfil tiene activación por mensajes (`activationEnabled`, columna
  *    `preset_only`): ahí Nea necesita ver la conversación pausada para poder
@@ -733,7 +733,7 @@ async function loadNeaGateState(conversationId: string): Promise<NeaGateState | 
   // el guard tiene que estar ANTES del despacho, no después).
   if (!conversation.isTest && !(await canAutomate(organizationId))) return null;
   if (!conversation.isTest && (await trialAiQuotaReached(organizationId))) return null;
-  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
+  if (!conversation.isTest && isAllokSaaSMode() && !(await canAgentAnswerConversation(organizationId, conversation.id))) {
     return null;
   }
   if ((conversation.handoffAt || !conversation.aiEnabled) && !profile.activationEnabled) {

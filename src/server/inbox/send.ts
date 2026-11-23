@@ -38,7 +38,7 @@ import {
   validateOutgoing,
 } from "@/server/whatsapp/media";
 import { trialAiQuotaReached, canAutomate } from "@/server/agencia/entitlements";
-import { canAgentRespondNow } from "@/server/business-hours";
+import { canAgentAnswerConversation } from "@/server/business-hours";
 import { isAllokSaaSMode } from "@/lib/tenant-host";
 
 /** Error tipado del envío; `code` mapea a HTTP en la capa de API. */
@@ -163,7 +163,7 @@ async function prepareSend(
     );
   }
 
-  if (requireAiEnabled && isAllokSaaSMode() && !(await canAgentRespondNow(organizationId))) {
+  if (requireAiEnabled && isAllokSaaSMode() && !(await canAgentAnswerConversation(organizationId, conversationId))) {
     throw new SendError(
       "outside_hours",
       "El agente está configurado para responder solo fuera del horario de atención",
