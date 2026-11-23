@@ -13,6 +13,8 @@ Use this skill to build the infrastructure layer of a WhatsApp SaaS, not just is
    - Meta app configuration,
    - Embedded Signup,
    - token exchange,
+   - phone number registration (the `/register` step that moves a number from
+     `PENDING` to operational),
    - webhook ingestion,
    - Supabase schema,
    - message sending,
@@ -30,6 +32,7 @@ Use this skill to build the infrastructure layer of a WhatsApp SaaS, not just is
 
 - Keep secrets server-side.
 - Do not equate `accepted` with `delivered`.
+- Do not treat a freshly onboarded number as usable until `/register` succeeds.
 - Save enough identity data to support deauthorize callbacks later.
 - Make webhooks idempotent and upsert by `message_id`.
 - Revalidate local connection state against Meta when assets may have been deleted.
@@ -40,6 +43,7 @@ Treat these as the baseline:
 
 - a real OAuth or Embedded Signup completion path,
 - a backend code exchange endpoint,
+- a phone number registration step that activates the number after onboarding,
 - a webhook with GET verification and POST ingestion,
 - Supabase tables for connections and message events,
 - real message send actions,

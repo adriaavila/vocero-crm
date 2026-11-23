@@ -19,17 +19,20 @@ Use this reference when the user needs the system-level view.
    - `waba_id`,
    - `phone_number_id`.
 4. The backend exchanges the code for a usable token.
-5. The backend stores the connection in Supabase.
-6. The app reads:
+5. The backend registers the phone number on the Cloud API
+   (`POST /{phone_number_id}/register`) so it moves from `PENDING` to
+   operational. Without this step the number cannot send or receive.
+6. The backend stores the connection in Supabase.
+7. The app reads:
    - connected phone number,
    - WABA-linked assets,
    - templates.
-7. The app sends:
+8. The app sends:
    - approved templates,
    - text replies when the 24-hour window is open.
-8. Meta posts statuses and inbound messages to the webhook.
-9. The backend stores those events in Supabase.
-10. The frontend renders a truthful dashboard from those records.
+9. Meta posts statuses and inbound messages to the webhook.
+10. The backend stores those events in Supabase.
+11. The frontend renders a truthful dashboard from those records.
 
 ## Design principle
 
