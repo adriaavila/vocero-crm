@@ -983,6 +983,11 @@ async function deliverReply(
       text,
       aiGenerated: true,
     });
+    // Fork — si la respuesta nombra una o dos casas, va su tarjeta detrás
+    // (`server/agencia/sala-agente.ts`; apagado sin SALA_VENTA).
+    void import("@/server/agencia/sala-agente").then(({ tarjetasTrasRespuestaEnFondo }) =>
+      tarjetasTrasRespuestaEnFondo({ organizationId: conversation.organizationId, conversationId: conversation.id, texto: text })
+    );
     return sent.messageId;
   } catch (err) {
     if (err instanceof SendError && err.code === "ai_disabled") return null;

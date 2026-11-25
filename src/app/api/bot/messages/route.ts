@@ -10,6 +10,8 @@ import { applyHandoff, persistTestOutbound } from "@/server/ai/pipeline";
 // Fork — las reglas del dueño se cumplen también con un cerebro externo.
 import { revisarSalidaDe } from "@/server/agencia/guardia-salida";
 
+import { tarjetasTrasRespuestaEnFondo } from "@/server/agencia/sala-agente";
+
 export const dynamic = "force-dynamic";
 
 const bodySchema = z.object({
@@ -114,6 +116,12 @@ export async function POST(req: Request) {
       seq: body.data.seq,
     });
     await traspasar();
+    // Fork — si Nea nombró una o dos casas, va su tarjeta detrás (foto,
+    // precio, «Quiero visitar»). Un reintento duplicado no la repite, y tras
+    // un traspaso no sale (la conversación ya es de una persona).
+    if (!result.duplicate) {
+      tarjetasTrasRespuestaEnFondo({ organizationId, conversationId: conv.id, texto: text });
+    }
     return Response.json(
       result.duplicate
         ? { messageId: result.messageId, duplicate: true }
