@@ -6,6 +6,7 @@ import { requireBotKey, resolveInstanceOrg } from "@/server/bot/auth";
 import { publish } from "@/server/events/bus";
 import { toHandoffReason } from "@/server/bot/handoff";
 import { avisarTraspaso } from "@/server/agencia/avisos";
+import { moverEtapaPorVisitaEnFondo } from "@/server/agencia/visita-pipeline";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,8 @@ export async function POST(req: Request) {
     });
     // Fork — el dueño se entera en su celular (mejor esfuerzo, no espera la red).
     avisarTraspaso(organizationId, conv.id, reason);
+    // Fork — si el cliente pidió visita, el lead avanza en el embudo solo.
+    moverEtapaPorVisitaEnFondo(organizationId, conv.id);
   }
   return Response.json({ ok: true });
 }
