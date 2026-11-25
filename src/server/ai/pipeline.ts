@@ -33,6 +33,7 @@ import { matchesHandoffIntent } from "@/server/ai/handoff";
 import { toHandoffReason } from "@/server/bot/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { avisarTraspaso } from "@/server/agencia/avisos";
+import { moverEtapaPorVisitaEnFondo } from "@/server/agencia/visita-pipeline";
 import { agendaEnabled } from "@/server/agenda/flag";
 import {
   corregirAccion,
@@ -1057,6 +1058,8 @@ export async function applyHandoff(
   });
   // Fork — el dueño se entera en su celular (mejor esfuerzo, no espera la red).
   avisarTraspaso(organizationId, conversationId, reason);
+  // Fork — si el cliente pidió visita, el lead avanza en el embudo solo.
+  moverEtapaPorVisitaEnFondo(organizationId, conversationId);
 }
 
 async function moveLeadToStage(

@@ -20,6 +20,7 @@
     "test:e2e:saas": "ALLOK_SAAS_MODE=true node --env-file=.env scripts/saas-isolation-check.mjs",
     "test:e2e:centro": "ALLOK_SAAS_MODE=true node --env-file=.env scripts/saas-centro-check.mjs",
     "test:e2e:autoservicio": "ALLOK_SAAS_MODE=true SAAS_SELF_SERVE=true node --env-file=.env scripts/saas-autoservicio-check.mjs",
+    "test:e2e:visita": "ALLOK_SAAS_MODE=true node --env-file=.env scripts/saas-visita-check.mjs",
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
     "test:watch": "vitest",
     "db:generate": "vitest run tests/unit/drizzle-snapshots.test.ts && drizzle-kit generate",
