@@ -502,6 +502,45 @@ describeReal("data spine — Postgres real", { timeout: 30_000 }, () => {
       const ev = (await eventFor("messages", change.value))!;
       expect(JSON.stringify(ev.payload)).toContain(`ARA${SFX}`); // replayable con su ctwa_clid
     });
+
+    it("CTWA: un clic pagado mejora un origen guardado sin ctwa_clid, pero nunca pisa uno que ya lo tiene", async () => {
+      const prev = process.env.ATRIBUCION;
+      process.env.ATRIBUCION = "on";
+      try {
+        const phone = nextPhone();
+        const attOf = async () => {
+          const cv = (await conversationOf(phone))!;
+          return m.db
+            .select()
+            .from(m.schema.adAttribution)
+            .where(m.eq(m.schema.adAttribution.conversationId, cv.id));
+        };
+        const send = async (n: string, referral: Record<string, unknown>) =>
+          expect((await deliver(waBody([inbound(`wamid.in.${SFX}.up${n}`, phone, { referral })]))).status).toBe(200);
+
+        // 1) Vista previa / publicación: origen sin clic.
+        await send("1", { source_id: `post_${SFX}`, source_type: "post", headline: "Publicación" });
+        expect((await attOf())[0]).toMatchObject({ sourceType: "post", ctwaClid: null });
+        const firstId = (await attOf())[0]!.id;
+
+        // 2) Clic pagado en la misma conversación: reemplaza, misma fila.
+        await send("2", { source_id: `ad_${SFX}`, source_type: "ad", headline: "Anuncio", ctwa_clid: `CL1${SFX}` });
+        let att = await attOf();
+        expect(att).toHaveLength(1);
+        expect(att[0]).toMatchObject({ id: firstId, sourceType: "ad", sourceId: `ad_${SFX}`, ctwaClid: `CL1${SFX}` });
+
+        // 3) Otro clic distinto: el primero gana.
+        await send("3", { source_id: `ad2_${SFX}`, source_type: "ad", headline: "Otro", ctwa_clid: `CL2${SFX}` });
+        // 4) Un referral sin clic tampoco borra el clic guardado.
+        await send("4", { source_id: `post2_${SFX}`, source_type: "post", headline: "Otra publicación" });
+        att = await attOf();
+        expect(att).toHaveLength(1);
+        expect(att[0]).toMatchObject({ sourceId: `ad_${SFX}`, ctwaClid: `CL1${SFX}` });
+      } finally {
+        if (prev === undefined) delete process.env.ATRIBUCION;
+        else process.env.ATRIBUCION = prev;
+      }
+    });
   });
 
   /* ---------------- Estados con timestamps ---------------- */

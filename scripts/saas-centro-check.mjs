@@ -1,7 +1,8 @@
 /**
  * E2E del Inicio del SaaS (centro de mando): las tarjetas de «Por dónde
  * arrancar», «Pregúntale a allok» contra el ai-mock (rama ASK_MARKER), el tope
- * de 20 al día, y que un miembro no pueda calificar decisiones (PATCH → 403).
+ * de 20 al día, «Lo que te trajo tu agente» (citas en plata, con el valor que
+ * pone el dueño) y que un miembro no pueda calificar decisiones (PATCH → 403).
  *
  * Como saas-isolation-check, crea sus negocios por el registro público: en
  * modo SaaS eso solo pasa con WA_MOCK_ENABLED=true en `next dev`. Cada corrida
@@ -113,6 +114,28 @@ try {
   check("«Responder» abre la conversación", /\/inbox\?contact=ct_/.test((await respond.getAttribute("href")) ?? ""));
   check("sin datos viejos: no hay tarjetas fantasma", (await page.getByRole("link", { name: /^Responder a / }).count()) === 2);
 
+  // ---- Lo que te trajo tu agente: las citas del agente, en plata
+  // La cita la agenda el agente en producción; aquí se escribe como la dejaría él (source ai).
+  const [convPrecio] = await sql`select c.id as conv, c.contact_id as contact from conversation c join contact ct on ct.id = c.contact_id
+    where ct.name = 'Cliente Precio E2E' and c.organization_id = (select id from organization where slug = ${slug})`;
+  for (const n of [1, 2]) {
+    await sql`insert into booking (id, organization_id, contact_id, conversation_id, source, scheduled_at, duration_minutes)
+      values (${`bk_centro_${RUN}_${n}`}, (select id from organization where slug = ${slug}), ${convPrecio.contact}, ${convPrecio.conv}, 'ai', now() + interval '2 days', 30)`;
+  }
+  await page.goto(home, { waitUntil: "load", timeout: 90000 });
+  const trajo = page.locator('[aria-labelledby="trajo-titulo"]');
+  await trajo.waitFor({ timeout: 30000 });
+  check("sin valor por cita, cuenta las citas del agente y no inventa plata", /2\s*citas agendadas en 7 días/.test(await trajo.innerText()) && !/\$/.test(await trajo.innerText()), await trajo.innerText());
+  await page.locator("#valor-cita").fill("450");
+  await page.getByRole("button", { name: "Guardar" }).click();
+  const enPlata = await hasta(async () => /\$900/.test(await trajo.innerText()));
+  check("al decir cuánto vale una cita, Inicio lo dice en plata", enPlata, await trajo.innerText());
+  check("y muestra la cuenta", /2 citas × \$450 = \$900/.test(await trajo.innerText()), await trajo.innerText());
+  const [perfil] = await sql`select valor_cita_cents from agent_profile where organization_id = (select id from organization where slug = ${slug})`;
+  check("el valor queda guardado en centavos", perfil?.valor_cita_cents === 45000, JSON.stringify(perfil));
+  const badValor = await api("/api/agent/valor-cita", { method: "PUT", data: { valorCitaCents: -5 } });
+  check("un valor negativo se rechaza", badValor.status() === 422, String(badValor.status()));
+
   // ---- Pregúntale a allok
   const chip = await api("/api/centro/ask", { method: "POST", data: { chip: "hoy" } });
   const chipJson = await chip.json();
@@ -158,6 +181,8 @@ try {
   check("el miembro puede LEER las decisiones", readDecisions.ok(), String(readDecisions.status()));
   const patchMember = await mApi("/api/decisions/dec_inexistente", { method: "PATCH", data: { verdict: "bien" } });
   check("el miembro NO califica: PATCH → 403", patchMember.status() === 403, String(patchMember.status()));
+  const memberValor = await mApi("/api/agent/valor-cita", { method: "PUT", data: { valorCitaCents: 100 } });
+  check("el miembro NO cambia cuánto vale una cita: 403", memberValor.status() === 403, String(memberValor.status()));
   const patchOwner = await api("/api/decisions/dec_inexistente", { method: "PATCH", data: { verdict: "bien" } });
   check("el propietario pasa la puerta (la decisión no existe → 404)", patchOwner.status() === 404, String(patchOwner.status()));
   const memberPage = await member.newPage();

@@ -54,16 +54,22 @@ export function defaultAgentProfile(brandId: BrandId = activeBrandId()) {
  * `canAgentRespondNow` nunca deja contestar y el negocio recién creado queda
  * mudo.
  *
- * "Fuera de horario" con el negocio abierto de lunes a sábado de 9 a 18 es lo
- * único que vale en todos los planes ("Todo el día" es de Pro): el agente
- * contesta de noche y el domingo. El dueño lo cambia en Agente → Horario de
- * respuesta.
+ * "Cuando no atiendes tú" con el negocio abierto de lunes a sábado de 9 a 18
+ * es lo único que vale en todos los planes ("Todo el día" es de Completo): el
+ * agente contesta de noche y el domingo. El dueño lo cambia en «Activar» o en
+ * Tu negocio → Horario de respuesta.
+ *
+ * `allDay`: la prueba de autoservicio ES Completo, y quien la abre prueba su
+ * agente escribiéndole a su número a media tarde. Con "cuando no atiendes tú"
+ * ese primer mensaje no tenía respuesta y el producto parecía roto. Nace en
+ * "Todo el día"; la semana de 9 a 18 se guarda igual, para cuando elija lo
+ * otro o pague Esencial (ahí "todo el día" se lee como fuera de horario).
  *
  * La zona es la del navegador de quien se registra. Sin ella (o si no es
  * válida) queda la de la columna, Ciudad de México: en Caracas eso dejaría al
  * negocio sin respuesta de 18 a 20, justo cuando el equipo ya se fue.
  */
-export function defaultResponseSchedule(timezone?: string | null) {
+export function defaultResponseSchedule(timezone?: string | null, options: { allDay?: boolean } = {}) {
   const open = () => [{ start: "09:00", end: "18:00" }];
   const businessHours: WeeklyBusinessHours = {
     mon: open(),
@@ -75,7 +81,7 @@ export function defaultResponseSchedule(timezone?: string | null) {
   };
   return {
     businessHours,
-    responseMode: "outside_hours" as const,
+    responseMode: options.allDay ? ("all_day" as const) : ("outside_hours" as const),
     ...(timezone && isValidTimeZone(timezone) ? { businessTimezone: timezone } : {}),
   };
 }

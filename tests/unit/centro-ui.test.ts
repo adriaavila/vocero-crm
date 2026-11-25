@@ -1,11 +1,14 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DecisionesClient } from "@/components/agencia/centro/decisiones";
 import { PrioridadesSection } from "@/components/agencia/centro/prioridades";
 import { MetricasSection } from "@/components/agencia/centro/metricas";
 import { buildCards, summarize, type CandidateRow } from "@/server/agencia/prioridades";
 import type { CentroMetricas } from "@/server/agencia/centro-metricas";
+import type { LoQueTrajo } from "@/lib/lo-que-trajo";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 /**
  * Lo que se ve según quién mira y cuántos datos hay: un miembro no recibe
@@ -175,7 +178,7 @@ const metricas = (over: Partial<CentroMetricas> = {}): CentroMetricas => ({
 
 describe("cómo va", () => {
   const html = (m: CentroMetricas) =>
-    renderToStaticMarkup(createElement(MetricasSection, { metricas: m, funnel: [], pro: true, owner: true, productLabel: "allok" }));
+    renderToStaticMarkup(createElement(MetricasSection, { metricas: m, trajo: null, funnel: [], pro: true, owner: true, productLabel: "allok" }));
 
   it("un negocio sin un solo mensaje no recibe ceros: recibe una frase y sin selector de periodo", () => {
     const out = html(metricas({ hasActivity: false }));
@@ -208,5 +211,48 @@ describe("cómo va", () => {
     const out = html(metricas({ replies: { ai: 35, owner: 2145 } }));
     expect(out).toContain("allok 35");
     expect(out).toContain("tú 2.145");
+  });
+});
+
+describe("cómo va: lo que te trajo tu agente", () => {
+  const trajo = (over: Partial<LoQueTrajo> = {}): LoQueTrajo => ({
+    currency: "MXN",
+    agenda: true,
+    citas: 4,
+    valorCitaCents: 45_000,
+    ventas: { count: 0, cents: 0 },
+    ...over,
+  });
+  const html = (t: LoQueTrajo | null, pro = true) =>
+    renderToStaticMarkup(
+      createElement(MetricasSection, {
+        metricas: metricas({ hasActivity: true, period: "7d" }),
+        trajo: t,
+        funnel: [],
+        pro,
+        owner: true,
+        productLabel: "allok",
+      }),
+    );
+
+  it("con lo que vale una cita, la plata va primero", () => {
+    const out = html(trajo({ ventas: { count: 1, cents: 1_000_000 } }));
+    expect(out).toContain("Lo que te trajo tu agente");
+    expect(out).toContain("$11,800");
+    expect(out).toContain("4 citas × $450 = $1,800");
+    expect(out).toContain("1 venta cerrada = $10,000");
+    expect(out).toContain("en 7 días");
+  });
+
+  it("sin valor por cita cuenta las citas y pregunta cuánto vale una", () => {
+    const out = html(trajo({ valorCitaCents: null }));
+    expect(out).toContain("citas agendadas");
+    expect(out).toContain("¿Cuánto te deja una cita, en promedio?");
+    expect(out).not.toContain("$");
+  });
+
+  it("sin agenda y sin ventas no se dibuja", () => {
+    expect(html(trajo({ agenda: false, citas: 0 }))).not.toContain("Lo que te trajo tu agente");
+    expect(html(null)).not.toContain("Lo que te trajo tu agente");
   });
 });

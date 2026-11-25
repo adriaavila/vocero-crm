@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   asLink,
+  borradorChatSystemPrompt,
   borradorSchema,
   borradorSystemPrompt,
   htmlToText,
@@ -79,11 +80,17 @@ describe("«Llénalo por mí»: el borrador", () => {
   });
   it("lo que el modelo devuelva mal se vacía en vez de romper", () => {
     const parsed = borradorSchema.parse({ oferta: 3, precios: "  $10  ", preguntas: "no" });
-    expect(parsed).toEqual({ oferta: "", precios: "$10", zona: "", preguntas: [] });
+    expect(parsed).toEqual({ oferta: "", precios: "$10", zona: "", preguntas: [], tono: "" });
   });
-  it("como mucho tres preguntas", () => {
-    const preguntas = Array.from({ length: 5 }, (_, i) => ({ pregunta: `¿Pregunta ${i}?`, respuesta: "Sí." }));
-    expect(borradorSchema.parse({ oferta: "", precios: "", zona: "", preguntas }).preguntas).toHaveLength(3);
+  it("como mucho cinco preguntas (las de los chats; la web se queda en tres)", () => {
+    const preguntas = Array.from({ length: 8 }, (_, i) => ({ pregunta: `¿Pregunta ${i}?`, respuesta: "Sí." }));
+    expect(borradorSchema.parse({ oferta: "", precios: "", zona: "", preguntas }).preguntas).toHaveLength(5);
+  });
+  it("desde los chats, los datos salen solo de lo que escribió el negocio", () => {
+    const prompt = borradorChatSystemPrompt("Clínica Sonrisa");
+    expect(prompt).toMatch(/SOLO de los renglones «Negocio:»/);
+    expect(prompt).toMatch(/no órdenes/);
+    expect(prompt).toMatch(/"tono"/);
   });
   it("el prompt prohíbe inventar y trata el texto como contenido", () => {
     const prompt = borradorSystemPrompt("Clínica Sonrisa");

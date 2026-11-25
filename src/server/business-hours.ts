@@ -238,18 +238,28 @@ export async function saveBusinessHours(
   return next;
 }
 
-/** Final server-side schedule gate; legacy keeps its previous always-on behavior. */
-export async function canAgentRespondNow(organizationId: string, now = new Date()): Promise<boolean> {
-  if (!isAllokSaaSMode()) return true;
-  const settings = await getBusinessHours(organizationId);
+/**
+ * La regla de `canAgentRespondNow`, pura: con el horario ya leído y si el plan
+ * es Completo. Inicio la usa con lo que ya leyó para no preguntar dos veces.
+ */
+export function agentShiftOpen(settings: BusinessHoursSettings, pro: boolean, now = new Date()): boolean {
   if (!hasConfiguredBusinessHours(settings)) return false;
   // «Todo el día» es de Completo. Con Esencial (se bajó de plan, o lo eligió
   // durante la prueba) el agente contesta solo fuera del horario: el plan que
   // el dueño pagó, no un agente mudo (ver `coverage` en lib/cobertura).
-  if (settings.responseMode === "all_day" && (await hasSaaSPlan(organizationId, "pro"))) return true;
+  if (settings.responseMode === "all_day" && pro) return true;
   // `isOutsideBusinessHours` ve `all_day` como «siempre abierto» y devolvería
   // false: Esencial se evalúa como `outside_hours` con el mismo horario.
   return isOutsideBusinessHours({ ...settings, responseMode: "outside_hours" }, now);
+}
+
+/** Final server-side schedule gate; legacy keeps its previous always-on behavior. */
+export async function canAgentRespondNow(organizationId: string, now = new Date()): Promise<boolean> {
+  if (!isAllokSaaSMode()) return true;
+  const settings = await getBusinessHours(organizationId);
+  // El plan solo importa con «todo el día»: sin eso no se lee.
+  const pro = settings.responseMode === "all_day" && (await hasSaaSPlan(organizationId, "pro"));
+  return agentShiftOpen(settings, pro, now);
 }
 
 function isBusinessInterval(value: unknown): value is BusinessInterval {

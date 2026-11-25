@@ -15,21 +15,30 @@ import { useSystemState } from "./system-state";
 export function AllokNavHead({ businessName }: { businessName: string }) {
   const snapshot = useSystemState();
   if (!snapshot) return null;
-  const { state, reason, href, whatsapp } = snapshot;
+  const { whatsapp, setup } = snapshot;
+  // Puesta en marcha abierta y lo único que falta es la puesta en marcha misma
+  // (WhatsApp sin conectar o agente apagado): la tarjeta dice qué toca, en
+  // quieto. «Requiere atención» es para algo que se rompió o espera a alguien.
+  const settingUp = Boolean(setup) && (whatsapp.status === "missing" || snapshot.state === "pausado");
+  const state = settingUp ? "pausado" : snapshot.state;
+  const reason = settingUp && setup ? `Siguiente: ${setup.label}.` : snapshot.reason;
+  const href = settingUp && setup ? setup.href : snapshot.href;
 
   const body = (
     <>
       <span className="flex items-center gap-2" data-state={state}>
         <StateDot state={state} size={7} decorative />
-        <span className="text-[12.5px] font-semibold text-[var(--st-ink)]">{STATE_LABEL[state]}</span>
+        <span className="text-[12.5px] font-semibold text-[var(--st-ink)]">{settingUp ? "Puesta en marcha" : STATE_LABEL[state]}</span>
         {href && <ArrowUpRight className="ml-auto h-3.5 w-3.5 text-text-3" strokeWidth={1.8} aria-hidden />}
       </span>
       <span className="mt-2.5 block truncate text-[13.5px] font-semibold leading-tight text-foreground">
         {businessName}
       </span>
-      <span className="mt-1 block truncate font-mono text-[11px] text-text-3">
-        {whatsapp.phone ?? "WhatsApp sin conectar"}
-      </span>
+      {(whatsapp.phone || !settingUp) && (
+        <span className="mt-1 block truncate font-mono text-[11px] text-text-3">
+          {whatsapp.phone ?? "WhatsApp sin conectar"}
+        </span>
+      )}
       <span className="mt-2.5 block border-t pt-2.5 text-[12px] leading-snug text-text-2">{reason}</span>
     </>
   );
@@ -55,5 +64,6 @@ export function AllokNavHead({ businessName }: { businessName: string }) {
 export function AllokShellBrand() {
   const snapshot = useSystemState();
   if (!snapshot) return null;
-  return <AllokWordmark state={snapshot.state} size={21} className="text-foreground" />;
+  const settingUp = Boolean(snapshot.setup) && (snapshot.whatsapp.status === "missing" || snapshot.state === "pausado");
+  return <AllokWordmark state={settingUp ? "pausado" : snapshot.state} size={21} className="text-foreground" />;
 }

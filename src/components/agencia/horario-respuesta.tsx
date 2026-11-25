@@ -68,9 +68,19 @@ const DAYS: { key: WeekdayKey; label: string; short: string }[] = [
   { key: "sun", label: "Domingo", short: "D" },
 ];
 
-/** Una firma estable: dos horarios iguales dan la misma, sin importar el orden de las claves. */
+/**
+ * Una firma estable: dos horarios iguales dan la misma, sin importar el orden
+ * de las claves. También dentro de cada tramo: la base (jsonb) devuelve
+ * `{end, start}` y el guardado `{start, end}`, y comparar el texto tal cual
+ * marcaba «sin guardar» un horario que nadie tocó.
+ */
 export function hoursSignature(s: HoursSettings): string {
-  return JSON.stringify([WEEKDAYS.map((day) => s.weeklyHours[day] ?? []), s.timezone, s.responseMode, s.handoffResumeHours ?? null]);
+  return JSON.stringify([
+    WEEKDAYS.map((day) => (s.weeklyHours[day] ?? []).map((interval) => [interval.start, interval.end])),
+    s.timezone,
+    s.responseMode,
+    s.handoffResumeHours ?? null,
+  ]);
 }
 
 /** «Atiendes tú lunes a sábado, de 09:00 a 18:00 · Hora de Caracas», o lo que corresponda. */
@@ -79,6 +89,13 @@ export function hoursSummary(s: HoursSettings): string {
   const team = describeTeamHours(s);
   if (!team) return "Todavía sin horario";
   return `Atiendes tú ${team} · Hora de ${timezoneLabel(s.timezone)}`;
+}
+
+/** Lo que promete «Todo el día», igual en las dos pantallas donde se elige (Tu negocio y Activar). */
+export function allDayDetail(canUseAllDay: boolean): string {
+  return canUseAllDay
+    ? "Contesta a toda hora, también mientras tú atiendes. Si contestas tú un chat, se hace a un lado en ese chat."
+    : "Contesta a toda hora. Está en el plan Completo.";
 }
 
 export function useBusinessHours(enabled: boolean) {
@@ -120,7 +137,31 @@ export function useBusinessHours(enabled: boolean) {
     return { ok: true };
   }, [settings]);
 
-  return { enabled, settings, setSettings, canUseAllDay, loaded, loadError, dirty, save };
+  /**
+   * Cambia SOLO el modo, sobre lo último guardado (lo usa «Activar»): lo que
+   * el dueño esté editando en Tu negocio sin guardar no se guarda de rebote.
+   */
+  const saveMode = useCallback(
+    async (responseMode: HoursSettings["responseMode"]): Promise<SaveResult> => {
+      if (!saved) return { ok: false, message: "No se pudo cargar el horario." };
+      const response = await fetch("/api/settings/business-hours", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ...saved, responseMode }),
+      }).catch(() => null);
+      const payload = (await response?.json().catch(() => null)) as { settings?: HoursSettings; error?: { message?: string } } | null;
+      if (!response?.ok || !payload?.settings) {
+        return { ok: false, message: payload?.error?.message ?? "No se pudo guardar el horario." };
+      }
+      const next = payload.settings;
+      setSaved(next);
+      setSettings((current) => (current ? { ...current, responseMode: next.responseMode } : next));
+      return { ok: true };
+    },
+    [saved],
+  );
+
+  return { enabled, settings, setSettings, canUseAllDay, loaded, loadError, dirty, save, saveMode };
 }
 
 export type HoursController = ReturnType<typeof useBusinessHours>;
@@ -209,16 +250,8 @@ export function HorarioRespuesta({
           {brandName} solo hablará por ti cuando esta regla lo permita. Es independiente del horario de citas.
         </p>
 
+        {/* El mismo orden y las mismas palabras que en «Activar». */}
         <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Modo de atención">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={() => setSettings({ ...current, responseMode: "outside_hours" })}
-            className={`rounded-md border p-3 text-left transition-colors ${current.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}
-          >
-            <span className="block text-sm font-semibold">Fuera de horario</span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">Responde cuando tu equipo no atiende.</span>
-          </button>
           <button
             type="button"
             disabled={!canUseAllDay || disabled}
@@ -228,11 +261,16 @@ export function HorarioRespuesta({
             <span className="flex items-center gap-2 text-sm font-semibold">
               Todo el día {!canUseAllDay && <Badge variant="secondary">Plan Completo</Badge>}
             </span>
-            <span className="mt-1 block text-xs leading-5 text-text-3">
-              {canUseAllDay
-                ? "Responde toda la jornada, con una persona siempre disponible para tomar la conversación."
-                : "Responde toda la jornada. Está en el plan Completo."}
-            </span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">{allDayDetail(canUseAllDay)}</span>
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setSettings({ ...current, responseMode: "outside_hours" })}
+            className={`rounded-md border p-3 text-left transition-colors ${current.responseMode === "outside_hours" ? "border-brand bg-brand-tint" : "hover:bg-subtle"}`}
+          >
+            <span className="block text-sm font-semibold">Cuando no atiendes tú</span>
+            <span className="mt-1 block text-xs leading-5 text-text-3">Responde cuando tú o tu equipo no atienden.</span>
           </button>
         </div>
 

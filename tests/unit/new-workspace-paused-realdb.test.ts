@@ -81,7 +81,9 @@ describeReal("real Postgres, negocio nuevo con el agente en pausa", () => {
       const admin = await profileOf(ids.adminUser);
       const self = await profileOf(ids.selfUser);
       expect(admin).toMatchObject({ enabled: false, name: "Asistente", tz: "America/Caracas", mode: "outside_hours" });
-      expect(self).toMatchObject({ enabled: false, name: "Asistente", tz: "America/Bogota" });
+      // La prueba de autoservicio es Completo: nace contestando todo el día, así el
+      // primer mensaje de prueba del dueño (a media tarde) tiene respuesta.
+      expect(self).toMatchObject({ enabled: false, name: "Asistente", tz: "America/Bogota", mode: "all_day" });
       expect(admin.greeting).not.toContain("Rei");
 
       const old = (await sql`select enabled, name from agent_profile where organization_id = ${ids.existingOrg}`)[0];

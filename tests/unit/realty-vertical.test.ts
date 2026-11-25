@@ -37,9 +37,33 @@ describe("defaultVerticalFromEnv", () => {
 });
 
 describe("verticalFromMetadata", () => {
-  it("organización sin metadata → sin vertical", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("organización sin metadata → sin vertical (caso allok)", () => {
+    vi.stubEnv("BRAND", "allok");
     expect(verticalFromMetadata(null)).toBeNull();
     expect(verticalFromMetadata(undefined)).toBeNull();
+  });
+
+  it("en allok, DEFAULT_VERTICAL no alcanza a los negocios que ya existían", () => {
+    vi.stubEnv("BRAND", "allok");
+    vi.stubEnv("DEFAULT_VERTICAL", "inmobiliario");
+    expect(verticalFromMetadata(JSON.stringify({ branding: { name: "Acme" } }))).toBeNull();
+  });
+
+  it("en Rei, un negocio que nunca eligió vertical es inmobiliario", () => {
+    vi.stubEnv("BRAND", "rei");
+    vi.stubEnv("DEFAULT_VERTICAL", "");
+    expect(verticalFromMetadata(null)).toBe("inmobiliario");
+    const nacidoSinLaVariable = JSON.stringify({
+      allok: { billing: { plan: "inmobiliaria", status: "active" } },
+    });
+    expect(verticalFromMetadata(nacidoSinLaVariable)).toBe("inmobiliario");
+  });
+
+  it("en Rei, el «Apagar» del panel admin (la llave en null) se respeta", () => {
+    vi.stubEnv("BRAND", "rei");
+    expect(verticalFromMetadata(JSON.stringify({ vertical: null }))).toBeNull();
   });
 
   it("lee el vertical guardado por setOrgVertical", () => {

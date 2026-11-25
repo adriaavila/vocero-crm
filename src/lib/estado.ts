@@ -212,6 +212,13 @@ export function systemState(i: SystemInput): SystemVerdict {
 }
 
 export type SystemSnapshot = SystemVerdict & {
+  /**
+   * El paso que toca de la puesta en marcha mientras sigue abierta (el agente
+   * no está activo), para que la barra lateral diga «Siguiente: Tu negocio» y
+   * no «Requiere atención» a quien todavía no ha tenido tiempo de conectar
+   * nada. null con el agente activo, o para quien no es dueño.
+   */
+  setup?: { label: string; href: string } | null;
   whatsapp: { status: WhatsAppLink; phone: string | null };
   waiting: number;
   working: number;

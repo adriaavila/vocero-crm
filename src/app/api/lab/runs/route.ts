@@ -3,6 +3,7 @@ import { apiError, withOwner } from "@/lib/api";
 import { getDb, schema } from "@/lib/db";
 import { scoped } from "@/lib/db/tenant";
 import { RunConflictError, startRun } from "@/server/lab/runner";
+import { LabNotReadyError } from "@/server/lab/org-personas";
 import { isAgentAvailableForOrganization } from "@/server/ai/credentials";
 
 export const dynamic = "force-dynamic";
@@ -68,9 +69,12 @@ export const POST = withOwner(async (session) => {
     );
   }
   try {
-    const runId = await startRun(session.organizationId);
-    return Response.json({ runId }, { status: 202 });
+    const { runId, total } = await startRun(session.organizationId);
+    return Response.json({ runId, total }, { status: 202 });
   } catch (err) {
+    if (err instanceof LabNotReadyError) {
+      return apiError(409, "lab_not_ready", err.message);
+    }
     if (err instanceof RunConflictError) {
       return apiError(
         409,

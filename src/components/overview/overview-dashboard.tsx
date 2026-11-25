@@ -122,7 +122,7 @@ export function OverviewDashboard({ data, readiness, billing, billingNotice, use
           <SignalCard label="Sin leer" value={data.summary.unreadConversations} helper={data.summary.unreadConversations ? "Abrir bandeja" : "Todo al día"} icon={Inbox} href="/inbox" warning={data.summary.unreadConversations > 0} />
           <SignalCard label="Atención humana" value={data.summary.pendingHandoffs} helper={data.summary.pendingHandoffs ? "Tomar conversación" : "Ninguna pendiente"} icon={MessageSquareWarning} href="/inbox" warning={data.summary.pendingHandoffs > 0} />
           <SignalCard label="Ventanas activas" value={data.summary.activeWindows} helper="Conversaciones abiertas" icon={Clock3} href="/inbox" />
-          <SignalCard label="Última prueba" value={data.latestLab ? `${data.latestLab.score}/100` : "—"} helper={data.latestLab ? (data.latestLab.redCount ? "Revisar hallazgos" : "Sin hallazgos críticos") : "Haz tu primera prueba"} icon={Sparkles} href={owner ? "/lab" : "/overview"} warning={Boolean(data.latestLab?.redCount)} />
+          <SignalCard label="Última prueba" value={data.latestLab ? `${data.latestLab.score} de 100` : "—"} helper={data.latestLab ? (data.latestLab.redCount ? "Revisar casos graves" : "Sin problemas graves") : "Haz tu primera prueba"} icon={Sparkles} href={owner ? "/lab" : "/overview"} warning={Boolean(data.latestLab?.redCount)} />
         </section>
 
         <section className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">

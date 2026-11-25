@@ -35,6 +35,17 @@ function whatsappLabel(status: SaaSTenantStatus["whatsapp"]): string {
   return status === "connected" ? "Conectado" : status === "reconnect_required" ? "Reconectar" : "Pendiente";
 }
 
+/**
+ * Lo que muestra el selector de plan antes de que nadie lo toque: el plan que
+ * el negocio ya tiene y, sin plan, el primero que vende este despliegue (en
+ * Rei, Agencia). Arrancaba siempre en Esencial, así que «Activar plan» sin
+ * mirar el selector BAJABA de plan: le pasó a SAMER en Rei, que perdió Ventas
+ * y Propiedades.
+ */
+export function initialPlanChoice(current: SaaSPlan | null, sold: SaaSPlan | undefined): SaaSPlan {
+  return current ?? sold ?? PLAN_ORDER[0] ?? "basic";
+}
+
 /** Nada que quitar: sin plan y sin nada activo. Con plan (aunque el estado sea raro) o con algo activo, "Quitar plan" queda habilitado. */
 function nothingToRevoke(billing: Billing): boolean {
   return !billing.plan && billing.status === "inactive";
@@ -46,7 +57,14 @@ function nothingToRevoke(billing: Billing): boolean {
  * única acción que importa aquí. Este patrón (bloque que se apila en
  * móvil) ya lo usa `team-client.tsx` para listas con acciones por fila.
  */
-export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTenantStatus[] }) {
+export function AdminTenantsTable({
+  tenants: initialTenants,
+  soldPlan,
+}: {
+  tenants: SaaSTenantStatus[];
+  /** El primer plan que vende este despliegue (`SAAS_PLANS`): lo resuelve el servidor. */
+  soldPlan?: SaaSPlan;
+}) {
   const [tenants, setTenants] = useState(initialTenants);
   // router.refresh() trae filas nuevas del servidor (soporte del alta).
   useEffect(() => setTenants(initialTenants), [initialTenants]);
@@ -104,7 +122,8 @@ export function AdminTenantsTable({ tenants: initialTenants }: { tenants: SaaSTe
   }, [Object.keys(needsConfirm).join(",")]);
 
   function planFor(tenantId: string): SaaSPlan {
-    return choice[tenantId] ?? PLAN_ORDER[0] ?? "basic";
+    const current = tenants.find((tenant) => tenant.id === tenantId)?.billing.plan ?? null;
+    return choice[tenantId] ?? initialPlanChoice(current, soldPlan);
   }
 
   function applyBilling(tenantId: string, billing: Billing) {

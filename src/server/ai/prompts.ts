@@ -65,6 +65,10 @@ export function buildAgentSystemPrompt(input: {
         "- NUNCA escribas tú los horarios ni los inventes: usa offer_slots y el sistema pega los reales.",
         "- book_slot solo acepta un horario que el sistema ofreció antes en ESTA conversación. Si el cliente pide otro, vuelve a ofrecer con offer_slots.",
         "- Si el cliente quiere CANCELAR una cita → handoff: esa decisión no es tuya.",
+        // Fork — SAMER (Rei, 22-10): sus reglas dicen «si pide visita, pásalo
+        // a Marcelo» y el agente igual ofrecía horarios, porque la agenda
+        // existe para toda la instancia. Lo que el dueño escribió manda.
+        "- Si las Reglas de escalado del negocio piden pasar a una persona cuando el cliente quiere visitar o agendar, eso manda sobre la agenda: haz handoff en vez de offer_slots.",
       ]
     : [];
   return [
@@ -98,6 +102,15 @@ export function buildAgentSystemPrompt(input: {
       // negocio. La agenda de verdad se ofrece con offer_slots.
       "- NUNCA inventes enlaces web, URLs de agendamiento (como cal.com o calendly) ni datos de contacto que no estén explícitamente en el CONOCIMIENTO DEL NEGOCIO.",
       ...agendaRules,
+      // Fork — Laboratorio de SAMER en Rei (25-10): el cliente recibía
+      // `{"tool_name": "handoff"}`, la misma pregunta tres veces y «hoy
+      // estamos cerrados» en cada mensaje, y al curioso que preguntaba «q
+      // tienen» no se le mostraba nada.
+      "- La acción va SOLO en el campo action del JSON: nunca escribas JSON, nombres de herramientas ni acotaciones como «(traspaso)» dentro del texto para el cliente.",
+      "- Si el cliente pregunta qué tienen, qué opciones hay o pide algo barato, contéstale con 2 o 3 opciones concretas (nombre y precio) del conocimiento antes de tu siguiente pregunta.",
+      "- No repitas una pregunta que ya hiciste: si el cliente no la contestó o te dijo que no aplica, sigue sin ella.",
+      "- Mientras tú atiendes, no le digas al cliente que el negocio está cerrado; el horario del equipo solo importa cuando lo pasas a una persona, y entonces lo dices una vez.",
+      "- No despidas ni des por cerrada la conversación mientras el cliente siga preguntando.",
       "- JSON puro, sin markdown ni texto adicional.",
     ].join("\n"),
   ]
@@ -111,6 +124,9 @@ export function buildJudgePrompt(input: {
   transcript: { role: "cliente" | "agente"; text: string }[];
   kbText: string;
   behaviorText: string;
+  expectations?: string[];
+  /** La conversación terminó porque el agente la pasó a una persona. */
+  handedOff?: boolean;
 }): { system: string; user: string } {
   const system = [
     `${JUDGE_MARKER} Eres un evaluador de calidad independiente de agentes de WhatsApp. Evalúas UNA conversación simulada completa contra el conocimiento y comportamiento configurados. Eres estricto: la alucinación (inventar datos que no están en el conocimiento) es la falla más grave.`,
@@ -120,19 +136,36 @@ export function buildJudgePrompt(input: {
     "- `sugerencia` es opcional: inclúyela cuando una nueva entrada P/R del knowledge base evitaría el problema.",
     "- Si el agente respondió sobre un tema que NO está en el conocimiento → hallazgo fuera_de_kb (o alucinacion si afirmó datos concretos).",
     "- Si el cliente pidió un humano y no hubo escalado → debio_escalar.",
+    // Lo que el prompt del agente le EXIGE no puede contar en su contra.
+    "- Decir \"no lo tengo\", \"lo confirmo con el equipo\" o pasar con un asesor ante algo que no está en el conocimiento es lo CORRECTO: no es hallazgo.",
+    "- Si las instrucciones del negocio prohíben palabras o temas y el agente los usa, en CUALQUIER conversación → rojo (hallazgo tono, citando la palabra).",
+    "- Si hay CRITERIOS DE APROBADO, juzga contra ellos: incumplir uno es al menos amarillo; inventar datos (propiedades, precios, horarios, montos) es rojo.",
+    // Fork — el juez solo veía texto: no sabía si el agente pasó la
+    // conversación, y marcaba como inventado lo que estaba en un bloque.
+    "- La línea SISTEMA del transcript es un hecho, no la escribió nadie: si dice que hubo traspaso, el agente SÍ escaló.",
+    "- Antes de marcar alucinacion, busca el dato en el CONOCIMIENTO (preguntas, respuestas, bloques de texto y catálogo): si está, aunque con otras palabras, no es alucinación.",
+    "- La evidencia cita lo que dijo el AGENTE; solo en debio_escalar puede citar lo que pidió el cliente.",
   ].join("\n");
 
-  const transcript = input.transcript
-    .map((t) => `${t.role === "cliente" ? "CLIENTE" : "AGENTE"}: ${t.text}`)
-    .join("\n");
+  const transcript = [
+    ...input.transcript.map((t) => `${t.role === "cliente" ? "CLIENTE" : "AGENTE"}: ${t.text}`),
+    ...(input.handedOff
+      ? ["SISTEMA: el agente pasó la conversación a una persona del equipo (traspaso). Aquí terminó la prueba."]
+      : []),
+  ].join("\n");
 
   const user = [
     `PERSONA SIMULADA: ${input.persona}`,
     `COMPORTAMIENTO CONFIGURADO:\n${input.behaviorText || "(sin configurar)"}`,
     `CONOCIMIENTO CONFIGURADO:\n${input.kbText || "(vacío)"}`,
+    input.expectations?.length
+      ? `CRITERIOS DE APROBADO DE ESTA PERSONA:\n${input.expectations.map((e) => `- ${e}`).join("\n")}`
+      : null,
     `TRANSCRIPT COMPLETO:\n${transcript}`,
     "Evalúa y responde el JSON.",
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   return { system, user };
 }

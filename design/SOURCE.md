@@ -10,7 +10,11 @@ como estado de la operación. Las fuentes de verdad:
 
 Acá se refleja en:
 
-- `src/app/globals.css`, bloque `[data-saas="true"]` — los tokens.
+- `src/app/allok-tokens.css` — los valores de la marca (noche, papel, estados,
+  cielo, esquinas, curva), **idéntico** al de creativ3. `tests/unit/allok-tokens.test.ts`
+  compara su huella con la de allá: si cambias uno, copias el archivo entero
+  al otro repo y pones la huella nueva en las dos pruebas.
+- `src/app/globals.css`, bloque `[data-saas="true"]` — los alias de la app (`--bg`, `--text`, `--st-*`), que leen de `allok-tokens.css`.
 - `src/lib/estado.ts` — los estados y sus reglas; `STATE_DOT` repite los puntos
   para el icono de la pestaña.
 - `src/lib/branding.ts` — `SAAS_BRANDING` (acento tinta) y su inversión en oscuro.

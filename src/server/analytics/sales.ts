@@ -142,7 +142,8 @@ export type Desenlace = {
  * sumarían el monto dos veces. Con el desenlace único los dos casos
  * desaparecen.
  */
-async function desenlacesDelPeriodo(
+// Fork — exportada para que Inicio y el resumen del día (`agencia/lo-que-trajo.ts`) cuenten las mismas ventas que Resultados.
+export async function desenlacesDelPeriodo(
   organizationId: string,
   start: Date,
   end: Date

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Copy, ShieldCheck } from "lucide-react";
@@ -59,6 +59,7 @@ export default function RegisterForm({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
   // Un correo que ya tiene cuenta no es un fallo: el siguiente paso es entrar.
   const [existingAccount, setExistingAccount] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -109,6 +110,12 @@ export default function RegisterForm({
     const slug = params.get("demo")?.trim().toLowerCase() ?? "";
     if (slug.length <= 80 && DEMO_SLUG.test(slug)) setDemo(slug);
   }, [adminMode]);
+
+  // Al fallar el alta, el foco pasa al aviso: el botón que se oprimió ya no es
+  // lo que hay que leer, y el lector de pantalla lo anuncia donde está el foco.
+  useEffect(() => {
+    if (error) errorRef.current?.focus();
+  }, [error]);
 
   const firstSetupHref = demo ? `${FIRST_SETUP_HREF}?demo=${encodeURIComponent(demo)}` : FIRST_SETUP_HREF;
 
@@ -291,7 +298,7 @@ export default function RegisterForm({
             ? "Creas la cuenta del dueño y eliges su dirección. Al final te queda un mensaje listo para mandarle."
             : demo
             ? "Tu agente llega con lo que aprendió de tu web: lo revisas, lo pruebas y decides cuándo activarlo."
-            : "En unos minutos podrás conectar WhatsApp, probar respuestas y decidir cuándo activar tu agente."}
+            : "En unos minutos le cuentas de tu negocio, pruebas sus respuestas, conectas WhatsApp y decides cuándo activarlo."}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -431,7 +438,7 @@ export default function RegisterForm({
             </label>
           )}
           {error && (
-            <p id="register-error" role="alert" className="text-sm text-destructive">
+            <p id="register-error" ref={errorRef} tabIndex={-1} role="alert" className="text-sm text-destructive-text outline-none">
               {error}
               {existingAccount && (
                 <>

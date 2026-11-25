@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
@@ -33,10 +33,15 @@ export function anuncioParaGuardar(
 }
 
 /**
- * El primer anuncio gana. `ON CONFLICT DO NOTHING` sobre el UNIQUE de
- * (organización, conversación) —y no un "consulta y luego inserta"— porque Meta
- * reintenta el webhook y dos entregas simultáneas ganarían la carrera las dos
+ * El primer anuncio gana. `ON CONFLICT` sobre el UNIQUE de (organización,
+ * conversación) —y no un "consulta y luego inserta"— porque Meta reintenta el
+ * webhook y dos entregas simultáneas ganarían la carrera las dos
  * (Constitución IV).
+ *
+ * Fork — una excepción: si lo guardado no trae `ctwa_clid` y lo nuevo sí, lo
+ * nuevo lo reemplaza. Pasa cuando la persona entró antes por una publicación o
+ * una vista previa (Meta manda `referral` sin clic) y después toca el anuncio
+ * pagado: sin esto, ese clic real nunca se le podría reportar a Meta.
  */
 export async function registrarAnuncioDeOrigen(input: {
   organizationId: string;
@@ -46,31 +51,38 @@ export async function registrarAnuncioDeOrigen(input: {
 }): Promise<void> {
   const db = getDb();
   const a = anuncioParaGuardar(input.anuncio);
-  const creadas = await db
-    .insert(schema.adAttribution)
-    .values({
-      id: newId("adAttribution"),
-      organizationId: input.organizationId,
-      contactId: input.contactId,
-      conversationId: input.conversationId,
-      ctwaClid: a.ctwaClid,
-      sourceId: a.sourceId,
-      sourceType: a.sourceType,
-      sourceUrl: a.sourceUrl,
-      headline: a.headline,
-      body: a.body,
-      mediaType: a.mediaType,
-      raw: a.raw,
-    })
-    .onConflictDoNothing({
-      target: [
-        schema.adAttribution.organizationId,
-        schema.adAttribution.conversationId,
-      ],
-    })
-    .returning({ id: schema.adAttribution.id });
+  const campos = {
+    ctwaClid: a.ctwaClid,
+    sourceId: a.sourceId,
+    sourceType: a.sourceType,
+    sourceUrl: a.sourceUrl,
+    headline: a.headline,
+    body: a.body,
+    mediaType: a.mediaType,
+    raw: a.raw,
+  };
+  const target = [
+    schema.adAttribution.organizationId,
+    schema.adAttribution.conversationId,
+  ];
+  const insert = db.insert(schema.adAttribution).values({
+    id: newId("adAttribution"),
+    organizationId: input.organizationId,
+    contactId: input.contactId,
+    conversationId: input.conversationId,
+    ...campos,
+  });
+  const creadas = await (a.ctwaClid
+    ? insert.onConflictDoUpdate({
+        target,
+        set: { ...campos, imageAssetId: null },
+        setWhere: isNull(schema.adAttribution.ctwaClid),
+      })
+    : insert.onConflictDoNothing({ target })
+  ).returning({ id: schema.adAttribution.id });
 
-  // Solo la fila nueva baja imagen: una reentrega no dispara otra descarga.
+  // Solo la fila nueva (o la mejorada con un clic) baja imagen: una reentrega
+  // no dispara otra descarga.
   if (creadas[0] && a.sourceId && a.imageUrl) {
     const { organizationId, conversationId } = input;
     const sourceId = a.sourceId;

@@ -2,6 +2,7 @@ import { JUDGE_MARKER } from "@/server/ai/prompts";
 import { ASK_MARKER } from "@/server/agencia/centro-ask-prompt";
 import { BORRADOR_MARKER } from "@/server/agencia/borrador-negocio-prompt";
 import { SEGUIMIENTO_MARKER } from "@/server/agencia/seguimiento-prompt";
+import { CLIENT_SIM_MARKER } from "@/server/lab/client-sim";
 
 /**
  * Proveedor LLM determinista para el self-test (contrato mocks.md).
@@ -60,7 +61,35 @@ export function aiMockCompletion(messages: InMessage[]): string {
         ],
       });
     }
+    // Fork — imita al juez real con quien pide un asesor: «debió escalar»
+    // citando justo el mensaje con el que el agente lo pasó. El Laboratorio
+    // tiene que descartarlo (`server/agencia/juez-hallazgos`), no ponerlo rojo.
+    const despedida = lastUser
+      .split("\n")
+      .filter((l) => l.startsWith("AGENTE: "))
+      .pop()
+      ?.slice("AGENTE: ".length);
+    if (lastUser.includes("PERSONA SIMULADA: pide_asesor") && despedida) {
+      return JSON.stringify({
+        veredicto: "rojo",
+        hallazgos: [{ tipo: "debio_escalar", evidencia: despedida }],
+      });
+    }
     return JSON.stringify({ veredicto: "verde", hallazgos: [] });
+  }
+
+  // Cliente simulado del Laboratorio: contesta la pregunta del agente con una
+  // marca visible, para que el self-test vea que el cliente RESPONDE y no
+  // recita el guion.
+  if (system.includes(CLIENT_SIM_MARKER)) {
+    // Sigue con la primera línea del guion que todavía no mandó.
+    const guion = [...system.matchAll(/^\d+\. (.+)$/gm)].map((m) => m[1]!);
+    const enviadas = lastUser
+      .split("\n")
+      .filter((l) => l.startsWith("TÚ: "))
+      .map((l) => l.slice(4).replace(/^\(cliente simulado\) /, ""));
+    const siguiente = guion.find((l) => !enviadas.includes(l)) ?? "Gracias, eso era todo";
+    return JSON.stringify({ mensaje: `(cliente simulado) ${siguiente}`, terminado: false });
   }
 
   // «Pregúntale a allok» (Inicio): contesta con cifras del SNAPSHOT que recibió,
@@ -118,6 +147,13 @@ export function aiMockCompletion(messages: InMessage[]): string {
     return JSON.stringify({ action: "reply", text: `${nombre ? `${nombre}, tu` : "Tu"} cita es el ${cita}.` });
   }
 
+  // Catálogo de Propiedades (sistema aparte): «¿qué me puede mostrar?» se
+  // contesta con la primera propiedad que el CRM le pasó, con su precio.
+  const primera = memoria.match(/CATÁLOGO DE PROPIEDADES[^\n]*\n- «([^»]+)»[^\n]*?· (\$[\d.]+ [A-Z]{3}|Bs [\d.]+)/);
+  if (primera && /mostrar|qu[eé] tienen|cu[aá]nto cuesta/.test(text)) {
+    return JSON.stringify({ action: "reply", text: `Tengo «${primera[1]}» en ${primera[2]}.` });
+  }
+
   const eco = lastUser.slice(0, 80);
   return JSON.stringify({
     action: "reply",
@@ -143,10 +179,31 @@ function askMockAnswer(prompt: string): string {
 
 function borradorMock(prompt: string) {
   const source = prompt.split('"""')[1] ?? "";
+  if (prompt.startsWith("CHATS:")) return borradorChatsMock(source);
   const sentences = source.split(/(?<!\b[A-Z][a-z]{0,2}\.)(?<=[.!?])\s+|\n+/).map((t) => t.trim()).filter(Boolean);
   const pick = (re: RegExp) => sentences.filter((t) => re.test(t)).join(" ");
   const precios = pick(/\$|precio|cuesta|cobra/i);
   const zona = pick(/calle|av\.|avenida|zona|direcci|colonia|envi/i);
   const oferta = sentences.filter((t) => !precios.includes(t) && !zona.includes(t)).slice(0, 2).join(" ");
   return { oferta, precios, zona, preguntas: [] };
+}
+
+/** «Desde tus chats»: solo lo que dijo el negocio, y la pregunta de un cliente con la respuesta que le siguió. */
+function borradorChatsMock(source: string) {
+  const lines = source.split("\n");
+  const negocio = lines.filter((l) => l.startsWith("Negocio: ")).map((l) => l.slice(9));
+  const preguntas = lines.flatMap((line, i) => {
+    const next = lines[i + 1] ?? "";
+    return line.startsWith("Cliente: ") && line.includes("?") && next.startsWith("Negocio: ")
+      ? [{ pregunta: line.slice(9), respuesta: next.slice(9) }]
+      : [];
+  });
+  const usaEmojis = negocio.some((t) => /\p{Extended_Pictographic}/u.test(t));
+  return {
+    oferta: negocio.find((t) => /hacemos|vendemos|ofrecemos|tenemos/i.test(t)) ?? "",
+    precios: negocio.filter((t) => /\$|precio|cuesta/i.test(t)).join(" "),
+    zona: negocio.filter((t) => /calle|av\.|avenida|zona|colonia|envi/i.test(t)).join(" "),
+    preguntas,
+    tono: `${/usted/i.test(negocio.join(" ")) ? "Habla de usted" : "Tutea"}, mensajes cortos${usaEmojis ? ", usa emojis" : ""}.`,
+  };
 }

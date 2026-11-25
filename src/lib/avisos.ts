@@ -1,3 +1,5 @@
+import { plata } from "@/lib/lo-que-trajo";
+
 /**
  * Fork — el texto de los avisos al celular (puro, probado). Se lee en la
  * pantalla bloqueada del teléfono: el título dice QUIÉN y QUÉ en pocas
@@ -85,21 +87,53 @@ export type ResumenDia = {
   citas: number;
   /** Conversaciones que esperan a una persona ahora mismo. */
   teEsperan: number;
+  /** Lo que valen esas citas, si el dueño dijo cuánto le deja una (`lib/lo-que-trajo.ts`). */
+  valorCitasCents?: number | null;
+  /** Ventas cerradas hoy y su monto en la moneda del negocio. */
+  ventas?: { count: number; cents: number };
+  currency?: string;
 };
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
 
-/** `null` si hoy no escribió nadie: un resumen en cero solo molesta. */
+/**
+ * `null` si hoy no pasó nada: un resumen en cero solo molesta. Con plata que
+ * contar (citas con valor o ventas cerradas), la plata va primero: es lo que
+ * el dueño quiere saber de su día, no cuántos mensajes se mandaron.
+ */
 export function textoResumenDia(r: ResumenDia): { title: string; body: string } | null {
-  if (r.clientes <= 0) return null;
-  const title = `Hoy te ${r.clientes === 1 ? "escribió" : "escribieron"} ${plural(r.clientes, "cliente", "clientes")}`;
+  const ventas = r.ventas ?? { count: 0, cents: 0 };
+  const moneda = r.currency ?? "USD";
+  const valorCitas = r.citas > 0 ? (r.valorCitasCents ?? 0) : 0;
+  if (r.clientes <= 0 && r.citas <= 0 && ventas.count <= 0) return null;
+  const espera =
+    r.teEsperan > 0
+      ? `${r.teEsperan === 1 ? "1 conversación te espera" : `${r.teEsperan} conversaciones te esperan`}.`
+      : "Nadie te espera.";
+
+  if (valorCitas > 0 || ventas.count > 0) {
+    const title =
+      valorCitas > 0
+        ? `Tu agente te trajo unos ${plata(valorCitas + ventas.cents, moneda)} hoy`
+        : `Hoy cerraste ${plural(ventas.count, "venta", "ventas")}${ventas.cents > 0 ? ` por ${plata(ventas.cents, moneda)}` : ""}`;
+    const partes: string[] = [];
+    if (r.citas > 0) partes.push(`agendó ${plural(r.citas, "cita", "citas")}${valorCitas > 0 ? ` (${plata(valorCitas, moneda)})` : ""}`);
+    if (valorCitas > 0 && ventas.count > 0) {
+      partes.push(`cerraste ${plural(ventas.count, "venta", "ventas")}${ventas.cents > 0 ? ` (${plata(ventas.cents, moneda)})` : ""}`);
+    }
+    if (r.clientes > 0) partes.push(`te ${r.clientes === 1 ? "escribió" : "escribieron"} ${plural(r.clientes, "cliente", "clientes")}`);
+    const primera = partes.join(", ");
+    return { title, body: primera ? `${primera.charAt(0).toUpperCase()}${primera.slice(1)}. ${espera}` : espera };
+  }
+
+  const title =
+    r.clientes > 0
+      ? `Hoy te ${r.clientes === 1 ? "escribió" : "escribieron"} ${plural(r.clientes, "cliente", "clientes")}`
+      : `Tu agente agendó ${plural(r.citas, "cita", "citas")} hoy`;
   const hizo: string[] = [];
   if (r.respuestas > 0) hizo.push(`tu agente contestó ${plural(r.respuestas, "mensaje", "mensajes")}`);
   if (r.citas > 0) hizo.push(`agendó ${plural(r.citas, "cita", "citas")}`);
   const primera = hizo.length ? `${hizo.join(" y ")}.` : "Tu agente no contestó ninguno.";
-  const espera =
-    r.teEsperan > 0
-      ? ` ${r.teEsperan === 1 ? "1 conversación te espera" : `${r.teEsperan} conversaciones te esperan`}.`
-      : " Nadie te espera.";
-  return { title, body: `${primera.charAt(0).toUpperCase()}${primera.slice(1)}${espera}` };
+  return { title, body: `${primera.charAt(0).toUpperCase()}${primera.slice(1)} ${espera}` };
 }
+

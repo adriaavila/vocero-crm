@@ -125,6 +125,24 @@ describe("activationBlockers", () => {
     });
   });
 
+  it("una prueba terminada con 50 y un caso rojo, después del último cambio, no bloquea", async () => {
+    m.readiness.mockResolvedValue(readiness({
+      latestRun: { id: "r", organizationId: "o", status: "done", score: 50, error: null, startedAt: new Date(t0.getTime() + 1000), finishedAt: new Date(t0.getTime() + 1000) },
+      redCount: 1,
+    }));
+    const { activationBlockers, activationError } = await load();
+    const blockers = await activationBlockers("org");
+    expect(blockers).toEqual([]);
+    expect(activationError(blockers)).toBeNull();
+  });
+
+  it("sin prueba, pide probar una vez y no habla de aprobar", async () => {
+    m.readiness.mockResolvedValue(readiness({ latestRun: null }));
+    const { activationBlockers } = await load();
+    const [blocker] = await activationBlockers("org");
+    expect(blocker).toMatchObject({ step: "probar", detail: "Pruébalo una vez antes de hablar con tus clientes." });
+  });
+
   it("los pasos pendientes se juntan en el mensaje de siempre", async () => {
     m.readiness.mockResolvedValue(readiness({ knowledgeCount: 0, latestRun: null }));
     const { activationBlockers, activationError } = await load();

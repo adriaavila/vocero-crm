@@ -9,6 +9,9 @@ import { getBranding } from "@/server/branding";
 import { canAutomate } from "@/server/agencia/entitlements";
 import {
   asLink,
+  BORRADOR_FAQ_MAX,
+  borradorChatSystemPrompt,
+  borradorChatUserPrompt,
   borradorSchema,
   borradorSystemPrompt,
   borradorUserPrompt,
@@ -109,22 +112,35 @@ async function readCapped(response: Response, max: number): Promise<string> {
   return out + decoder.decode();
 }
 
-export async function draftNegocio(organizationId: string, input: string, deps: Deps = defaultDeps, now = Date.now()): Promise<BorradorResult> {
+type Cupo = { remaining: number; fail: (code: string, message: string, status?: number) => BorradorResult };
+
+/**
+ * El plan y el cupo del día, comunes a todos los modos. Va antes de leer la web
+ * para que el cuadro no sirva para pedir páginas sin tope.
+ * ponytail: en memoria y por proceso, como «Pregúntale a allok».
+ */
+async function tomarCupo(organizationId: string, now: number): Promise<Cupo | BorradorResult> {
   if (!(await canAutomate(organizationId))) {
     return { ok: false, status: 402, code: "billing_inactive", message: "Reactiva tu plan para que te llenemos los datos." };
   }
-
-  // ponytail: en memoria y por proceso, como «Pregúntale a allok». Va antes
-  // de leer la web para que el cuadro no sirva para pedir páginas sin tope.
   const key = `borrador-negocio:${organizationId}`;
   const limit = checkRateLimit(key, { windowMs: DAY_MS, max: BORRADOR_DAILY_LIMIT }, now);
   if (!limit.allowed) {
     return { ok: false, status: 429, code: "rate_limited", message: "Ya usaste los borradores de hoy. Mañana puedes pedir otro." };
   }
-  const fail = (code: string, message: string, status = 422): BorradorResult => {
-    refundRateLimit(key);
-    return { ok: false, status, code, message };
+  return {
+    remaining: limit.remaining,
+    fail: (code, message, status = 422) => {
+      refundRateLimit(key);
+      return { ok: false, status, code, message };
+    },
   };
+}
+
+export async function draftNegocio(organizationId: string, input: string, deps: Deps = defaultDeps, now = Date.now()): Promise<BorradorResult> {
+  const cupo = await tomarCupo(organizationId, now);
+  if ("ok" in cupo) return cupo;
+  const { fail } = cupo;
 
   let source = input.trim();
   const link = asLink(source);
@@ -140,6 +156,35 @@ export async function draftNegocio(organizationId: string, input: string, deps: 
     return fail("too_short", "Cuéntanos un poco más: qué vendes, precios y dónde estás.");
   }
 
+  const result = await pedirBorrador(organizationId, cupo, borradorSystemPrompt, borradorUserPrompt(source));
+  if (!result.ok) return result;
+  // Desde una web o un texto, tres preguntas bastan; de los chats salen hasta cinco.
+  return { ...result, borrador: { ...result.borrador, preguntas: result.borrador.preguntas.slice(0, BORRADOR_FAQ_MAX), tono: "" } };
+}
+
+/**
+ * «Desde tus chats»: los chats exportados de WhatsApp, ya condensados y sin
+ * datos de clientes en el navegador (`lib/chat-exportado.ts`), a un borrador
+ * de «Tu negocio» más el tono con el que escribe el dueño. No guarda nada.
+ */
+export async function draftDesdeChats(organizationId: string, chats: string, now = Date.now()): Promise<BorradorResult> {
+  const cupo = await tomarCupo(organizationId, now);
+  if ("ok" in cupo) return cupo;
+  if (!/^Negocio: /m.test(chats) || !/^Cliente: /m.test(chats)) {
+    return cupo.fail("not_a_chat", "No encontramos una conversación entre tu negocio y un cliente en ese archivo.");
+  }
+  return pedirBorrador(organizationId, cupo, borradorChatSystemPrompt, borradorChatUserPrompt(chats));
+}
+
+const hayDatos = (b: Borrador) => Boolean(b.oferta || b.precios || b.zona || b.preguntas.length);
+
+async function pedirBorrador(
+  organizationId: string,
+  cupo: Cupo,
+  system: (businessName: string) => string,
+  user: string,
+): Promise<BorradorResult> {
+  const { fail } = cupo;
   const [branding, config, profile] = await Promise.all([
     getBranding(organizationId),
     getAiRuntimeConfig(organizationId),
@@ -153,8 +198,8 @@ export async function draftNegocio(organizationId: string, input: string, deps: 
     // El esquema limpia (recorta y vacía lo inválido): su entrada no es su salida.
     borradorSchema as unknown as z.ZodType<Borrador>,
     [
-      { role: "system", content: borradorSystemPrompt(branding.name) },
-      { role: "user", content: borradorUserPrompt(source) },
+      { role: "system", content: system(branding.name) },
+      { role: "user", content: user },
     ],
     { provider: profile[0]?.aiProvider, credentials: config.providers, timeoutMs: MODEL_TIMEOUT_MS },
   );
@@ -165,8 +210,8 @@ export async function draftNegocio(organizationId: string, input: string, deps: 
       : fail("provider_error", "No pudimos armar el borrador ahora. Prueba de nuevo en un momento.", 503);
   }
   const borrador = result.data;
-  if (!borrador.oferta && !borrador.precios && !borrador.zona && borrador.preguntas.length === 0) {
+  if (!hayDatos(borrador) && !borrador.tono) {
     return fail("nothing_found", "No encontramos datos de tu negocio en eso. Descríbelo aquí con tus palabras.");
   }
-  return { ok: true, borrador, remaining: limit.remaining };
+  return { ok: true, borrador, remaining: cupo.remaining };
 }

@@ -21,7 +21,7 @@ La regla que hace posible seguir fusionando con upstream para siempre:
 | Lógica de servidor propia | `src/server/agencia/` |
 | Componentes propios | `src/components/agencia/` |
 | Migraciones propias | `drizzle/9xxx_*.sql` y `drizzle/meta/9xxx_snapshot.json`: el rango 9xxx es del fork, así upstream nunca choca de nombre. `pnpm db:generate` ya las nombra 9xxx solo; no renombres nada a mano (ver "Migraciones y snapshots"). |
-| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
+| Pantallas propias | `/overview`, `/decisiones`, `/account`, `/solicitud-datos`, `/api/meta/*`, `/api/readiness`, `/api/provision`, `/api/centro/ask` |
 
 Antes de tocar un archivo de upstream, pregúntate si el cambio cabe en
 `agencia/`. Si no cabe, hazlo pequeño, coméntalo con el porqué, y considera
@@ -39,10 +39,28 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
   bloqueos para activar (la usa la ruta que enciende y la pantalla «Activar»).
   `agent_profile.updated_at` es la versión del CONTENIDO del agente: pausar o
   encender no vuelve vieja la prueba.
+- **La prueba de autoservicio nace contestando «Todo el día»**
+  (`server/agent/default-profile.ts`): es Completo, y quien la abre le
+  escribe a su número a media tarde para probar. Las demás altas nacen en
+  «Cuando no atiendes tú» (lunes a sábado, 9 a 18). El modo se elige también
+  en «Activar». Inicio, «Pregúntale» y el resumen de las 19:00 cuentan como
+  «te necesita» a quien escribe fuera del turno del agente
+  (`agentAnswersNow` en `server/agencia/estado.ts`).
 - **«Llénalo por mí»** en Tu negocio (`server/agencia/borrador-negocio*.ts`,
   `/api/agent/borrador`): del texto o la web del dueño a un borrador de los
   campos, sin inventar y sin guardar solo. Lee webs públicas con guarda de IP
   privada; Instagram/Facebook/TikTok se rechazan con un aviso.
+- **«Enséñale con tus chats»** en Tu negocio (`lib/chat-exportado.ts`,
+  `lib/zip-texto.ts`, `/api/agent/borrador` con `{chats}`): el dueño sube chats
+  exportados de WhatsApp (.txt o el .zip del iPhone); se leen en el navegador
+  y al servidor viaja solo «Negocio:»/«Cliente:» sin nombres, teléfonos ni
+  correos. Del mismo borrador salen precios, preguntas y el TONO del dueño,
+  que se guarda en `agent_profile.tone` con el botón de siempre.
+- **Lo que te trajo tu agente, en plata** (`server/agencia/lo-que-trajo.ts`,
+  `lib/lo-que-trajo.ts`): el dueño dice cuánto le deja una cita
+  (`agent_profile.valor_cita_cents`, `/api/agent/valor-cita`); Inicio y el
+  resumen de las 19:00 cuentan las citas del agente por ese valor más las
+  ventas cerradas (las mismas de Resultados). Sin valor no se inventa plata.
 - **«Escríbele como cliente»** en Probar (`server/agencia/chat-prueba.ts`,
   `/api/lab/chat`): el dueño chatea con su agente con el turno real, en una
   conversación `is_test` de un contacto archivado (`prueba:dueno`): nada sale
@@ -55,6 +73,11 @@ mandárselo a Kevin como PR: lo que él acepte deja de ser un conflicto futuro.
 - **`conversation.ai_enabled` nace según el negocio**, no siempre en true
   (`server/agencia/ia-inicial.ts`): sin cerebro configurado la instancia recién
   entregada calla; con agente interno o `BOT_API_KEY`, contesta.
+- **Webhooks de cumplimiento de Meta** (`server/agencia/meta-cumplimiento.ts`,
+  `/api/meta/desautorizar`, `/api/meta/eliminar-datos`, `/solicitud-datos`):
+  `signed_request` verificado con `META_APP_SECRET`; desautorizar deja el
+  negocio en «reconectar», borrar datos se registra con código y lo cierra el
+  operador. Ver docs/atribucion-capi.md.
 - **`META_APP_SECRET` es obligatorio**: el webhook rechaza lo que no puede
   verificar y `/api/health` declara la instancia enferma sin él.
 - **Guard `ai_disabled` al enviar**: una respuesta cuya conversación se pausó
