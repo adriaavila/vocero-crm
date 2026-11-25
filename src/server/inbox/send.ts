@@ -757,6 +757,47 @@ export async function sendStructured(
   return { messageId };
 }
 
+/**
+ * Fork — mensaje interactivo de WhatsApp (botones, link con botón). Lo arma
+ * `server/agencia/sala-whatsapp.ts`; aquí solo pasa por los mismos gates que
+ * todo envío. `texto` es lo que muestra la bandeja, que no dibuja botones.
+ * `automatico` = la respuesta fija a un botón que el negocio mismo mandó: no
+ * es el agente, así que no pasa por sus gates (agente en pausa, tope de la
+ * prueba, horario). Que una persona no haya tomado la conversación lo revisa
+ * quien llama.
+ */
+export async function sendInteractive(input: {
+  conversationId: string;
+  organizationId: string;
+  interactive: Record<string, unknown>;
+  texto: string;
+  automatico: boolean;
+  senderUserId?: string;
+}): Promise<SendResult> {
+  const { credentials, recipient } = await prepareSend(input.conversationId, input.organizationId);
+  if (!credentials) {
+    throw new SendError("meta_error", "Los botones solo existen en WhatsApp; manda el texto");
+  }
+  const waMessageId = await callGraphSend(credentials, {
+    messaging_product: "whatsapp",
+    to: recipient,
+    type: "interactive",
+    interactive: input.interactive,
+  });
+  const messageId = await persistOutbound({
+    organizationId: input.organizationId,
+    conversationId: input.conversationId,
+    waMessageId,
+    type: "interactive",
+    text: input.texto,
+    status: "pending",
+    aiGenerated: input.automatico,
+    origin: input.automatico ? "ai" : "operator",
+    senderUserId: input.senderUserId,
+  });
+  return { messageId };
+}
+
 /** Llama a Graph /messages y traduce errores de Meta a SendError. */
 export async function callGraphSend(
   credentials: Credentials,

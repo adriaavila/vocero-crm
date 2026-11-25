@@ -48,6 +48,9 @@ const prefixes = {
   rawEvent: "rev",
   agentDecision: "dec",
   pushSubscription: "psub",
+  // Fork — sala de venta personal.
+  planPago: "plp",
+  salaVenta: "sala",
   // Fork — avisos de cumplimiento de Meta (desautorizar / borrar datos).
   metaSolicitud: "msol",
 } as const;

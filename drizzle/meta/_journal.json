@@ -246,6 +246,13 @@
       "when": 1793459250755,
       "tag": "9022_salty_praxagora",
       "breakpoints": true
+    },
+    {
+      "idx": 9023,
+      "version": "7",
+      "when": 1795639287858,
+      "tag": "9023_sticky_rhino",
+      "breakpoints": true
     }
   ]
 }
