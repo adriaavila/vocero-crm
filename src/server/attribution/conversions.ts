@@ -1,3 +1,4 @@
+import { motivoFalloCapi } from "@/server/agencia/capi-permiso";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { newId } from "@/lib/db/ids";
@@ -118,7 +119,8 @@ export async function emitConversion(
         .set({
           status: "failed",
           attributionId: attribution.id,
-          error: err instanceof Error ? err.message : String(err),
+          // Fork: el permiso que falta, dicho con su nombre (agencia/capi-permiso.ts).
+          error: motivoFalloCapi(err),
         })
         .where(eq(schema.conversionEvent.id, event.id));
       console.warn(

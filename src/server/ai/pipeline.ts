@@ -4,6 +4,7 @@ import { newId, neaMessageId } from "@/lib/db/ids";
 import { scoped } from "@/lib/db/tenant";
 import { moveLeadToStage as moveLeadThroughHistory } from "@/server/leads/stage-history";
 import { memoriaParaPrompt } from "@/server/agencia/memoria-cliente";
+import { catalogoParaPrompt } from "@/server/agencia/catalogo-agente";
 import { historialParaAgente } from "@/server/agencia/oir-y-ver";
 import { getEnv, isNeaBrain } from "@/lib/env";
 import { chatJson, type ChatMessage } from "@/lib/ai";
@@ -33,6 +34,18 @@ import { toHandoffReason } from "@/server/bot/handoff";
 import { buildAgentSystemPrompt } from "@/server/ai/prompts";
 import { avisarTraspaso } from "@/server/agencia/avisos";
 import { agendaEnabled } from "@/server/agenda/flag";
+import {
+  corregirAccion,
+  mensajeAlPasar,
+  reglasPasanVisitas,
+  textoDe,
+} from "@/server/agencia/accion-del-agente";
+import {
+  DESPEDIDA_SIN_PROHIBIDAS,
+  palabrasProhibidas,
+  pedidoDeReescritura,
+  usaProhibida,
+} from "@/server/agencia/palabras-prohibidas";
 import { getSettings } from "@/server/agenda/settings";
 import { bookSlot, offerSlots } from "@/server/agenda/agent";
 import { canAutomate, hasSaaSPlan, trialAiQuotaReached } from "@/server/agencia/entitlements";
@@ -309,7 +322,10 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
         .orderBy(asc(schema.pipelineStage.position))
     : [];
 
-  const agenda = proEnabled && agendaEnabled();
+  // Fork — si el dueño escribió que las visitas las lleva una persona, el
+  // agente no agenda: no ve offer_slots (`server/agencia/accion-del-agente`).
+  const agenda =
+    proEnabled && agendaEnabled() && !reglasPasanVisitas(profile.escalationRules);
   const settings = await getSettings(organizationId);
   const systemPrompt = buildAgentSystemPrompt({
     profile,
@@ -328,8 +344,12 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     conversationId,
     timezone: settings.timezone,
   });
+  // Fork — las propiedades disponibles de una inmobiliaria
+  // (`server/agencia/catalogo-agente`); sin vertical, null.
+  const catalogo = await catalogoParaPrompt(organizationId);
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
+    ...(catalogo ? [{ role: "system" as const, content: catalogo }] : []),
     ...(memoria ? [{ role: "system" as const, content: memoria }] : []),
     ...lineas.map((m) => ({
       role: m.direction === "in" ? ("user" as const) : ("assistant" as const),
@@ -356,7 +376,49 @@ async function runReiAgentTurn(conversationId: string): Promise<void> {
     return;
   }
 
-  let action: AgentActionType = result.data;
+  // Fork — sin herramientas escritas en el texto, y «si pide visita, pásalo»
+  // cuando el dueño lo escribió (`server/agencia/accion-del-agente`).
+  const corregida0 = corregirAccion({
+    action: result.data,
+    ultimaDelCliente: ultimaDelCliente.content,
+    escalationRules: profile.escalationRules,
+  });
+  let action: AgentActionType = corregida0.action;
+  if (corregida0.nota) {
+    await appendLeadNote(organizationId, conversation.contactId, corregida0.nota);
+  }
+
+  // Fork — las palabras que el dueño prohibió (`server/agencia/
+  // palabras-prohibidas`): una respuesta que las usa se reescribe una vez; si
+  // vuelve a usarlas, pasa a una persona en vez de mandarla.
+  const prohibidas = palabrasProhibidas(profile.instructions);
+  const usada = usaProhibida(textoDe(action) ?? "", prohibidas);
+  if (usada) {
+    const otra = await chatJson(
+      agentActionSchema(agenda),
+      [
+        ...messages,
+        { role: "assistant", content: JSON.stringify(result.data) },
+        { role: "system", content: pedidoDeReescritura(usada) },
+      ],
+      { provider: profile.aiProvider, credentials: aiConfig.providers }
+    );
+    const corregida = otra.ok
+      ? corregirAccion({
+          action: otra.data,
+          ultimaDelCliente: ultimaDelCliente.content,
+          escalationRules: profile.escalationRules,
+        }).action
+      : null;
+    action =
+      corregida && !usaProhibida(textoDe(corregida) ?? "", prohibidas)
+        ? corregida
+        : {
+            action: "handoff",
+            reason: "palabra prohibida",
+            farewell: mensajeAlPasar(profile.escalationRules) ?? DESPEDIDA_SIN_PROHIBIDAS,
+          };
+  }
 
   // 015 — Agenda. Un fallo del motor degrada el turno (el agente responde sin
   // agendar), nunca lo tumba: quedarse callado es peor que no agendar.

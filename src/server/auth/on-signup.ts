@@ -108,8 +108,11 @@ export async function onUserCreated(
       id: newId("agentProfile"),
       organizationId: orgId,
       ...defaultAgentProfile(),
-      // SaaS calla sin horario de respuesta; legacy no lo usa y nace igual.
-      ...(isAllokSaaSMode() ? defaultResponseSchedule(options?.timezone) : {}),
+      // SaaS calla sin horario de respuesta; legacy no lo usa y nace igual. La
+      // prueba de autoservicio (Completo) nace contestando todo el día.
+      ...(isAllokSaaSMode()
+        ? defaultResponseSchedule(options?.timezone, { allDay: options?.selfServeTrial === true })
+        : {}),
     });
     return orgId;
   });

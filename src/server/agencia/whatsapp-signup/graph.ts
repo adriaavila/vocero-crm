@@ -12,6 +12,8 @@ export type DebugTokenData = {
   scopes?: string[];
   granular_scopes?: { scope?: string; target_ids?: string[] }[];
   app_id?: string;
+  /** Usuario de Facebook que autorizó: con él llegan desautorizar y borrar datos. */
+  user_id?: string;
   expires_at?: number;
   issued_at?: number;
 };

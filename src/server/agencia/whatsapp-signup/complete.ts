@@ -5,6 +5,7 @@ import { MetaApiError } from "@/lib/meta/client";
 import { saveCredentials } from "@/server/whatsapp/credentials";
 import { syncTemplates } from "@/server/whatsapp/templates";
 import { markConnected, markError, markWebhookOk } from "@/server/onboarding/whatsapp-onboarding";
+import { recordarAutorizacion } from "@/server/agencia/meta-cumplimiento";
 import { copyForStep } from "./copy";
 import {
   debugBusinessToken,
@@ -205,6 +206,11 @@ async function completeSteps(
   }
   if (clash) return fail(409, clash);
   await markConnected(organizationId, { mode, wabaId, phoneNumberId });
+  // Quién autorizó, para encontrar este negocio cuando Meta avise que esa
+  // persona quitó la app o pidió borrar sus datos. Nunca tumba el alta.
+  if (debug.user_id) {
+    await recordarAutorizacion(organizationId, debug.user_id).catch(() => {});
+  }
 
   // g + h) webhook y, en número nuevo, registro.
   const activation = await activateNumber({ organizationId, wabaId, phoneNumberId, token, mode }, logMetaError);

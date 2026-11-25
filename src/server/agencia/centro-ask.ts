@@ -8,7 +8,7 @@ import { todayInTz } from "@/lib/time/slots";
 import { getAiRuntimeConfig } from "@/server/ai/credentials";
 import { businessTimezone } from "@/server/analytics/period";
 import { getBranding } from "@/server/branding";
-import { agentOn } from "@/server/agencia/estado";
+import { agentAnswersNow } from "@/server/agencia/estado";
 import { canAutomate } from "@/server/agencia/entitlements";
 import { getCentroMetricas, pipelineNow } from "@/server/agencia/centro-metricas";
 import { askSystemPrompt, askUserPrompt, ASK_ANSWER_MAX } from "@/server/agencia/centro-ask-prompt";
@@ -74,12 +74,12 @@ export type AskSnapshot = {
 };
 
 export async function buildSnapshot(organizationId: string, now: Date = new Date()): Promise<AskSnapshot> {
-  const agent = await agentOn(organizationId);
+  const answering = await agentAnswersNow(organizationId, now);
   const [branding, hoy, semana, prioridades, embudo, decisiones] = await Promise.all([
     getBranding(organizationId),
     getCentroMetricas(organizationId, "hoy", now),
     getCentroMetricas(organizationId, "7d", now),
-    getPrioridades(organizationId, { agentOn: agent.on, now }),
+    getPrioridades(organizationId, { agentOn: answering, now }),
     pipelineNow(organizationId),
     listDecisions(organizationId, { limit: 10 }),
   ]);
@@ -173,11 +173,11 @@ export function chipAnswer(
 }
 
 export async function answerChip(organizationId: string, kind: ChipKind, now: Date = new Date()): Promise<string> {
-  const agent = await agentOn(organizationId);
+  const answering = await agentAnswersNow(organizationId, now);
   const [prioridades, allCards, semana] = await Promise.all([
-    getPrioridades(organizationId, { agentOn: agent.on, now }),
+    getPrioridades(organizationId, { agentOn: answering, now }),
     kind === "riesgo"
-      ? getPrioridades(organizationId, { agentOn: agent.on, now, limit: CANDIDATE_CAP }).then((p) => p.cards)
+      ? getPrioridades(organizationId, { agentOn: answering, now, limit: CANDIDATE_CAP }).then((p) => p.cards)
       : Promise.resolve([] as PriorityCard[]),
     kind === "semana" ? getCentroMetricas(organizationId, "7d", now) : getCentroMetricas(organizationId, "hoy", now),
   ]);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { casesToFix, fixFor, passes, probarKind, type CaseLite } from "@/lib/probar";
+import { casesToFix, consejoDeResultado, fixFor, looksGood, probarKind, resumenDeResultado, type CaseLite } from "@/lib/probar";
 
 const kase = (id: string, veredicto: CaseLite["veredicto"], hallazgos: CaseLite["hallazgos"] = []): CaseLite => ({
   id,
@@ -11,10 +11,10 @@ const kase = (id: string, veredicto: CaseLite["veredicto"], hallazgos: CaseLite[
 
 describe("probar: pasa o no pasa", () => {
   it("80 o más y ningún caso rojo", () => {
-    expect(passes(80, 0)).toBe(true);
-    expect(passes(79, 0)).toBe(false);
-    expect(passes(95, 1)).toBe(false);
-    expect(passes(null, 0)).toBe(false);
+    expect(looksGood(80, 0)).toBe(true);
+    expect(looksGood(79, 0)).toBe(false);
+    expect(looksGood(95, 1)).toBe(false);
+    expect(looksGood(null, 0)).toBe(false);
   });
 });
 
@@ -31,10 +31,18 @@ describe("probarKind", () => {
     expect(probarKind({ latest: done, cases: [kase("a", "verde")], current: false })).toBe("vieja"));
   it("mientras no se sabe si es vigente, no se dice que esté vieja", () =>
     expect(probarKind({ latest: done, cases: [kase("a", "verde")], current: null })).toBe("paso"));
-  it("un caso rojo no pasa aunque el puntaje sea alto", () =>
-    expect(probarKind({ latest: done, cases: [kase("a", "rojo")], current: true })).toBe("no_paso"));
-  it("un puntaje bajo no pasa", () =>
-    expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: true })).toBe("no_paso"));
+  it("un caso rojo pide revisar aunque el puntaje sea alto", () =>
+    expect(probarKind({ latest: done, cases: [kase("a", "rojo")], current: true })).toBe("revisar"));
+  it("un puntaje bajo pide revisar", () =>
+    expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: true })).toBe("revisar"));
+  it("el veredicto sale de redCount aunque los casos no hayan llegado (no hay «salió bien» falso)", () => {
+    expect(probarKind({ latest: done, cases: [], redCount: 2, current: true })).toBe("revisar");
+    expect(probarKind({ latest: done, cases: [], redCount: 0, current: true })).toBe("paso");
+    // redCount manda sobre los casos: sin él, se cuentan los casos.
+    expect(probarKind({ latest: done, cases: [kase("a", "rojo")], redCount: 0, current: true })).toBe("paso");
+  });
+  it("una prueba floja pero anterior al último cambio es vieja", () =>
+    expect(probarKind({ latest: { status: "done", score: 62 }, cases: [], current: false })).toBe("vieja"));
 });
 
 describe("qué corregir, en palabras llanas", () => {
@@ -65,4 +73,27 @@ describe("qué corregir, en palabras llanas", () => {
     });
     expect(fix.suggestion).toEqual({ pregunta: "¿Hacen envíos?", respuesta: "Sí, en el este." });
   });
+});
+
+describe("consejoDeResultado", () => {
+  it("dice las respuestas graves y el puntaje, y que activar es decisión del dueño", () => {
+    expect(consejoDeResultado(67, 2)).toBe(
+      "La prueba encontró 2 respuestas graves (67 de 100). Puedes activarlo igual o corregirlas primero.",
+    );
+    expect(consejoDeResultado(83, 1)).toBe(
+      "La prueba encontró 1 respuesta grave (83 de 100). Puedes activarlo igual o corregirla primero.",
+    );
+  });
+  it("sin casos graves pero con puntaje bajo, habla del puntaje", () => {
+    expect(consejoDeResultado(70, 0)).toBe("La prueba sacó 70 de 100. Puedes activarlo igual o mejorar las respuestas primero.");
+  });
+  it("nunca escribe «/100»", () => {
+    expect(consejoDeResultado(40, 3)).not.toMatch(/\/100/);
+    expect(resumenDeResultado(40, 3)).not.toMatch(/\/100/);
+  });
+  it("no aconseja cuando se ve bien ni sin resultado", () => {
+    expect(consejoDeResultado(85, 0)).toBeNull();
+    expect(consejoDeResultado(null, 0)).toBeNull();
+  });
+  it("sin em dashes", () => expect(consejoDeResultado(40, 3)).not.toMatch(/—/));
 });

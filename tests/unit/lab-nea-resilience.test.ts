@@ -30,6 +30,11 @@ vi.mock("@/server/lab/judge", () => ({
   }),
 }));
 vi.mock("@/server/events/bus", () => ({ publish: vi.fn() }));
+// Personas genéricas: este test es del runner, no del vertical inmobiliario.
+vi.mock("@/server/lab/org-personas", async () => {
+  const { PERSONAS } = await import("@/server/lab/personas");
+  return { personasForOrg: async () => PERSONAS, LabNotReadyError: class extends Error {} };
+});
 
 function chain(rows: unknown[]) {
   const value: Record<string, unknown> = {};

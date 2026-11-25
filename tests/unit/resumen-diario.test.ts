@@ -20,3 +20,25 @@ describe("resumen diario — texto", () => {
     );
   });
 });
+
+describe("resumen del día: la plata primero", () => {
+  it("con valor por cita, el título dice cuánto trajo el agente", () => {
+    expect(
+      textoResumenDia({ clientes: 9, respuestas: 30, citas: 3, teEsperan: 1, valorCitasCents: 180000, ventas: { count: 0, cents: 0 }, currency: "MXN" }),
+    ).toEqual({ title: "Tu agente te trajo unos $1,800 hoy", body: "Agendó 3 citas ($1,800), te escribieron 9 clientes. 1 conversación te espera." });
+  });
+  it("suma las ventas cerradas del día", () => {
+    expect(
+      textoResumenDia({ clientes: 2, respuestas: 4, citas: 1, teEsperan: 0, valorCitasCents: 50000, ventas: { count: 1, cents: 1200000 }, currency: "MXN" })?.title,
+    ).toBe("Tu agente te trajo unos $12,500 hoy");
+  });
+  it("sin valor por cita no inventa plata, pero una venta sí se cuenta", () => {
+    expect(textoResumenDia({ clientes: 0, respuestas: 0, citas: 0, teEsperan: 0, ventas: { count: 2, cents: 300000 }, currency: "MXN" })).toEqual({
+      title: "Hoy cerraste 2 ventas por $3,000",
+      body: "Nadie te espera.",
+    });
+    expect(textoResumenDia({ clientes: 3, respuestas: 5, citas: 2, teEsperan: 0, valorCitasCents: null, currency: "MXN" })?.title).toBe(
+      "Hoy te escribieron 3 clientes",
+    );
+  });
+});

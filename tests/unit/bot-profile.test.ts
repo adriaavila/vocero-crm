@@ -46,6 +46,7 @@ function profileRow(overrides: Partial<AgentProfile> = {}): AgentProfile {
     responseMode: "outside_hours",
     handoffResumeHours: null,
     followUpHours: null,
+    valorCitaCents: null,
     // Capa de agencia: mensajes de activación, allowlist, última prueba real
     // y proveedor de IA preferido.
     activationEnabled: false,

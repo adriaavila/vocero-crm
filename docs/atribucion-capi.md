@@ -151,6 +151,50 @@ meses. Ninguno aparece con esa claridad en la documentación oficial:
    escribir para un dataset de mensajería pura. Es cosmético; la campaña publica
    igual y la atribución va por el `ctwa_clid`.
 
+## El permiso `whatsapp_business_manage_events` (fork)
+
+El token que publica en el dataset es el del negocio, el que sale del Embedded
+Signup. Solo puede escribir eventos si:
+
+1. La app de Meta tiene **aprobado** `whatsapp_business_manage_events` en App
+   Review (video + uso permitido: ver el guion del proyecto).
+2. La **configuración de Facebook Login for Business** del Embedded Signup lo
+   pide junto a `whatsapp_business_management` y `whatsapp_business_messaging`.
+3. El negocio **conectó (o reconectó) WhatsApp después** de agregarlo: los
+   tokens viejos no ganan permisos solos.
+
+Si falta, Meta rechaza el evento con un código de permisos y la Actividad de
+Ajustes → Anuncios lo dice con el nombre del permiso
+(`server/agencia/capi-permiso.ts`), en vez de un «(#200)» opaco.
+
+## Webhooks de cumplimiento: desautorizar y borrar datos (fork)
+
+La dirección contraria a la CAPI: Meta le avisa a la instancia. App Review los
+pide para una app de Tech Provider. Ambos llegan como `signed_request` (POST de
+formulario) firmado con HMAC-SHA256 usando el secreto de la app, y se verifican
+aquí mismo con `META_APP_SECRET`, como el webhook de mensajes. No hace falta un
+Worker aparte.
+
+| En el panel de la app de Meta | URL |
+|---|---|
+| Inicio de sesión con Facebook para empresas → Configuración → **Desautorizar** | `https://<host del CRM>/api/meta/desautorizar` |
+| … → **Solicitud de eliminación de datos** | `https://<host del CRM>/api/meta/eliminar-datos` |
+
+- **Desautorizar**: los negocios que conectó esa persona quedan en «reconectar»
+  (su token ya no sirve). No se borra nada.
+- **Eliminar datos**: responde `{ url, confirmation_code }`; la `url` es
+  `/solicitud-datos?codigo=…`, donde la persona ve el estado. El borrado del
+  negocio NO es automático (es irreversible): el operador lo hace, con un
+  máximo de 30 días, y marca la solicitud como hecha
+  (`marcarSolicitudHecha` en `server/agencia/meta-cumplimiento.ts`; la
+  bitácora vive en la tabla `meta_solicitud`).
+- Para encontrar el negocio, al conectar WhatsApp se guarda quién autorizó (el
+  `user_id` de `debug_token`) en `meta_autorizacion`. Los negocios conectados
+  antes de esto no lo tienen: el aviso queda registrado sin negocios y se
+  resuelve a mano.
+
+Guion E2E: `scripts/e2e-cumplimiento-meta.mjs`.
+
 ## Receta: optimizar una campaña de VENTAS
 
 Como `QualifiedLead` no es elegible ahí, quien quiera optimizar una campaña de

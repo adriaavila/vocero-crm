@@ -2,7 +2,7 @@ import { asc, eq } from "drizzle-orm";
 import { getDb, schema } from "@/lib/db";
 import { renderKb } from "@/server/ai/prompts";
 // Capa de agencia: los frenos del piloto viajan con el perfil (server/agencia/).
-import { perfilDeAgencia } from "@/server/agencia/bot-perfil";
+import { conocimientoDeAgencia, perfilDeAgencia } from "@/server/agencia/bot-perfil";
 
 type AgentProfile = typeof schema.agentProfile.$inferSelect;
 type KbEntry = typeof schema.kbEntry.$inferSelect;
@@ -58,5 +58,10 @@ export async function buildBotProfile(organizationId: string): Promise<BotProfil
 
   const base = serializeBotProfile(profile, kb);
   const agencia = await perfilDeAgencia(organizationId);
-  return { ...base, profile: { ...base.profile, ...agencia } };
+  // Fork — catálogo y reglas de la casa en un negocio inmobiliario.
+  const { instructions, kb: kbConCatalogo } = await conocimientoDeAgencia(organizationId, {
+    instructions: base.profile.instructions,
+    kb: base.kb,
+  });
+  return { ...base, kb: kbConCatalogo, profile: { ...base.profile, ...agencia, instructions } };
 }

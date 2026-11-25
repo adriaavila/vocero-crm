@@ -49,9 +49,12 @@ export type OnboardingBrand = {
 function copyFor({ brandName, supportHref }: OnboardingBrand): Record<OnboardingErrorKey, OnboardingErrorCopy> {
   const ofBrand = brandName ? ` de ${brandName}` : "";
   return {
+    // En coexistencia, WhatsApp Business ya dice «conectado» cuando el dueño
+    // confirma en el teléfono, pero el número solo nos llega con «Finalizar».
+    // Si cerró ahí, lo seguro es desconectar en la app antes de reintentar.
     cancelled: {
-      title: "Cerraste la ventana de Meta",
-      body: "Tu avance quedó guardado. Vuelve a abrirla para terminar de conectar tu número.",
+      title: "Falta terminar en la ventana de Meta",
+      body: `Se cerró antes de tocar «Finalizar», así que tu número no llegó${brandName ? ` a ${brandName}` : " hasta aquí"}. Si tu WhatsApp Business ya dice que está conectado, desconéctalo ahí (Ajustes > Cuenta > Plataforma empresarial), espera unos minutos y vuelve a conectar.`,
       retry: true,
     },
     number_on_whatsapp: {

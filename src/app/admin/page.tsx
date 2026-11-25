@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { MessageCircle, ShieldCheck } from "lucide-react";
 import { brand } from "@/lib/brand";
+import { soldSaaSPlans } from "@/lib/saas-plans";
 import { AdminTenantsTable } from "@/components/admin/tenants-table";
 import { AdminEmbudo } from "@/components/agencia/admin-embudo";
 import { listSaaSTenantStatus, requireSaaSAdmin, SaaSAdminUnauthorized } from "@/server/saas/admin";
@@ -33,7 +34,7 @@ export default async function AdminPage() {
         <AdminEmbudo tenants={tenants} />
 
         <section className="mt-6 overflow-hidden rounded-xl border bg-background shadow-sm">
-          <AdminTenantsTable tenants={tenants} />
+          <AdminTenantsTable tenants={tenants} soldPlan={soldSaaSPlans(process.env.SAAS_PLANS)[0]} />
         </section>
 
         <footer className="mt-5 flex items-center gap-2 text-xs text-text-3"><MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Última lectura: {new Date().toLocaleString("es-VE")}</footer>

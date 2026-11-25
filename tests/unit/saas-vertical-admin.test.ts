@@ -109,6 +109,18 @@ describe("Catálogo de propiedades desde el panel admin", () => {
     expect(dbState.auditRows.map((row) => row.action)).toEqual(["vertical_on", "vertical_off"]);
   });
 
+  it("en Rei, un negocio sin la llave ya tiene el catálogo, y apagarlo lo apaga de verdad", async () => {
+    vi.stubEnv("BRAND", "rei");
+    expect(verticalFromMetadata(dbState.org?.metadata)).toBe("inmobiliario");
+    const off = await POST(req({ vertical: null }), ctx());
+    expect(off.status).toBe(200);
+    expect(verticalFromMetadata(dbState.org?.metadata)).toBeNull();
+    expect(JSON.parse(dbState.org?.metadata ?? "{}").allok.billing.plan).toBe("pro");
+    await POST(req({ vertical: "inmobiliario" }), ctx());
+    expect(verticalFromMetadata(dbState.org?.metadata)).toBe("inmobiliario");
+    expect(dbState.auditRows.map((row) => row.action)).toEqual(["vertical_off", "vertical_on"]);
+  });
+
   it("un email que no es admin recibe 404 y no escribe nada", async () => {
     authState.session = { user: { id: "user_x", email: "cliente@allok.fun", name: "Cliente" } };
     const res = await POST(req({ vertical: "inmobiliario" }), ctx());

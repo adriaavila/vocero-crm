@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
@@ -23,6 +23,13 @@ function render(billingRaw: Record<string, unknown>) {
 }
 
 describe("BillingClient plan grid", () => {
+  // `billingFromMetadata` lee el reloj real para dar por vencida una prueba.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => vi.useRealTimers());
+
   it("tells the owner on the Esencial card, during the trial, that the agent answers only outside their hours", () => {
     const html = render({
       plan: "pro",

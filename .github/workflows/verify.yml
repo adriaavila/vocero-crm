@@ -8,8 +8,13 @@ name: E2E
 # guiones de `scripts/e2e-*.mjs` — que es donde aparecen los fallos que la
 # compilación no ve (un webhook que 401ea, un aviso que se pierde, un agente
 # que se queda callado).
+#
+# El push solo en `main`: una rama con PR ya corre por `pull_request`, y
+# correrlo también por su push gastaba el doble de minutos de Actions (en
+# octubre de 2026 se acabó el cupo del mes y dejaron de correr todos).
 on:
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -118,7 +123,7 @@ jobs:
       # que ci.yml no las corre). Van DESPUÉS del e2e: limpian lo suyo, pero así
       # nada de lo que dejen puede alterar a los guiones.
       - name: data spine e Inicio contra Postgres real
-        run: pnpm exec vitest run tests/unit/data-spine-realdb.test.ts tests/unit/centro-realdb.test.ts tests/unit/hilo-paginas-realdb.test.ts tests/unit/oir-y-ver-realdb.test.ts
+        run: pnpm exec vitest run tests/unit/data-spine-realdb.test.ts tests/unit/centro-realdb.test.ts tests/unit/hilo-paginas-realdb.test.ts tests/unit/oir-y-ver-realdb.test.ts tests/unit/inicio-turno-realdb.test.ts
         env:
           REALDB_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vocero
 

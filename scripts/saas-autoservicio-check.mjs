@@ -195,6 +195,27 @@ async function main() {
   ok("un enlace de Instagram dice por qué no se puede leer", walled.res.status === 422 && walled.json?.error?.code === "walled_site", JSON.stringify(walled.json));
   const internal = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "http://127.0.0.1:3000/api/health" }) });
   ok("no lee direcciones internas", internal.res.status === 422 && internal.json?.error?.code === "page_unreadable", JSON.stringify(internal.json));
+  // «Desde tus chats»: lo que viaja ya viene condensado y sin datos del cliente (lib/chat-exportado.ts).
+  const chats = [
+    "Cliente: Hola, ¿cuánto cuesta el pastel de chocolate?",
+    "Negocio: ¡Hola! 😊 El pastel de chocolate cuesta $450 y lo hacemos por encargo con 2 días.",
+    "Cliente: ¿Hacen envíos a la Condesa?",
+    "Negocio: Sí, enviamos a la Roma y la Condesa por $60.",
+    "---",
+    "Cliente: ¿Tienen pan sin gluten? Te dejo mi número [teléfono]",
+    "Negocio: Sí, tenemos pan sin gluten los sábados, cuesta $90.",
+  ].join("\n");
+  const fromChats = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ chats }) });
+  const chatDraft = fromChats.json?.borrador;
+  ok("de los chats salen los precios que dijo el negocio", fromChats.res.ok && /\$450/.test(chatDraft?.precios ?? "") && /\$90/.test(chatDraft?.precios ?? ""), JSON.stringify(fromChats.json));
+  ok("las preguntas que de verdad le hacen, con su respuesta", (chatDraft?.preguntas ?? []).some((q) => /sin gluten/.test(q.pregunta) && /sábados/.test(q.respuesta)), JSON.stringify(chatDraft?.preguntas));
+  ok("y cómo escribe el dueño (el tono)", /Tutea/.test(chatDraft?.tono ?? "") && /emojis/.test(chatDraft?.tono ?? ""), chatDraft?.tono);
+  const kbAfterChats = (await sql`select count(*)::int as n from kb_entry where organization_id = ${org.id}`)[0].n;
+  ok("tampoco guarda nada por su cuenta", kbAfterChats === kbBefore, `${kbBefore} → ${kbAfterChats}`);
+  const notChat = await owner(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ chats: "esto no es una conversación de WhatsApp, es un texto cualquiera" }) });
+  ok("un texto que no es un chat dice por qué", notChat.res.status === 422 && notChat.json?.error?.code === "not_a_chat", JSON.stringify(notChat.json));
+  const webSinTono = draftBody?.tono ?? "";
+  ok("desde una web o un texto no sale tono", webSinTono === "", webSinTono);
   const anon = await client()(tenantHost, "/api/agent/borrador", { method: "POST", body: JSON.stringify({ fuente: "Panadería de masa madre en la Roma." }) });
   ok("sin sesión: 401", anon.res.status === 401, String(anon.res.status));
 
@@ -394,6 +415,15 @@ async function main() {
   console.log("\n== 11. Correos de la prueba: una vez por negocio ==");
   const run = async () => (await owner(APP_HOST, "/api/dev/trial-lifecycle", { method: "POST" })).json;
   const [fresh] = await sql`select o.id from organization o where o.slug = ${intruderSlug}`;
+  // Dos días después del alta, con el agente apagado: «te falta un paso» con el enlace al paso que toca.
+  await sql`update organization set metadata = jsonb_set(metadata::jsonb, '{allok,billing,currentPeriodEnd}', to_jsonb(${new Date(Date.now() + 5 * 86400000).toISOString()}::text))::text where id = ${fresh.id}`;
+  const [freshOwner] = await sql`select u.email from member m join "user" u on u.id = m.user_id where m.organization_id = ${fresh.id} and m.role = 'owner' limit 1`;
+  const s1 = await run();
+  ok("al día siguiente del alta, sin el agente encendido, sale 'te falta un paso' (1)", s1?.setup >= 1, JSON.stringify(s1));
+  ok("y no se repite", (await run())?.setup === 0);
+  const nudge = await fetch(`${process.env.EMAIL_API_URL}?to=${encodeURIComponent(freshOwner?.email ?? "")}`).then((r) => r.json()).catch(() => null);
+  const nudgeMail = (nudge?.emails ?? []).find((e) => /de contestar en tu WhatsApp/.test(e.subject ?? ""));
+  ok("el correo lleva al paso que toca en su subdominio", Boolean(nudgeMail) && (nudgeMail.text ?? "").includes(`${intruderSlug}.localhost`), JSON.stringify(nudge?.emails?.map((e) => e.subject)));
   await sql`update organization set metadata = jsonb_set(metadata::jsonb, '{allok,billing,currentPeriodEnd}', to_jsonb(${new Date(Date.now() + 40 * 3600000).toISOString()}::text))::text where id = ${fresh.id}`;
   const m1 = await run();
   ok("a 2 días del final sale 'termina pronto' (1)", m1?.ending >= 1, JSON.stringify(m1));

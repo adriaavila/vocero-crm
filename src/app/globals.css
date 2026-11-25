@@ -180,35 +180,35 @@
 
     /* La marca */
     --cloud: #f7f8f8;
-    --ok: #20e58d;
-    --ok-ink: #0a7a48;
+    --ok: var(--allok-ok);
+    --ok-ink: var(--allok-ok-ink);
     --signal: #315cff;
-    --signal-ink: #2348cc;
+    --signal-ink: var(--allok-atendiendo-ink);
 
     /* Los cuatro estados, con los valores de allok-fun/src/lib/brand.ts */
-    --st-activo: #20e58d;
-    --st-activo-ink: #0a7a48;
-    --st-activo-soft: #e2f9ee;
-    --st-atendiendo: #5b8cff;
-    --st-atendiendo-ink: #2348cc;
-    --st-atendiendo-soft: #e7edff;
-    --st-atencion: #ffb020;
-    --st-atencion-ink: #7a5600;
-    --st-atencion-soft: #fdf0db;
-    --st-pausado: #8a9097;
-    --st-pausado-ink: #5a6066;
-    --st-pausado-soft: #ededee;
+    --st-activo: var(--allok-ok);
+    --st-activo-ink: var(--allok-ok-ink);
+    --st-activo-soft: var(--allok-ok-soft);
+    --st-atendiendo: var(--allok-atendiendo);
+    --st-atendiendo-ink: var(--allok-atendiendo-ink);
+    --st-atendiendo-soft: var(--allok-atendiendo-soft);
+    --st-atencion: var(--allok-atencion);
+    --st-atencion-ink: var(--allok-atencion-ink);
+    --st-atencion-soft: var(--allok-atencion-soft);
+    --st-pausado: var(--allok-pausado);
+    --st-pausado-ink: var(--allok-pausado-ink);
+    --st-pausado-soft: var(--allok-pausado-soft);
 
     /* Superficies: Cloud de página, blanco de tarjeta, escalones hacia abajo */
     --ground: #f7f8f8;
     --ground-2: #f1f2f2;
     --ground-3: #eceeef;
     --ground-4: #e4e6e8;
-    --ink: #0b0d0e;
-    --ink-60: #5b6167;
-    --ink-40: #8a9097;
-    --hairline: rgba(11, 13, 14, 0.09);
-    --rule: rgba(11, 13, 14, 0.15);
+    --ink: var(--allok-tinta);
+    --ink-60: var(--allok-tinta-60);
+    --ink-40: var(--allok-tinta-40);
+    --hairline: var(--allok-tinta-09);
+    --rule: var(--allok-tinta-15);
     --rule-hard: rgba(11, 13, 14, 0.85);
 
     /* ── Alias de la app ─────────────────────────────────────────────────── */
@@ -234,7 +234,7 @@
     --chat-bg: var(--ground);
     --bubble-in: #ffffff;
     --bubble-in-border: var(--hairline);
-    --bubble-out: #d9fdd3;
+    --bubble-out: var(--allok-wa-out);
     --bubble-out-border: #c2efba;
     --bubble-out-text: var(--ink);
 
@@ -256,10 +256,10 @@
 
     /* Un error no es un estado de la marca: es algo que falló (un envío que no
        salió) o que se borra. Rojo sobrio, y solo ahí. */
-    --danger: #e5484d;
+    --danger: var(--allok-error);
     --danger-tint: #fdecec;
     --danger-soft: #f6c6c7;
-    --danger-text: #b42318;
+    --danger-text: var(--allok-error-ink);
     --danger-fg: #ffffff;
 
     --overlay: rgba(11, 13, 14, 0.48);
@@ -284,10 +284,10 @@
 
     /* Movimiento (allok.fun): una curva, y la presión es la única respuesta
        táctil de un botón. Nada sube al pasar el cursor. */
-    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+    --ease-out: var(--allok-ease);
     --btn-radius: 10px;
     --btn-lift: 0px;
-    --btn-press: 0.97;
+    --btn-press: var(--allok-press);
     /* La pista de un interruptor apagado: tiene que verse sobre blanco. */
     --switch-off: #8a9097; /* el gris de «pausado»: 3,22:1 sobre blanco, 3,03:1 sobre Cloud */
   }
@@ -297,10 +297,10 @@
 
     /* Tinta. Los estados conservan su punto —es justo el valor que se lee
        sobre negro— y su tinta pasa a ser ese mismo punto. */
-    --ground: #0b0d0e;
-    --ground-2: #111416;
-    --ground-3: #171b1e;
-    --ground-4: #1d2225;
+    --ground: var(--allok-noche);
+    --ground-2: var(--allok-noche-2);
+    --ground-3: var(--allok-noche-3);
+    --ground-4: var(--allok-noche-4);
     --ink: #f7f8f8;
     --ink-60: #a7adb2;
     --ink-40: #6c7278;
@@ -326,7 +326,7 @@
     --text-4: #5d6368;
 
     --bubble-in: var(--ground-3);
-    --bubble-out: #12483a;
+    --bubble-out: var(--allok-wa-out-noche);
     --bubble-out-border: #1a5c4a;
     --bubble-out-text: #e9f6ef;
 

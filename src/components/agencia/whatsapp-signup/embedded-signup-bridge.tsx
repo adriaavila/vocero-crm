@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Check, CheckCircle2, Copy, Loader2, MessageCircle, RotateCw, Smartphone } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, CheckCircle2, Copy, Laptop, Loader2, MessageCircle, RotateCw, Smartphone } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { errorKeyForCancel, onboardingErrorCopy, type OnboardingBrand } from "@/lib/onboarding-errors";
-import { META_SDK_TIMEOUT_MS, inAppBrowserName } from "@/lib/navegador-meta";
+import { META_SDK_TIMEOUT_MS, inAppBrowserName, isPhoneBrowser } from "@/lib/navegador-meta";
 
 /**
  * Bridge de Embedded Signup EN la app (fork). Puerto de
@@ -134,6 +134,7 @@ export function EmbeddedSignupBridge({
   // Fork (agencia): Instagram/Facebook/TikTok abren la página en su navegador
   // interno, donde la ventana de Meta no avisa de vuelta.
   const [inApp, setInApp] = useState<string | null>(null);
+  const [onPhone, setOnPhone] = useState(false);
 
   const pendingRef = useRef<Pending>({});
   const exchangeStartedRef = useRef(false);
@@ -300,6 +301,7 @@ export function EmbeddedSignupBridge({
   useEffect(() => {
     void loadConfig(mode);
     setInApp(inAppBrowserName(navigator.userAgent));
+    setOnPhone(isPhoneBrowser(navigator.userAgent));
     return () => {
       if (sdkTimerRef.current) window.clearTimeout(sdkTimerRef.current);
     };
@@ -468,6 +470,26 @@ export function EmbeddedSignupBridge({
                   />
                 )}
               </div>
+              {/* Fork (agencia): en coexistencia, WhatsApp dice «conectado» apenas se
+                  confirma en el teléfono, pero el número solo llega con «Finalizar». */}
+              {mode === "coexistence" && (
+                <div className="space-y-2 rounded-lg border border-border p-3 text-sm text-text-2">
+                  <p>
+                    Meta te pedirá confirmar en tu app de WhatsApp Business. Después vuelve a la ventana de Meta y
+                    síguela hasta «Finalizar»: si la cierras antes, tu número no llega
+                    {brand?.brandName ? ` a ${brand.brandName}` : " aquí"} aunque WhatsApp diga «conectado».
+                  </p>
+                  {onPhone && !inApp && (
+                    <p className="flex items-start gap-2">
+                      <Laptop className="mt-0.5 h-4 w-4 shrink-0 text-text-3" aria-hidden="true" />
+                      <span>
+                        Mejor hazlo desde una computadora: tienes la ventana de Meta en la pantalla y confirmas con el
+                        teléfono en la mano.
+                      </span>
+                    </p>
+                  )}
+                </div>
+              )}
               <Button
                 type="button"
                 className="mt-2 w-full min-h-11"
